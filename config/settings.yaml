@@ -39,6 +39,17 @@ trueconf:
   channel_id: lab_bench_channel
   default_tech_user_id: nicolas.silva
 winrm:
-  default_pass: SenhaTemporariaLab123!
-  default_user: Administrator
+  default_user: penserede
+  default_pass: '@C3por2d2'
   port: 5985
+  fallback_credentials:
+    - user: penserede
+      pass: '@C3por2d2'
+    - user: Administrator
+      pass: '@C3por2d2'
+    - user: Administrador
+      pass: '@C3por2d2'
+    - user: Administrator
+      pass: SenhaTemporariaLab123!
+    - user: Administrador
+      pass: SenhaTemporariaLab123!

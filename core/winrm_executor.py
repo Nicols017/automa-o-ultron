@@ -80,11 +80,20 @@ class WinRMExecutor:
         
         candidates = [(primary_user, primary_pass)]
         
+        # Fallback credentials configuradas no settings.yaml
+        fb_list = self.config.get("winrm", {}).get("fallback_credentials", [])
+        for fb in fb_list:
+            u = fb.get("user")
+            p = fb.get("pass")
+            if u and p and (u, p) not in candidates:
+                candidates.append((u, p))
+
         # Alterna entre Administrator e Administrador (padrão EN/PT-BR do Windows)
-        if primary_user.lower() == "administrator":
-            candidates.append(("Administrador", primary_pass))
-        elif primary_user.lower() == "administrador":
-            candidates.append(("Administrator", primary_pass))
+        for u, p in list(candidates):
+            if u.lower() == "administrator" and ("Administrador", p) not in candidates:
+                candidates.append(("Administrador", p))
+            elif u.lower() == "administrador" and ("Administrator", p) not in candidates:
+                candidates.append(("Administrator", p))
 
         return candidates
 
