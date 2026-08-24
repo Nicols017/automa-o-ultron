@@ -82,17 +82,17 @@ class TrueConfChatOps:
             frozenset(["/diagnostico", "/diag", "/inspecionar", "/smart"]):
                 lambda: self._cmd_diagnostico(user_id, parts[1:]),
             frozenset(["/ativar", "/ativacao", "/mas"]):
-                lambda: self._cmd_ativar(parts[1:]),
+                lambda: self._cmd_ativar(user_id, parts[1:]),
             frozenset(["/backup", "/storage"]):
-                lambda: self._cmd_backup(parts[1:]),
+                lambda: self._cmd_backup(user_id, parts[1:]),
             frozenset(["/dominio", "/domain", "/ad"]):
-                lambda: self._cmd_dominio(parts[1:]),
+                lambda: self._cmd_dominio(user_id, parts[1:]),
             frozenset(["/softwares", "/apps", "/instalar"]):
-                lambda: self._cmd_softwares(parts[1:]),
+                lambda: self._cmd_softwares(user_id, parts[1:]),
             frozenset(["/reiniciar", "/reboot"]):
-                lambda: self._cmd_power(parts[1:], "restart"),
+                lambda: self._cmd_power(user_id, parts[1:], "restart"),
             frozenset(["/desligar", "/shutdown"]):
-                lambda: self._cmd_power(parts[1:], "shutdown"),
+                lambda: self._cmd_power(user_id, parts[1:], "shutdown"),
             frozenset(["/laudos", "/laudo", "/relatorios"]):
                 lambda: self._cmd_laudos(parts[1:]),
             frozenset(["/erro", "/error", "/bsod"]):
@@ -256,73 +256,97 @@ class TrueConfChatOps:
         ip = args[0]
         self._ensure_orchestrator()
 
-        if self.bot:
-            self.bot.send_direct_message(user_id, f"🔍 Coletando telemetria e S.M.A.R.T em {ip}...")
+        def _worker():
+            try:
+                diag    = self.orchestrator.run_diagnostics_only(ip=ip)
+                telem   = diag.get("telemetry", {})
+                ai_diag = diag.get("ai_diagnosis", "")
 
-        try:
-            diag    = self.orchestrator.run_diagnostics_only(ip=ip)
-            telem   = diag.get("telemetry", {})
-            ai_diag = diag.get("ai_diagnosis", "")
+                disks_str = "".join(
+                    f"\n   • {d.get('model')} ({d.get('size_gb')} GB) — Saúde: {d.get('health', 'OK')}"
+                    for d in telem.get("disks", [])
+                )
 
-            disks_str = "".join(
-                f"\n   • {d.get('model')} ({d.get('size_gb')} GB) — Saúde: {d.get('health', 'OK')}"
-                for d in telem.get("disks", [])
-            )
+                reply = (
+                    f"🩺 Diagnóstico Instantâneo de Hardware\n\n"
+                    f"📍 IP: {ip} | Host: {telem.get('computer_name', 'N/A')}\n"
+                    f"🏷️ Serial: {telem.get('serial_number', 'N/A')}\n"
+                    f"🧠 CPU: {telem.get('cpu', 'N/A')}\n"
+                    f"💾 RAM: {telem.get('ram_gb', 'N/A')} GB\n"
+                    f"💽 Armazenamento:{disks_str or ' Não detectado'}\n\n"
+                    f"🤖 Parecer Técnico da IA:\n\n"
+                    f"{ai_diag}\n\n"
+                    f"💡 Para aplicar um perfil: /preparar {ip} <cliente>"
+                )
+            except Exception as e:
+                reply = f"❌ Erro ao diagnosticar {ip}: {e}"
 
-            return (
-                f"🩺 Diagnóstico Instantâneo de Hardware\n\n"
-                f"📍 IP: {ip} | Host: {telem.get('computer_name', 'N/A')}\n"
-                f"🏷️ Serial: {telem.get('serial_number', 'N/A')}\n"
-                f"🧠 CPU: {telem.get('cpu', 'N/A')}\n"
-                f"💾 RAM: {telem.get('ram_gb', 'N/A')} GB\n"
-                f"💽 Armazenamento:{disks_str or ' Não detectado'}\n\n"
-                f"🤖 Parecer Técnico da IA:\n\n"
-                f"{ai_diag}\n\n"
-                f"💡 Para aplicar um perfil: /preparar {ip} <cliente>"
-            )
-        except Exception as e:
-            return f"❌ Erro ao diagnosticar {ip}: {e}"
+            if self.bot:
+                self.bot.send_direct_message(user_id, reply)
 
-    def _cmd_ativar(self, args: List[str]) -> str:
+        threading.Thread(target=_worker, daemon=True).start()
+        return f"🔍 Coletando telemetria e S.M.A.R.T em {ip}...\nAssim que o laudo da IA estiver pronto, enviarei aqui."
+
+    def _cmd_ativar(self, user_id: str, args: List[str]) -> str:
         if not args:
             return "⚠️ Uso: /ativar <IP>\nExemplo: /ativar 192.168.57.25"
-        ip  = args[0]
-        res = self.winrm.run_script_file(ip, "Activate-WindowsOffice.ps1")
-        if res["success"]:
-            return f"🔑 Ativação MAS Concluída em {ip}!\nWindows e Office ativados permanentemente."
-        return f"⚠️ Falha na ativação em {ip}: {res.get('stderr') or 'Erro de conexão WinRM'}"
+        ip = args[0]
 
-    def _cmd_backup(self, args: List[str]) -> str:
+        def _worker():
+            res = self.winrm.run_script_file(ip, "Activate-WindowsOffice.ps1")
+            if res["success"]:
+                reply = f"🔑 Ativação MAS Concluída em {ip}!\nWindows e Office ativados permanentemente."
+            else:
+                reply = f"⚠️ Falha na ativação em {ip}: {res.get('stderr') or 'Erro de conexão WinRM'}"
+            if self.bot:
+                self.bot.send_direct_message(user_id, reply)
+
+        threading.Thread(target=_worker, daemon=True).start()
+        return f"🔑 Executando ativação permanente (MAS) em {ip}..."
+
+    def _cmd_backup(self, user_id: str, args: List[str]) -> str:
         if not args:
             return "⚠️ Uso: /backup <IP>\nExemplo: /backup 192.168.57.25"
-        ip  = args[0]
-        res = self.winrm.run_script_file(ip, "Backup-UserProfile.ps1")
-        if res["success"]:
-            return (
-                f"💾 Backup Iniciado em {ip}!\n"
-                f"Dados do usuário sendo transferidos para o Storage (192.168.57.112)."
-            )
-        return f"⚠️ Falha ao iniciar backup em {ip}: {res.get('stderr') or 'Erro de conexão'}"
+        ip = args[0]
 
-    def _cmd_dominio(self, args: List[str]) -> str:
+        def _worker():
+            res = self.winrm.run_script_file(ip, "Backup-UserProfile.ps1")
+            if res["success"]:
+                reply = f"💾 Backup Concluído em {ip}!\nDados transferidos para o Storage (192.168.57.112)."
+            else:
+                reply = f"⚠️ Falha no backup em {ip}: {res.get('stderr') or 'Erro de conexão'}"
+            if self.bot:
+                self.bot.send_direct_message(user_id, reply)
+
+        threading.Thread(target=_worker, daemon=True).start()
+        return f"💾 Iniciando backup de dados do usuário em {ip} para o Storage..."
+
+    def _cmd_dominio(self, user_id: str, args: List[str]) -> str:
         if len(args) < 2:
             return "⚠️ Uso: /dominio <IP> <cliente|domínio>\nExemplo: /dominio 192.168.57.25 penserede.local"
-        ip         = args[0]
+        ip = args[0]
         dom_target = args[1]
 
-        profile     = self.profile_mgr.get_client_profile(dom_target)
-        domain_name = profile.get("dominio", dom_target) if profile else dom_target
+        def _worker():
+            profile     = self.profile_mgr.get_client_profile(dom_target)
+            domain_name = profile.get("dominio", dom_target) if profile else dom_target
 
-        res = self.winrm.run_script_file(
-            ip,
-            "Join-ActiveDirectory.ps1",
-            params={"DomainName": domain_name, "OUPath": "OU=Workstations,DC=penserede,DC=local"},
-        )
-        if res["success"]:
-            return f"🛡️ Ingresso no Domínio Concluído!\n{ip} conectada ao domínio {domain_name}."
-        return f"⚠️ Falha no ingresso ao domínio em {ip}: {res.get('stderr') or 'Verifique DNS e credenciais'}"
+            res = self.winrm.run_script_file(
+                ip,
+                "Join-ActiveDirectory.ps1",
+                params={"DomainName": domain_name, "OUPath": "OU=Workstations,DC=penserede,DC=local"},
+            )
+            if res["success"]:
+                reply = f"🛡️ Ingresso no Domínio Concluído!\n{ip} conectada ao domínio {domain_name}."
+            else:
+                reply = f"⚠️ Falha no ingresso ao domínio em {ip}: {res.get('stderr') or 'Verifique DNS e credenciais'}"
+            if self.bot:
+                self.bot.send_direct_message(user_id, reply)
 
-    def _cmd_softwares(self, args: List[str]) -> str:
+        threading.Thread(target=_worker, daemon=True).start()
+        return f"🛡️ Ingressando {ip} no domínio {dom_target}..."
+
+    def _cmd_softwares(self, user_id: str, args: List[str]) -> str:
         if len(args) < 2:
             return (
                 "⚠️ Uso: /softwares <IP> <app1,app2>\n"
@@ -330,21 +354,37 @@ class TrueConfChatOps:
             )
         ip   = args[0]
         pkgs = [p.strip() for p in args[1].split(",") if p.strip()]
-        res  = self.winrm.run_script_file(ip, "Install-CustomPackages.ps1", params={"Packages": ",".join(pkgs)})
-        if res["success"]:
-            return f"📦 Softwares Instalados em {ip}!\nPacotes: {', '.join(pkgs)}"
-        return f"⚠️ Falha na instalação em {ip}: {res.get('stderr') or 'Erro Winget'}"
 
-    def _cmd_power(self, args: List[str], action: str) -> str:
+        def _worker():
+            res = self.winrm.run_script_file(ip, "Install-CustomPackages.ps1", params={"Packages": ",".join(pkgs)})
+            if res["success"]:
+                reply = f"📦 Softwares Instalados em {ip}!\nPacotes: {', '.join(pkgs)}"
+            else:
+                reply = f"⚠️ Falha na instalação em {ip}: {res.get('stderr') or 'Erro Winget'}"
+            if self.bot:
+                self.bot.send_direct_message(user_id, reply)
+
+        threading.Thread(target=_worker, daemon=True).start()
+        return f"📦 Instalando pacotes ({', '.join(pkgs)}) em {ip} via Winget..."
+
+    def _cmd_power(self, user_id: str, args: List[str], action: str) -> str:
         if not args:
             return f"⚠️ Uso: /{action} <IP>"
         ip  = args[0]
         cmd = "Restart-Computer -Force" if action == "restart" else "Stop-Computer -Force"
-        res = self.winrm.execute_powershell(ip, cmd)
         act = "reiniciada" if action == "restart" else "desligada"
-        if res["success"]:
-            return f"🔌 Máquina {ip} está sendo {act}."
-        return f"⚠️ Falha ao executar comando de energia em {ip}."
+
+        def _worker():
+            res = self.winrm.execute_powershell(ip, cmd)
+            if res["success"]:
+                reply = f"🔌 Máquina {ip} foi {act} com sucesso."
+            else:
+                reply = f"⚠️ Falha ao executar comando de energia em {ip}."
+            if self.bot:
+                self.bot.send_direct_message(user_id, reply)
+
+        threading.Thread(target=_worker, daemon=True).start()
+        return f"🔌 Enviando comando para {act} {ip}..."
 
     def _cmd_laudos(self, args: List[str]) -> str:
         from reports.report_generator import ReportGenerator
