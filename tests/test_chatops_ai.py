@@ -134,6 +134,18 @@ class TestTrueConfChatOps(unittest.TestCase):
             reply = self.chatops.handle_incoming_message("nicolas", "quais máquinas estão ligadas agora?")
             self.assertIn("Nenhum computador ativo", reply)
 
+    def test_slash_message(self):
+        """Testa o comando /msg para envio de alerta na tela."""
+        reply = self.chatops.handle_incoming_message("nicolas", "/msg 192.168.57.59 Teste de aviso na tela")
+        self.assertIn("192.168.57.59", reply)
+        self.assertIn("Enviando mensagem", reply)
+
+    def test_natural_language_message(self):
+        """Testa envio de mensagem por linguagem natural."""
+        reply = self.chatops.handle_incoming_message("nicolas", 'manda uma mensagem para o IP 192.168.57.59 "Ultron está rodando"')
+        self.assertIn("192.168.57.59", reply)
+        self.assertIn("Enviando mensagem", reply)
+
     def test_conversational_ai_fallback(self):
         """Testa conversa livre com LLM mockado."""
         mock_analyzer = MagicMock()

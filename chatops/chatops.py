@@ -67,6 +67,7 @@ class TrueConfChatOps:
         parts = text.split()
         first_token = parts[0] if parts else ""
         norm_token = _normalize_token(first_token)
+        norm_text = _normalize_token(text)
 
         routes = {
             frozenset(["/ajuda", "/help", "/start", "ajuda", "help"]):
@@ -93,6 +94,8 @@ class TrueConfChatOps:
                 lambda: self._cmd_power(user_id, parts[1:], "restart"),
             frozenset(["/desligar", "/shutdown"]):
                 lambda: self._cmd_power(user_id, parts[1:], "shutdown"),
+            frozenset(["/msg", "/mensagem", "/notificar", "/alerta", "/aviso", "/popup"]):
+                lambda: self._cmd_message(user_id, parts[1:]),
             frozenset(["/laudos", "/laudo", "/relatorios"]):
                 lambda: self._cmd_laudos(parts[1:]),
             frozenset(["/erro", "/error", "/bsod"]):
@@ -109,13 +112,28 @@ class TrueConfChatOps:
             if norm_token in keywords:
                 return handler()
 
-        # 3. Erro hexadecimal Windows em texto livre (ex: 0x80070005)
+        # 3. Disparo de mensagem para o usuário por linguagem natural
+        # Ex: "manda uma mensagem para o IP 192.168.57.59 'Ultron está rodando'"
+        ip_match = re.search(r"\b(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})\b", text)
+        msg_action_kws = ["manda uma mensagem", "mandar mensagem", "enviar mensagem", "avisa o ip", "notifica o ip", "avise o ip", "mande uma mensagem"]
+        if ip_match and any(kw in norm_text for kw in msg_action_kws):
+            target_ip = ip_match.group(1)
+            # Extrai o texto da mensagem (entre aspas ou o resto da frase)
+            quoted = re.search(r'["\']([^"\']+)["\']', text)
+            if quoted:
+                clean_msg = quoted.group(1)
+            else:
+                # Remove o prefixo do comando para pegar o texto
+                clean_msg = re.sub(r'^(?:.*?)' + re.escape(target_ip) + r'[:\s-]*', '', text, flags=re.IGNORECASE).strip()
+            if clean_msg:
+                return self._cmd_message(user_id, [target_ip] + clean_msg.split())
+
+        # 4. Erro hexadecimal Windows em texto livre (ex: 0x80070005)
         hex_match = re.search(r"\b(0x[0-9a-fA-F]{8})\b", text)
         if hex_match:
             return self._cmd_erro([hex_match.group(1)])
 
-        # 4. Consulta rápida de bancada por linguagem natural
-        norm_text = _normalize_token(text)
+        # 5. Consulta rápida de bancada por linguagem natural
         bench_kws = [
             "tem maquina", "pcs na bancada", "bancada ta cheia",
             "computadores no lab", "quantas maquinas",
@@ -125,7 +143,7 @@ class TrueConfChatOps:
             if kw in norm_text:
                 return self._cmd_bancada(user_id)
 
-        # 5. IA Conversacional
+        # 6. IA Conversacional
         return self._handle_ai_conversation(user_id, text)
 
     # ------------------------------------------------------------------
@@ -139,6 +157,7 @@ class TrueConfChatOps:
             "• /bancada — Lista computadores ativos no lab\n"
             "• /preparar <IP> <cliente> — Inicia esteira completa de automação\n"
             "• /diagnostico <IP> — Diagnóstico de hardware e S.M.A.R.T\n"
+            "• /msg <IP> <texto> — Exibe mensagem na tela do usuário remoto (Pop-up/Alerta)\n"
             "• /ativar <IP> — Ativação do Windows e Office via MAS\n"
             "• /backup <IP> — Backup de dados do usuário para o Storage\n"
             "• /dominio <IP> <cliente> — Ingressa o computador no domínio\n"
@@ -153,7 +172,7 @@ class TrueConfChatOps:
             "• /cve <programa> — Consulta falhas de segurança conhecidas\n"
             "• /clima — Telemetria térmica do laboratório\n"
             "• /wan — IP público e link de internet\n\n"
-            "💬 Dica: Você também pode fazer perguntas técnicas em linguagem natural."
+            "💬 Dica: Você também pode fazer perguntas técnicas em linguagem natural ou mandar avisos (ex: 'manda uma mensagem para o IP 192.168.57.59 reiniciando em 5min')."
         )
 
     def _cmd_bancada(self, user_id: str) -> str:
@@ -407,6 +426,35 @@ class TrueConfChatOps:
 
         threading.Thread(target=_worker, daemon=True).start()
         return f"🔌 Enviando comando para {act} {ip}..."
+
+    def _cmd_message(self, user_id: str, args: List[str]) -> str:
+        if len(args) < 2:
+            return (
+                "⚠️ Uso: /msg <IP> <mensagem>\n"
+                "Exemplo: /msg 192.168.57.59 O laboratório está preparando a sua máquina."
+            )
+        ip = args[0]
+        msg_text = " ".join(args[1:]).strip('\'"')
+
+        def _worker():
+            res = self.winrm.run_script_file(
+                ip,
+                "Send-UserMessage.ps1",
+                params={
+                    "Message": msg_text,
+                    "Title": f"🤖 ULTRON SUPORTE (Técnico: {user_id.capitalize()})"
+                }
+            )
+            if res["success"]:
+                reply = f"📢 Mensagem exibida na tela do usuário em {ip} com sucesso!\n💬 Texto: \"{msg_text}\""
+            else:
+                reply = f"⚠️ Falha ao exibir mensagem na tela de {ip}: {res.get('stderr') or 'Máquina inacessível'}"
+
+            if self.bot:
+                self.bot.send_direct_message(user_id, reply)
+
+        threading.Thread(target=_worker, daemon=True).start()
+        return f"📢 Enviando mensagem para a tela do usuário em {ip}..."
 
     def _cmd_laudos(self, args: List[str]) -> str:
         from reports.report_generator import ReportGenerator
