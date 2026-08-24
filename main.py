@@ -26,7 +26,7 @@ import uvicorn
 from core.profile_manager import ProfileManager
 from core.network_scanner import NetworkScanner
 from core.orchestrator import LabOrchestrator
-from trueconf.bot import TrueConfBot
+from chatops.bot import TrueConfBot
 from core.public_tools import (
     MacVendorResolver,
     NetworkDiagnosticsService,
@@ -101,14 +101,16 @@ settings = profile_mgr.get_settings()
 tc_cfg = settings.get("trueconf", {})
 bot = TrueConfBot(
     server_url=tc_cfg.get("server_url", "https://trueconf.penserede.com.br"),
-    api_token=tc_cfg.get("bot_token", ""),
+    bot_username=tc_cfg.get("bot_username", "ultron"),
+    bot_password=tc_cfg.get("bot_password", ""),
+    api_token=tc_cfg.get("api_token", tc_cfg.get("bot_token", "")),
     default_tech_user_id=tc_cfg.get("default_tech_user_id", "nicolas.silva")
 )
 
 @app.on_event("startup")
 async def startup_event():
     manager.set_loop(asyncio.get_running_loop())
-    if bot.api_token:
+    if bot.bot_password or bot.api_token:
         bot.start_polling(interval_sec=3)
 
 @app.on_event("shutdown")

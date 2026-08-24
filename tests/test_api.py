@@ -264,7 +264,7 @@ def test_trueconf_endpoint():
     print("✅ ChatOps /preparar OK: Disparo assíncrono iniciado")
 
     # 10. ChatOps: Diálogo Interativo (MDT Hook + Resposta numérica "1")
-    from trueconf.bot import TrueConfBot
+    from chatops.bot import TrueConfBot
     tc_bot = TrueConfBot(server_url="http://trueconf.penserede.local", api_token="")
     prompt_mdt = tc_bot.chatops.register_mdt_arrival(user_id="nicolas", ip="192.168.57.99", serial="BRG999TEST")
     assert "Nova Máquina Pronta no MDT" in prompt_mdt

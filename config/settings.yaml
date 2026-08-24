@@ -32,10 +32,12 @@ switch:
   type: mikrotik_ssh
   user: admin
 trueconf:
-  bot_token: DH233ZbAAlnzc3b2suuFjwjyXhHRLob2
+  server_url: https://trueconf.penserede.com.br
+  bot_username: ultron
+  bot_password: 55JnRSa8UsS10GnF4Q65
+  api_token: DH233ZbAAlnzc3b2suuFjwjyXhHRLob2
   channel_id: lab_bench_channel
   default_tech_user_id: nicolas.silva
-  server_url: https://trueconf.penserede.com.br
 winrm:
   default_pass: SenhaTemporariaLab123!
   default_user: Administrator

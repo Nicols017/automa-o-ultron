@@ -12,7 +12,7 @@ from core.profile_manager import ProfileManager
 from core.diagnostic_analyzer import DiagnosticAnalyzer
 from core.switch_identifier import SwitchIdentifier
 from reports.report_generator import ReportGenerator
-from trueconf.bot import TrueConfBot
+from chatops.bot import TrueConfBot
 
 class LabOrchestrator:
     def __init__(self):
@@ -38,7 +38,9 @@ class LabOrchestrator:
         tc_cfg = self.settings.get("trueconf", {})
         self.bot = TrueConfBot(
             server_url=tc_cfg.get("server_url", "https://trueconf.penserede.com.br"),
-            api_token=tc_cfg.get("bot_token", ""),
+            bot_username=tc_cfg.get("bot_username", "ultron"),
+            bot_password=tc_cfg.get("bot_password", ""),
+            api_token=tc_cfg.get("api_token", tc_cfg.get("bot_token", "")),
             default_tech_user_id=tc_cfg.get("default_tech_user_id", "nicolas.silva")
         )
 

@@ -16,7 +16,7 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.diagnostic_analyzer import DiagnosticAnalyzer
-from trueconf.chatops import TrueConfChatOps
+from chatops.chatops import TrueConfChatOps
 
 class TestDiagnosticAnalyzer(unittest.TestCase):
 
