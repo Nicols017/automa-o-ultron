@@ -6,6 +6,7 @@ After=network.target ollama.service
 Type=simple
 User=root
 WorkingDirectory=/opt/ultron-automation
+ExecStartPre=-/usr/bin/fuser -k 8000/tcp
 ExecStart=/opt/ultron-automation/venv/bin/python main.py
 Restart=always
 RestartSec=5
