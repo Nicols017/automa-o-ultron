@@ -131,10 +131,16 @@ class TrueConfBot:
                         user_id = str(raw_author).split("@")[0] if "@" in str(raw_author) else str(raw_author)
 
                         logger.info(f"📩 Mensagem recebida de {user_id}: {text}")
-                        reply = self.chatops.handle_incoming_message(user_id=user_id, message=text)
+                        
+                        # Executa o ChatOps em thread separada para NUNCA travar os pings do WebSocket
+                        reply = await asyncio.to_thread(self.chatops.handle_incoming_message, user_id, text)
                         if reply:
-                            await msg.answer(reply, parse_mode=ParseMode.TEXT)
-                            logger.info(f"📤 Resposta enviada para {user_id}")
+                            try:
+                                await msg.answer(reply, parse_mode=ParseMode.TEXT)
+                                logger.info(f"📤 Resposta enviada para {user_id}")
+                            except Exception as send_err:
+                                logger.warning(f"Falha ao responder via msg.answer ({send_err}). Enviando DM direta...")
+                                self.send_direct_message(user_id, reply)
                     except Exception as err:
                         logger.error(f"Erro ao processar mensagem do TrueConf: {err}", exc_info=True)
 
@@ -187,22 +193,29 @@ class TrueConfBot:
     async def _async_send_dm(self, user_id: str, message: str) -> bool:
         """Cria chat P2P e envia mensagem via WebSocket"""
         try:
+            if not self._bot:
+                return False
+
             # 1. Obtém ou cria chat P2P com o usuário
             chat_id = self._p2p_chats.get(user_id)
             if not chat_id:
                 chat_resp = await self._bot.create_personal_chat(user_id=user_id)
-                chat_id = chat_resp.chat_id
-                self._p2p_chats[user_id] = chat_id
+                chat_id = getattr(chat_resp, "chat_id", None) or getattr(chat_resp, "id", None)
+                if chat_id:
+                    self._p2p_chats[user_id] = str(chat_id)
 
             # 2. Envia a mensagem com formatação de texto limpa
-            await self._bot.send_message(
-                chat_id=chat_id,
-                text=message,
-                parse_mode=ParseMode.TEXT
-            )
-            return True
+            if chat_id:
+                await self._bot.send_message(
+                    chat_id=chat_id,
+                    text=message,
+                    parse_mode=ParseMode.TEXT
+                )
+                return True
+            return False
         except Exception as e:
             logger.error(f"Erro em _async_send_dm para {user_id}: {e}")
+            self._p2p_chats.pop(user_id, None)
             return False
 
     def _rest_send_dm(self, user_id: str, message: str) -> bool:
