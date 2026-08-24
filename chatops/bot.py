@@ -72,7 +72,11 @@ class TrueConfBot:
         self._is_running = False
         if self._loop and self._loop.is_running():
             if self._bot:
-                asyncio.run_coroutine_threadsafe(self._shutdown_bot(), self._loop)
+                try:
+                    future = asyncio.run_coroutine_threadsafe(self._shutdown_bot(), self._loop)
+                    future.result(timeout=4)
+                except Exception:
+                    pass
             self._loop.call_soon_threadsafe(self._loop.stop)
         logger.info("🛑 TrueConf Bot parado.")
 
@@ -129,8 +133,14 @@ class TrueConfBot:
                     verify_ssl=False
                 )
 
-                # Roda o bot (bloqueia até shutdown ou queda de conexão)
-                await self._bot.run()
+                # Inicia a conexão WebSocket e aguarda autorização
+                await self._bot.start()
+                await self._bot.authorized_event.wait()
+                logger.info(f"🟢 Ultron Bot autenticado e ONLINE em {self.server_host}!")
+
+                # Mantém o worker ativo escutando eventos enquanto o serviço rodar
+                while self._is_running and not self._bot.stopped_event.is_set():
+                    await asyncio.sleep(0.5)
 
             except Exception as e:
                 logger.warning(f"Conexão do TrueConf Bot oscilou: {e}. Reconectando em 5 segundos...")
