@@ -7,7 +7,7 @@ import os
 import socket
 import winrm
 import yaml
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 
 class WinRMExecutor:
     def __init__(self, config_path: str = None):
@@ -74,6 +74,20 @@ class WinRMExecutor:
             server_cert_validation="ignore"
         )
 
+    def _get_credential_candidates(self, username: Optional[str] = None, password: Optional[str] = None) -> List[Tuple[str, str]]:
+        primary_user = username or self.default_user
+        primary_pass = password or self.default_pass
+        
+        candidates = [(primary_user, primary_pass)]
+        
+        # Alterna entre Administrator e Administrador (padrão EN/PT-BR do Windows)
+        if primary_user.lower() == "administrator":
+            candidates.append(("Administrador", primary_pass))
+        elif primary_user.lower() == "administrador":
+            candidates.append(("Administrator", primary_pass))
+
+        return candidates
+
     def run_powershell_code(
         self,
         ip: str,
@@ -82,7 +96,7 @@ class WinRMExecutor:
         password: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Executa um código arbitrário em PowerShell na máquina remota.
+        Executa um código arbitrário em PowerShell na máquina remota com fallback de credenciais.
         """
         if not self.test_connection(ip):
             return {
@@ -93,28 +107,38 @@ class WinRMExecutor:
                 "ip": ip
             }
 
-        try:
-            session = self.get_session(ip, username, password)
-            response = session.run_ps(script_code)
-            
-            stdout_str = response.std_out.decode("utf-8", errors="replace").strip() if response.std_out else ""
-            stderr_str = response.std_err.decode("utf-8", errors="replace").strip() if response.std_err else ""
-            
-            return {
-                "success": response.status_code == 0,
-                "status_code": response.status_code,
-                "stdout": stdout_str,
-                "stderr": stderr_str,
-                "ip": ip
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "status_code": -1,
-                "stdout": "",
-                "stderr": f"Erro durante a execução WinRM: {str(e)}",
-                "ip": ip
-            }
+        last_error = ""
+        for user, pwd in self._get_credential_candidates(username, password):
+            try:
+                session = self.get_session(ip, user, pwd)
+                response = session.run_ps(script_code)
+                
+                stdout_str = response.std_out.decode("utf-8", errors="replace").strip() if response.std_out else ""
+                stderr_str = response.std_err.decode("utf-8", errors="replace").strip() if response.std_err else ""
+                
+                # Se autenticou com sucesso (mesmo que o script retorne erro de execução)
+                if response.status_code == 0 or "credentials were rejected" not in stderr_str:
+                    return {
+                        "success": response.status_code == 0,
+                        "status_code": response.status_code,
+                        "stdout": stdout_str,
+                        "stderr": stderr_str,
+                        "ip": ip,
+                        "user_used": user
+                    }
+                last_error = stderr_str
+            except Exception as e:
+                last_error = str(e)
+                if "credentials were rejected" not in str(e).lower() and "401" not in str(e):
+                    break
+
+        return {
+            "success": False,
+            "status_code": -1,
+            "stdout": "",
+            "stderr": f"Erro durante a execução WinRM: {last_error}",
+            "ip": ip
+        }
 
     def run_script_file(
         self,
