@@ -100,7 +100,7 @@ class TrueConfBot:
             pass
 
     async def _bot_lifecycle(self):
-        """Mantém o bot conectado e reconecta automaticamente em caso de queda de rede"""
+        """Mantém o bot conectado e reconecta automaticamente em qualquer caso de queda ou oscilação"""
         while self._is_running:
             try:
                 if not TRUECONF_LIB_AVAILABLE:
@@ -138,8 +138,9 @@ class TrueConfBot:
                     except Exception as err:
                         logger.error(f"Erro ao processar mensagem do TrueConf: {err}", exc_info=True)
 
-                logger.info(f"🔑 Autenticando bot {self.bot_username} em {self.server_host}...")
+                logger.info(f"🔑 Conectando Ultron Bot em {self.server_host}...")
                 
+                self._p2p_chats.clear()
                 self._bot = Bot.from_credentials(
                     server=self.server_host,
                     username=self.bot_username,
@@ -151,9 +152,14 @@ class TrueConfBot:
                 # Inicia o loop do bot sem capturar sinais do SO (pois roda em thread de fundo)
                 await self._bot.run(handle_signals=False)
 
+            except asyncio.CancelledError:
+                break
             except Exception as e:
-                logger.warning(f"Conexão do TrueConf Bot oscilou: {e}. Reconectando em 5 segundos...")
-                await asyncio.sleep(5)
+                logger.warning(f"Conexão do TrueConf Bot oscilou: {e}. Reconectando em 3 segundos...")
+            
+            # Aguarda antes da próxima tentativa se ainda estiver rodando
+            if self._is_running:
+                await asyncio.sleep(3)
 
     def send_direct_message(self, user_id: str, message: str) -> bool:
         """

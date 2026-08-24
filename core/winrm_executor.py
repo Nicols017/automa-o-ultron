@@ -43,9 +43,26 @@ class WinRMExecutor:
         except Exception:
             return False
 
+    def is_smb_rpc_reachable(self, ip: str, timeout: float = 2.0) -> bool:
+        """
+        Verifica se as portas administrativas SMB (445) ou RPC (135) estão acessíveis.
+        """
+        for port in [445, 135]:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(timeout)
+                res = sock.connect_ex((ip, port))
+                sock.close()
+                if res == 0:
+                    return True
+            except Exception:
+                pass
+        return False
+
     def get_session(self, ip: str, username: Optional[str] = None, password: Optional[str] = None) -> winrm.Session:
         """
         Cria uma sessão WinRM autenticada com a máquina alvo.
+        Executa 100% silencioso em Session 0 (invisível ao usuário).
         """
         user = username or self.default_user
         pwd = password or self.default_pass
