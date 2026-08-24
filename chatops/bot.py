@@ -146,6 +146,7 @@ class TrueConfBot:
                     username=self.bot_username,
                     password=self.bot_password,
                     dispatcher=dp,
+                    receive_unread_messages=True,
                     verify_ssl=False,
                     ws_max_retries=-1,
                     ws_max_delay=5
