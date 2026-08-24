@@ -61,9 +61,9 @@ class LabOrchestrator:
         telemetry_res = self.winrm.run_script_file(ip, "Inspect-SystemLogs.ps1")
         
         telemetry_data = {}
+        error_msg = None
         if telemetry_res["success"] and telemetry_res["stdout"]:
             try:
-                # Localiza o JSON na saída
                 stdout = telemetry_res["stdout"]
                 json_start = stdout.find("{")
                 json_end = stdout.rfind("}") + 1
@@ -71,17 +71,17 @@ class LabOrchestrator:
                     telemetry_data = json.loads(stdout[json_start:json_end])
             except Exception as e:
                 log(f"⚠️ Erro ao parsear JSON de telemetria: {e}", level="warning")
+                error_msg = f"Erro ao processar dados de telemetria da máquina: {e}"
+        else:
+            error_msg = telemetry_res.get("stderr") or f"Host {ip}:5985 inacessível ou sem resposta WinRM."
 
-        # Se não conseguiu obter via script, preenche com dados básicos
-        if not telemetry_data:
-            telemetry_data = {
-                "computer_name": f"PC-{ip.split('.')[-1]}",
-                "serial_number": "N/A",
-                "cpu": "Detectado via WinRM",
-                "ram_gb": "N/A",
-                "disks": [],
-                "bsod_dumps": [],
-                "device_errors": []
+        if error_msg or not telemetry_data:
+            return {
+                "ip": ip,
+                "success": False,
+                "error": error_msg or "Dados de telemetria não puderam ser extraídos da máquina.",
+                "telemetry": {},
+                "ai_diagnosis": ""
             }
 
         log(f"🧠 [ULTRON] Processando diagnóstico com IA na RTX 5060 Ti...")
@@ -89,6 +89,7 @@ class LabOrchestrator:
 
         return {
             "ip": ip,
+            "success": True,
             "telemetry": telemetry_data,
             "ai_diagnosis": ai_verdict
         }

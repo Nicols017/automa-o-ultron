@@ -258,28 +258,50 @@ class TrueConfChatOps:
 
         def _worker():
             try:
-                diag    = self.orchestrator.run_diagnostics_only(ip=ip)
-                telem   = diag.get("telemetry", {})
-                ai_diag = diag.get("ai_diagnosis", "")
+                diag = self.orchestrator.run_diagnostics_only(ip=ip)
+                if not diag.get("success", True) or diag.get("error"):
+                    err = diag.get("error", "Host inacessível via WinRM na porta 5985.")
+                    reply = (
+                        f"❌ Falha de Conexão WinRM com a Máquina {ip}\n\n"
+                        f"⚠️ Motivo: {err}\n\n"
+                        f"🔍 O que verificar na máquina alvo:\n"
+                        f"1. A máquina está ligada e com o Windows ativo na rede 192.168.57.X?\n"
+                        f"2. O WinRM está habilitado? (Execute 'Enable-PSRemoting -Force' no PowerShell)\n"
+                        f"3. A senha do Administrador local bate com o settings.yaml ('SenhaTemporariaLab123!')?"
+                    )
+                else:
+                    telem   = diag.get("telemetry", {})
+                    ai_diag = diag.get("ai_diagnosis", "")
 
-                disks_str = "".join(
-                    f"\n   • {d.get('model')} ({d.get('size_gb')} GB) — Saúde: {d.get('health', 'OK')}"
-                    for d in telem.get("disks", [])
-                )
+                    disks_list = []
+                    for d in telem.get("disks", []):
+                        health_icon = "🟢" if d.get("health") in ["Healthy", "OK", "0"] else "🔴"
+                        disks_list.append(
+                            f"\n   • {health_icon} {d.get('model')} ({d.get('size_gb')} GB, {d.get('type')}) — Saúde: {d.get('health', 'OK')}"
+                        )
+                    disks_str = "".join(disks_list)
 
-                reply = (
-                    f"🩺 Diagnóstico Instantâneo de Hardware\n\n"
-                    f"📍 IP: {ip} | Host: {telem.get('computer_name', 'N/A')}\n"
-                    f"🏷️ Serial: {telem.get('serial_number', 'N/A')}\n"
-                    f"🧠 CPU: {telem.get('cpu', 'N/A')}\n"
-                    f"💾 RAM: {telem.get('ram_gb', 'N/A')} GB\n"
-                    f"💽 Armazenamento:{disks_str or ' Não detectado'}\n\n"
-                    f"🤖 Parecer Técnico da IA:\n\n"
-                    f"{ai_diag}\n\n"
-                    f"💡 Para aplicar um perfil: /preparar {ip} <cliente>"
-                )
+                    bsods = telem.get("bsod_dumps", [])
+                    bsod_str = f"\n⚠️ Telas Azuis (BSOD) recentes: {len(bsods)} detectada(s)" if bsods else "\n🛡️ Telas Azuis (BSOD): Nenhuma detectada"
+
+                    dev_errs = telem.get("device_errors", [])
+                    dev_str = f"\n⚠️ Dispositivos com erro de driver: {len(dev_errs)}" if dev_errs else "\n🛡️ Gerenciador de Dispositivos: Todos drivers operacionais"
+
+                    reply = (
+                        f"🩺 DIAGNÓSTICO COMPLETO DE HARDWARE\n\n"
+                        f"📍 IP: {ip} | Host: {telem.get('computer_name', 'N/A')}\n"
+                        f"🏷️ Serial: {telem.get('serial_number', 'N/A')}\n"
+                        f"🧠 Processador (CPU): {telem.get('cpu', 'N/A')}\n"
+                        f"💾 Memória RAM: {telem.get('ram_gb', 'N/A')} GB\n"
+                        f"💽 Armazenamento (S.M.A.R.T):{disks_str or ' Não detectado'}"
+                        f"{bsod_str}"
+                        f"{dev_str}\n\n"
+                        f"🤖 PARECER TÉCNICO DA IA:\n\n"
+                        f"{ai_diag}\n\n"
+                        f"💡 Para preparar a máquina: /preparar {ip} <cliente>"
+                    )
             except Exception as e:
-                reply = f"❌ Erro ao diagnosticar {ip}: {e}"
+                reply = f"❌ Erro inesperado ao diagnosticar {ip}: {e}"
 
             if self.bot:
                 self.bot.send_direct_message(user_id, reply)
