@@ -5,7 +5,7 @@ Gerencia o fluxo completo de automação: Conexão, Telemetria, IA, Instalação
 
 import json
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from core.winrm_executor import WinRMExecutor
 from core.profile_manager import ProfileManager
