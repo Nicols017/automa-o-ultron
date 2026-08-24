@@ -112,16 +112,34 @@ class TrueConfBot:
                 router = Router()
                 dp.include_router(router)
 
-                @router.message(F.text)
+                @router.message()
                 async def handle_message(msg: Message):
                     try:
-                        raw_sender = msg.sender or ""
-                        user_id = raw_sender.split("@")[0] if "@" in raw_sender else raw_sender
-                        reply = self.chatops.handle_incoming_message(user_id=user_id, message=msg.text)
+                        text = msg.text or ""
+                        if not text and hasattr(msg, "content") and hasattr(msg.content, "text"):
+                            text = msg.content.text or ""
+                        if not text:
+                            return
+
+                        raw_author = None
+                        if hasattr(msg, "author") and msg.author:
+                            raw_author = getattr(msg.author, "id", None)
+                        elif hasattr(msg, "from_user") and msg.from_user:
+                            raw_author = getattr(msg.from_user, "id", None)
+                        
+                        raw_author = raw_author or self.default_tech_user_id
+                        user_id = str(raw_author).split("@")[0] if "@" in str(raw_author) else str(raw_author)
+
+                        logger.info(f"📩 Mensagem recebida de {user_id}: {text}")
+                        reply = self.chatops.handle_incoming_message(user_id=user_id, message=text)
                         if reply:
-                            await msg.answer(reply, parse_mode=ParseMode.MARKDOWN)
+                            try:
+                                await msg.answer(reply, parse_mode=ParseMode.MARKDOWN)
+                            except Exception:
+                                await msg.answer(reply, parse_mode=ParseMode.TEXT)
+                            logger.info(f"📤 Resposta enviada para {user_id}")
                     except Exception as err:
-                        logger.error(f"Erro ao processar mensagem do TrueConf: {err}")
+                        logger.error(f"Erro ao processar mensagem do TrueConf: {err}", exc_info=True)
 
                 logger.info(f"🔑 Autenticando bot {self.bot_username} em {self.server_host}...")
                 
