@@ -133,10 +133,7 @@ class TrueConfBot:
                         logger.info(f"📩 Mensagem recebida de {user_id}: {text}")
                         reply = self.chatops.handle_incoming_message(user_id=user_id, message=text)
                         if reply:
-                            try:
-                                await msg.answer(reply, parse_mode=ParseMode.MARKDOWN)
-                            except Exception:
-                                await msg.answer(reply, parse_mode=ParseMode.TEXT)
+                            await msg.answer(reply, parse_mode=ParseMode.TEXT)
                             logger.info(f"📤 Resposta enviada para {user_id}")
                     except Exception as err:
                         logger.error(f"Erro ao processar mensagem do TrueConf: {err}", exc_info=True)
@@ -188,11 +185,11 @@ class TrueConfBot:
                 chat_id = chat_resp.chat_id
                 self._p2p_chats[user_id] = chat_id
 
-            # 2. Envia a mensagem
+            # 2. Envia a mensagem com formatação de texto limpa
             await self._bot.send_message(
                 chat_id=chat_id,
                 text=message,
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.TEXT
             )
             return True
         except Exception as e:

@@ -144,7 +144,7 @@ class TestTrueConfChatOps(unittest.TestCase):
         self.chatops.orchestrator = mock_orch
 
         reply = self.chatops.handle_incoming_message("nicolas", "como coloco o pc no dominio?")
-        self.assertIn("🤖 **Ultron:**", reply)
+        self.assertIn("🤖 Ultron:", reply)
         self.assertIn("/dominio", reply)
 
 if __name__ == "__main__":
