@@ -83,7 +83,7 @@ class DiagnosticAnalyzer:
     # Chamadas aos Provedores de LLM
     # ------------------------------------------------------------------
 
-    def _call_ollama(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+    def _call_ollama(self, prompt: str, system_prompt: Optional[str] = None, retry_fallback: bool = True) -> str:
         url = f"{self.base_url}/api/generate"
         payload = {
             "model": self.model,
@@ -91,7 +91,9 @@ class DiagnosticAnalyzer:
             "system": system_prompt or self.DEFAULT_SYSTEM_PROMPT,
             "stream": False,
             "options": {
-                "temperature": self.temperature
+                "temperature": self.temperature,
+                "num_ctx": 2048,
+                "num_predict": 1024,
             }
         }
         headers = {"Content-Type": "application/json"}
@@ -106,8 +108,19 @@ class DiagnosticAnalyzer:
             try:
                 err_json = response.json()
                 err_msg = err_json.get("error", "")
+                # Se faltar memória para o modelo atual, tenta fallback para llama3:latest ou qwen2.5:7b
+                if "requires more system memory" in err_msg and retry_fallback:
+                    alt_model = "llama3:latest" if self.model != "llama3:latest" else "qwen2.5:7b"
+                    orig_model = self.model
+                    self.model = alt_model
+                    try:
+                        res = self._call_ollama(prompt, system_prompt, retry_fallback=False)
+                        self.model = orig_model
+                        return res
+                    except Exception:
+                        self.model = orig_model
                 if "requires more system memory" in err_msg:
-                    return f"⚠️ O modelo '{self.model}' requer mais memória que o disponível ({err_msg}). Recomenda-se usar um modelo otimizado como 'qwen2.5:3b' rodando 'ollama run qwen2.5:3b'."
+                    return f"⚠️ O modelo '{self.model}' requer mais memória que o disponível no momento ({err_msg}). Execute 'sudo systemctl restart ollama' no Linux para liberar a VRAM."
             except Exception:
                 pass
             return f"⚠️ Erro na API Ollama (Status {response.status_code}): {response.text}"
