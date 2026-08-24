@@ -1,0 +1,23 @@
+# Perfil Padrão de Exemplo para Cliente da Pense Rede
+cliente_id: "cliente_padrao"
+nome_exibicao: "Perfil Padrão Pense Rede"
+
+dominio:
+  inserir: false
+  nome: ""
+  ou_path: ""
+  credencial_key: ""
+
+softwares:
+  winget:
+    - "Google.Chrome"
+    - "Mozilla.Firefox"
+    - "7zip.7zip"
+    - "Foxit.FoxitReader"
+    - "AnyDeskSoftwareGmbH.AnyDesk"
+
+configuracoes:
+  nome_computador_prefixo: "LAB-PC-"
+  otimizar_desempenho: true
+  ativar_rdp: true
+  remover_bloatware: true

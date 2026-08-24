@@ -1,0 +1,42 @@
+llm:
+  api_key: ''
+  base_url: http://localhost:11434
+  model: qwen3.5:latest
+  provider: ollama
+  temperature: 0.2
+network:
+  backup_server_ip: 192.168.57.112
+  backup_share: \\192.168.57.112\Backups
+  lab_subnet: 192.168.57.0/24
+  mdt_server_ip: 192.168.57.87
+  milvus_api_token: TEST_TOKEN_MASTER_123
+  milvus_dashboard_url: http://192.168.57.7
+  milvus_demo_mode: true
+  milvus_share: \\192.168.57.87\MilvusAgents
+  software_share: \\192.168.57.87\Softwares
+  ultron_ip: 192.168.57.43
+server:
+  env: production
+  host: 0.0.0.0
+  port: 8000
+switch:
+  enabled: false
+  host: 192.168.57.1
+  password: SenhaDoSwitchLab123!
+  ports_mapping:
+    ether1: Bancada 01 (Cabo Azul)
+    ether2: Bancada 02 (Cabo Verde)
+    ether3: Bancada 03 (Cabo Vermelho)
+    ether4: Bancada 04 (Cabo Amarelo)
+    ether5: Bancada 05 (Notebooks)
+  type: mikrotik_ssh
+  user: admin
+trueconf:
+  bot_token: DH233ZbAAlnzc3b2suuFjwjyXhHRLob2
+  channel_id: lab_bench_channel
+  default_tech_user_id: nicolas.silva
+  server_url: https://trueconf.penserede.com.br
+winrm:
+  default_pass: SenhaTemporariaLab123!
+  default_user: Administrator
+  port: 5985

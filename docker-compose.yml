@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  ultron:
+    build: .
+    container_name: ultron-lab-agent
+    restart: unless-stopped
+    network_mode: host # Permite escanear e comunicar diretamente com a rede 192.168.57.0/24 e com o Ollama local
+    volumes:
+      - ./config:/app/config
+      - ./reports:/app/reports
+      - ./scripts:/app/scripts
+      - ./templates:/app/templates
+      - ./static:/app/static
+    environment:
+      - PYTHONUNBUFFERED=1
+      - OLLAMA_HOST=http://127.0.0.1:11434

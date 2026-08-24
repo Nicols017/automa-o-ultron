@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultron | Lab Automation Platform</title>
+    
+    <!-- Fonts: Geist (Vercel) + JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+      @font-face {
+        font-family: 'Geist';
+        src: url('https://cdn.jsdelivr.net/npm/geist@1.2.1/dist/fonts/geist-sans/Geist-Regular.woff2') format('woff2');
+        font-weight: 400; font-style: normal; font-display: swap;
+      }
+      @font-face {
+        font-family: 'Geist';
+        src: url('https://cdn.jsdelivr.net/npm/geist@1.2.1/dist/fonts/geist-sans/Geist-Medium.woff2') format('woff2');
+        font-weight: 500; font-style: normal; font-display: swap;
+      }
+      @font-face {
+        font-family: 'Geist';
+        src: url('https://cdn.jsdelivr.net/npm/geist@1.2.1/dist/fonts/geist-sans/Geist-SemiBold.woff2') format('woff2');
+        font-weight: 600; font-style: normal; font-display: swap;
+      }
+      @font-face {
+        font-family: 'Geist';
+        src: url('https://cdn.jsdelivr.net/npm/geist@1.2.1/dist/fonts/geist-sans/Geist-Bold.woff2') format('woff2');
+        font-weight: 700; font-style: normal; font-display: swap;
+      }
+    </style>
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- Top Navigation Header -->
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="brand-group">
+                <div class="brand-badge">
+                    <i data-lucide="cpu" class="brand-icon"></i>
+                </div>
+                <div class="brand-text">
+                    <span class="brand-title">ULTRON</span>
+                    <span class="brand-sub">Lab Automation Platform</span>
+                </div>
+            </div>
+
+            <!-- Live Telemetry & Infrastructure Cluster -->
+            <div class="status-cluster">
+                <!-- WAN Telemetry Quick Pill -->
+                <div id="header-wan-pill" class="status-pill cursor-pointer" onclick="switchTab('tools')" title="WAN Telemetry (Clique para abrir utilitários)">
+                    <i data-lucide="globe" class="text-accent"></i>
+                    <span id="header-wan-text" class="status-label">WAN: Coletando...</span>
+                </div>
+
+                <!-- Lab Ambient Temp Quick Pill -->
+                <div id="header-thermal-pill" class="status-pill cursor-pointer" onclick="switchTab('tools')" title="Clima Lab Live (Clique para abrir utilitários)">
+                    <i data-lucide="thermometer" class="text-warning"></i>
+                    <span id="header-temp-text" class="status-label">Lab: --°C</span>
+                </div>
+
+                <!-- Core Infrastructure Services -->
+                <div class="status-pill" title="Ultron Engine Core">
+                    <span id="status-ultron" class="status-indicator online"></span>
+                    <span class="status-label">Ultron Core</span>
+                </div>
+                <div class="status-pill" title="MDT & PXE Server (192.168.57.87)">
+                    <span id="status-mdt" class="status-indicator pulsing"></span>
+                    <span class="status-label">MDT / PXE</span>
+                </div>
+                <div class="status-pill" title="Macrium Storage (192.168.57.112)">
+                    <span id="status-macrium" class="status-indicator pulsing"></span>
+                    <span class="status-label">Storage</span>
+                </div>
+                <div id="status-milvus-pill" class="status-pill status-pill-interactive" onclick="openMilvusModal()" title="Milvus Dashboard (Clique para gerenciar Conexão e Tokens)">
+                    <span id="status-milvus" class="status-indicator pulsing"></span>
+                    <span class="status-label">Milvus</span>
+                    <i data-lucide="settings" class="pill-gear-icon"></i>
+                </div>
+                <div class="status-pill status-pill-interactive" onclick="testTrueConfPrompt()" title="TrueConf Bot Notifier (Clique para testar envio de mensagem privada)">
+                    <span id="status-trueconf" class="status-indicator pulsing"></span>
+                    <span class="status-label">TrueConf</span>
+                    <i data-lucide="send" class="pill-gear-icon"></i>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="app-workspace">
+        <!-- Navigation Tabs -->
+        <nav class="tab-bar">
+            <button class="tab-item active" data-tab="bench">
+                <i data-lucide="monitor"></i>
+                <span>Bancada</span>
+            </button>
+            <button class="tab-item" data-tab="pipeline">
+                <i data-lucide="play-circle"></i>
+                <span>Esteira</span>
+            </button>
+            <button class="tab-item" data-tab="reports">
+                <i data-lucide="file-text"></i>
+                <span>Laudos</span>
+            </button>
+            <button class="tab-item" data-tab="tools">
+                <i data-lucide="wrench"></i>
+                <span>Telemetria & Utilitários</span>
+            </button>
+        </nav>
+
+        <!-- SECTION 1: Bancada ao Vivo -->
+        <section id="section-bench" class="view-section active">
+            <div class="view-toolbar">
+                <div>
+                    <h1 class="view-heading">Dispositivos em Bancada</h1>
+                    <p class="view-subheading">
+                        Subrede do laboratório: <code class="mono-tag">192.168.57.0/24</code>
+                    </p>
+                </div>
+                <div class="toolbar-actions">
+                    <button id="btn-scan" class="btn btn-primary" onclick="scanBenchNetwork()">
+                        <i data-lucide="refresh-cw"></i>
+                        <span>Varrer Rede</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Device Grid -->
+            <div id="bench-grid" class="bench-cards-grid">
+                <div class="empty-state-box">
+                    <i data-lucide="loader-2" class="spin-icon"></i>
+                    <p>Detectando dispositivos na rede...</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 2: Esteira de Automação -->
+        <section id="section-pipeline" class="view-section">
+            <div class="view-toolbar">
+                <div>
+                    <h1 class="view-heading">Orquestração da Esteira</h1>
+                    <p class="view-subheading">
+                        Execução de tarefas, provisionamento e logs em tempo real via WebSocket.
+                    </p>
+                </div>
+            </div>
+
+            <div class="pipeline-layout">
+                <!-- Target Configuration Card -->
+                <div class="surface-card">
+                    <div class="card-header-clean">
+                        <i data-lucide="sliders"></i>
+                        <h2>Configuração do Alvo</h2>
+                    </div>
+
+                    <form onsubmit="startPipelineExecution(event)" class="form-stack">
+                        <!-- Milvus Ticket Quick Selector -->
+                        <div class="form-field">
+                            <div class="field-header">
+                                <label for="ticket-select">Chamado Milvus</label>
+                                <button type="button" class="btn-text-action" onclick="loadMilvusTickets(true)" title="Sincronizar chamados">
+                                    <i data-lucide="rotate-cw"></i> Sincronizar
+                                </button>
+                            </div>
+                            <select id="ticket-select" class="form-select" onchange="onMilvusTicketSelected()">
+                                <option value="">-- Seleção manual ou avulsa --</option>
+                            </select>
+                        </div>
+
+                        <div class="form-field">
+                            <label for="target-ip">Endereço IP</label>
+                            <input type="text" id="target-ip" class="form-input" placeholder="192.168.57.X" required>
+                        </div>
+
+                        <div class="form-field">
+                            <div class="field-header">
+                                <label for="client-select">Perfil de Cliente</label>
+                                <span id="client-count-badge" class="badge-subtle">Carregando...</span>
+                            </div>
+                            <select id="client-select" class="form-select">
+                                <!-- Options via JavaScript -->
+                            </select>
+                        </div>
+
+                        <div class="form-field">
+                            <label for="tech-name">Técnico Responsável</label>
+                            <input type="text" id="tech-name" class="form-input" value="Nicolas Silva">
+                        </div>
+
+                        <div class="options-toggle-group">
+                            <label class="custom-checkbox">
+                                <input type="checkbox" id="check-burnin" checked>
+                                <span class="checkbox-box"></span>
+                                <span class="checkbox-text">Teste de Estresse Térmico (Burn-in)</span>
+                            </label>
+                            
+                            <label class="custom-checkbox">
+                                <input type="checkbox" id="check-domain" onchange="toggleDomainInputs()">
+                                <span class="checkbox-box"></span>
+                                <span class="checkbox-text">Ingresso no Domínio Active Directory</span>
+                            </label>
+
+                            <label class="custom-checkbox">
+                                <input type="checkbox" id="check-custom-softwares" onchange="toggleSoftwareSelector()">
+                                <span class="checkbox-box"></span>
+                                <span class="checkbox-text">Personalizar Softwares a Baixar / Instalar</span>
+                            </label>
+                        </div>
+
+                        <!-- Dynamic Software Selector Panel -->
+                        <div id="software-selector-container" class="sub-panel hidden">
+                            <div class="sub-panel-title">
+                                <i data-lucide="package"></i>
+                                <span>Catálogo de Softwares (Winget / Lab Suite)</span>
+                            </div>
+                            <p class="field-hint" style="margin-top: -0.25rem;">
+                                Selecione os programas que deseja baixar e instalar silenciosamente nesta máquina:
+                            </p>
+
+                            <div class="software-catalog-grid">
+                                <label class="software-item-card">
+                                    <input type="checkbox" name="pkg-select" value="Google.Chrome" checked>
+                                    <div class="software-item-info">
+                                        <span class="software-item-name">Google Chrome</span>
+                                        <span class="software-item-cat">Navegador</span>
+                                    </div>
+                                </label>
+                                <label class="software-item-card">
+                                    <input type="checkbox" name="pkg-select" value="Mozilla.Firefox">
+                                    <div class="software-item-info">
+                                        <span class="software-item-name">Mozilla Firefox</span>
+                                        <span class="software-item-cat">Navegador</span>
+                                    </div>
+                                </label>
+                                <label class="software-item-card">
+                                    <input type="checkbox" name="pkg-select" value="Adobe.Acrobat.Reader.64-bit" checked>
+                                    <div class="software-item-info">
+                                        <span class="software-item-name">Adobe Acrobat Reader</span>
+                                        <span class="software-item-cat">PDF & Documentos</span>
+                                    </div>
+                                </label>
+                                <label class="software-item-card">
+                                    <input type="checkbox" name="pkg-select" value="7zip.7zip" checked>
+                                    <div class="software-item-info">
+                                        <span class="software-item-name">7-Zip</span>
+                                        <span class="software-item-cat">Compactador</span>
+                                    </div>
+                                </label>
+                                <label class="software-item-card">
+                                    <input type="checkbox" name="pkg-select" value="RARLab.WinRAR">
+                                    <div class="software-item-info">
+                                        <span class="software-item-name">WinRAR</span>
+                                        <span class="software-item-cat">Compactador</span>
+                                    </div>
+                                </label>
+                                <label class="software-item-card">
+                                    <input type="checkbox" name="pkg-select" value="VideoLAN.VLC">
+                                    <div class="software-item-info">
+                                        <span class="software-item-name">VLC Media Player</span>
+                                        <span class="software-item-cat">Multimídia</span>
+                                    </div>
+                                </label>
+                                <label class="software-item-card">
+                                    <input type="checkbox" name="pkg-select" value="Microsoft.VisualStudioCode">
+                                    <div class="software-item-info">
+                                        <span class="software-item-name">VS Code</span>
+                                        <span class="software-item-cat">Desenvolvimento / TI</span>
+                                    </div>
+                                </label>
+                                <label class="software-item-card">
+                                    <input type="checkbox" name="pkg-select" value="Git.Git">
+                                    <div class="software-item-info">
+                                        <span class="software-item-name">Git</span>
+                                        <span class="software-item-cat">Desenvolvimento</span>
+                                    </div>
+                                </label>
+                                <label class="software-item-card">
+                                    <input type="checkbox" name="pkg-select" value="Fortinet.FortiClientVPN">
+                                    <div class="software-item-info">
+                                        <span class="software-item-name">FortiClient VPN</span>
+                                        <span class="software-item-cat">Segurança / VPN</span>
+                                    </div>
+                                </label>
+                                <label class="software-item-card">
+                                    <input type="checkbox" name="pkg-select" value="dbeaver.dbeaver">
+                                    <div class="software-item-info">
+                                        <span class="software-item-name">DBeaver</span>
+                                        <span class="software-item-cat">Banco de Dados</span>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <div class="form-field mb-0">
+                                <label>Softwares Adicionais (IDs do Winget separados por vírgula)</label>
+                                <input type="text" id="custom-extra-pkgs" class="form-input mono" placeholder="Ex: Slack.Slack, Discord.Discord, Spotify.Spotify">
+                            </div>
+                        </div>
+
+                        <!-- Dynamic Domain Inputs -->
+                        <div id="domain-inputs-container" class="sub-panel hidden">
+                            <div class="sub-panel-title">
+                                <i data-lucide="shield"></i>
+                                <span>Parâmetros de Rede & Domínio</span>
+                            </div>
+                            <div class="form-field">
+                                <label>Nome do Domínio (AD)</label>
+                                <input type="text" id="dom-name" class="form-input" placeholder="cliente.local">
+                            </div>
+                            <div class="grid-2-col">
+                                <div class="form-field">
+                                    <label>DNS / IP do Servidor</label>
+                                    <input type="text" id="dom-dns" class="form-input" placeholder="192.168.1.10">
+                                </div>
+                                <div class="form-field">
+                                    <label>IP Estático (Opcional)</label>
+                                    <input type="text" id="dom-static-ip" class="form-input" placeholder="192.168.1.150">
+                                </div>
+                            </div>
+                            <div class="grid-2-col">
+                                <div class="form-field">
+                                    <label>Usuário Administrador</label>
+                                    <input type="text" id="dom-user" class="form-input" placeholder="admin.suporte">
+                                </div>
+                                <div class="form-field">
+                                    <label>Senha do AD</label>
+                                    <input type="password" id="dom-pass" class="form-input" placeholder="••••••••">
+                                </div>
+                            </div>
+                            <div class="form-field mb-0">
+                                <label>Unidade Organizacional (OU Path - Opcional)</label>
+                                <input type="text" id="dom-ou" class="form-input" placeholder="OU=Computadores,DC=dominio,DC=local">
+                            </div>
+                        </div>
+
+                        <button type="submit" id="btn-run-pipeline" class="btn btn-primary btn-full">
+                            <i data-lucide="play"></i>
+                            <span>Iniciar Esteira</span>
+                        </button>
+                    </form>
+
+                    <!-- AnyDesk ID Result Card -->
+                    <div id="anydesk-live-card" class="result-highlight-card hidden">
+                        <div class="result-icon">
+                            <i data-lucide="key"></i>
+                        </div>
+                        <div class="result-body">
+                            <div class="result-label">AnyDesk ID Capturado</div>
+                            <div id="anydesk-id-val" class="result-val">--- --- ---</div>
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="copyAnyDeskId()">
+                            <i data-lucide="copy"></i> Copiar
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Realtime Terminal & Log Streamer -->
+                <div class="surface-card terminal-container">
+                    <div class="terminal-header">
+                        <div class="terminal-title-group">
+                            <div class="terminal-dots">
+                                <span></span><span></span><span></span>
+                            </div>
+                            <span class="terminal-heading">Ultron Live Streamer</span>
+                        </div>
+                        <div class="terminal-meta">
+                            <span id="terminal-ws-badge" class="stream-pill">
+                                <span id="ws-status-dot" class="status-indicator offline"></span>
+                                <span id="ws-status-text">OFFLINE</span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Stage Progress Track -->
+                    <div class="progress-track">
+                        <div class="progress-info">
+                            <span id="stage-name-text" class="stage-label">Aguardando execução...</span>
+                            <span id="stage-percent-text" class="stage-pct">0%</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div id="stage-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Logs Viewport -->
+                    <div id="terminal-logs" class="terminal-stream-viewport">
+                        <div class="log-row info">Ultron Server pronto. Selecione uma máquina para iniciar a esteira.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 3: Central de Laudos -->
+        <section id="section-reports" class="view-section">
+            <div class="view-toolbar">
+                <div>
+                    <h1 class="view-heading">Laudos Técnicos Emitidos</h1>
+                    <p class="view-subheading">
+                        Relatórios formais em PDF com telemetria, diagnóstico e validação de hardware.
+                    </p>
+                </div>
+                <div class="toolbar-actions">
+                    <button class="btn btn-secondary" onclick="loadReports()">
+                        <i data-lucide="refresh-cw"></i>
+                        <span>Atualizar</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Documento</th>
+                            <th>Tamanho</th>
+                            <th>Data de Emissão</th>
+                            <th style="text-align: right;">Ação</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reports-tbody">
+                        <!-- Populated via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- SECTION 4: Telemetria & Utilitários Públicos (Public APIs Hub) -->
+        <section id="section-tools" class="view-section">
+            <div class="view-toolbar">
+                <div>
+                    <h1 class="view-heading">Telemetria & Utilitários de Bancada</h1>
+                    <p class="view-subheading">
+                        Suíte de inteligência técnica com APIs públicas gratuitas (Rede, Segurança, CVEs, Diagnóstico e Clima).
+                    </p>
+                </div>
+                <div class="toolbar-actions">
+                    <button class="btn btn-secondary" onclick="refreshAllTools()">
+                        <i data-lucide="refresh-cw"></i>
+                        <span>Atualizar Todos</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Public Tools Grid -->
+            <div class="tools-grid">
+                
+                <!-- TOOL 1: WAN Network & ISP Intelligence -->
+                <div class="surface-card tool-card">
+                    <div class="card-header-clean">
+                        <div class="tool-header-left">
+                            <i data-lucide="globe" class="text-accent"></i>
+                            <h2>Diagnóstico de WAN & Provedor</h2>
+                        </div>
+                        <span id="wan-status-badge" class="badge-status-ok">Online</span>
+                    </div>
+                    <div class="tool-body">
+                        <div class="grid-2-col mb-3">
+                            <div class="metric-block">
+                                <span class="metric-label">IP Público (WAN)</span>
+                                <span id="tool-wan-ip" class="metric-value mono">127.0.0.1</span>
+                            </div>
+                            <div class="metric-block">
+                                <span class="metric-label">Latência / Ping DoH</span>
+                                <span id="tool-wan-ping" class="metric-value mono">12 ms</span>
+                            </div>
+                        </div>
+                        <div class="telemetry-list">
+                            <div class="telemetry-row">
+                                <span class="t-key">Provedor (ISP):</span>
+                                <span id="tool-wan-isp" class="t-val">Pense Rede</span>
+                            </div>
+                            <div class="telemetry-row">
+                                <span class="t-key">Organização / ASN:</span>
+                                <span id="tool-wan-asn" class="t-val">AS-LOCAL</span>
+                            </div>
+                            <div class="telemetry-row">
+                                <span class="t-key">Geolocalização:</span>
+                                <span id="tool-wan-geo" class="t-val">Vitória, ES - Brasil</span>
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary btn-sm btn-full mt-3" onclick="loadWanTelemetry(true)">
+                            <i data-lucide="refresh-cw"></i> Atualizar Telemetria WAN
+                        </button>
+                    </div>
+                </div>
+
+                <!-- TOOL 2: Lab Ambient Thermal & Headroom -->
+                <div class="surface-card tool-card">
+                    <div class="card-header-clean">
+                        <div class="tool-header-left">
+                            <i data-lucide="thermometer" class="text-warning"></i>
+                            <h2>Clima Lab & Headroom Térmico</h2>
+                        </div>
+                        <span id="thermal-rating-badge" class="badge-status-ok">Ideal</span>
+                    </div>
+                    <div class="tool-body">
+                        <div class="grid-3-col mb-3">
+                            <div class="metric-block">
+                                <span class="metric-label">Ambiente</span>
+                                <span id="tool-thermal-temp" class="metric-value mono">--°C</span>
+                            </div>
+                            <div class="metric-block">
+                                <span class="metric-label">Sensação</span>
+                                <span id="tool-thermal-app" class="metric-value mono">--°C</span>
+                            </div>
+                            <div class="metric-block">
+                                <span class="metric-label">Umidade</span>
+                                <span id="tool-thermal-rh" class="metric-value mono">--%</span>
+                            </div>
+                        </div>
+                        <div class="info-callout" id="tool-thermal-note">
+                            Coletando dados climáticos do Open-Meteo para a bancada...
+                        </div>
+                        <button class="btn btn-secondary btn-sm btn-full mt-3" onclick="loadThermalTelemetry(true)">
+                            <i data-lucide="refresh-cw"></i> Recalcular Dissipação Térmica
+                        </button>
+                    </div>
+                </div>
+
+                <!-- TOOL 3: Windows Hex Error & BSOD Decoder -->
+                <div class="surface-card tool-card span-2">
+                    <div class="card-header-clean">
+                        <div class="tool-header-left">
+                            <i data-lucide="bug" class="text-danger"></i>
+                            <h2>Decodificador de Erros do Windows & BSOD</h2>
+                        </div>
+                        <span class="badge-subtle">Base de Conhecimento Offline & IA</span>
+                    </div>
+                    <div class="tool-body">
+                        <form onsubmit="onLookupWindowsError(event)" class="search-form-row">
+                            <input type="text" id="win-error-input" class="form-input mono" placeholder="Ex: 0x80070005, 0x8024402C, 0xC0000005, 0x800F081F" required>
+                            <button type="submit" class="btn btn-primary">
+                                <i data-lucide="search"></i> Decodificar
+                            </button>
+                        </form>
+                        <div class="quick-chips mt-2">
+                            <span class="chips-label">Exemplos rápidos:</span>
+                            <button type="button" class="chip-btn" onclick="quickLookupError('0x80070005')">0x80070005 (Access Denied)</button>
+                            <button type="button" class="chip-btn" onclick="quickLookupError('0x8024402C')">0x8024402C (Windows Update)</button>
+                            <button type="button" class="chip-btn" onclick="quickLookupError('0x800F081F')">0x800F081F (DISM Source)</button>
+                            <button type="button" class="chip-btn" onclick="quickLookupError('0xC0000005')">0xC0000005 (Access Violation)</button>
+                            <button type="button" class="chip-btn" onclick="quickLookupError('0x0000001A')">0x0000001A (Memory BSOD)</button>
+                        </div>
+                        <div id="win-error-result" class="error-lookup-result mt-3 hidden">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TOOL 4: CVE Vulnerability Scanner & CISA Threat Feed -->
+                <div class="surface-card tool-card span-2">
+                    <div class="card-header-clean">
+                        <div class="tool-header-left">
+                            <i data-lucide="shield-alert" class="text-warning"></i>
+                            <h2>Scanner de Vulnerabilidades CVE & Ameaças CISA KEV</h2>
+                        </div>
+                        <div class="tab-toggle-group">
+                            <button type="button" id="tab-cve-search-btn" class="tab-toggle active" onclick="toggleCveSubTab('search')">Pesquisar Software</button>
+                            <button type="button" id="tab-cve-kev-btn" class="tab-toggle" onclick="toggleCveSubTab('kev')">Feed CISA KEV</button>
+                        </div>
+                    </div>
+                    <div class="tool-body">
+                        <!-- Subview 1: CVE Search -->
+                        <div id="cve-search-view">
+                            <form onsubmit="onSearchCve(event)" class="search-form-row">
+                                <input type="text" id="cve-package-input" class="form-input" placeholder="Nome do pacote (ex: winrar, 7zip, chrome, anydesk, openssl)" required>
+                                <input type="text" id="cve-version-input" class="form-input" placeholder="Versão (opcional, ex: 6.22)" style="max-width: 180px;">
+                                <button type="submit" class="btn btn-primary">
+                                    <i data-lucide="search"></i> Verificar CVEs
+                                </button>
+                            </form>
+                            <div class="quick-chips mt-2">
+                                <span class="chips-label">Softwares comuns:</span>
+                                <button type="button" class="chip-btn" onclick="quickSearchCve('winrar')">WinRAR</button>
+                                <button type="button" class="chip-btn" onclick="quickSearchCve('7zip')">7-Zip</button>
+                                <button type="button" class="chip-btn" onclick="quickSearchCve('chrome')">Google Chrome</button>
+                                <button type="button" class="chip-btn" onclick="quickSearchCve('anydesk')">AnyDesk</button>
+                            </div>
+                            <div id="cve-results-container" class="cve-results-list mt-3">
+                                <div class="empty-state-hint">Digite um software para consultar o banco público de vulnerabilidades (OSV.dev & CIRCL).</div>
+                            </div>
+                        </div>
+
+                        <!-- Subview 2: CISA KEV Feed -->
+                        <div id="cve-kev-view" class="hidden">
+                            <div class="feed-header mb-2">
+                                <span class="feed-title">Catálogo Oficial CISA de Vulnerabilidades Exploradas Ativamente</span>
+                                <button class="btn-text-action" onclick="loadCisaKevFeed(true)"><i data-lucide="refresh-cw"></i> Atualizar Feed</button>
+                            </div>
+                            <div id="cisa-kev-container" class="cve-results-list">
+                                <div class="empty-state-hint">Carregando feed CISA KEV...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TOOL 5: Active Directory & DNS Pre-Flight Inspector -->
+                <div class="surface-card tool-card">
+                    <div class="card-header-clean">
+                        <div class="tool-header-left">
+                            <i data-lucide="network" class="text-accent"></i>
+                            <h2>Inspetor Pre-Flight de Domínio AD</h2>
+                        </div>
+                        <span class="badge-subtle">DoH + Sockets</span>
+                    </div>
+                    <div class="tool-body">
+                        <form onsubmit="onInspectDnsDomain(event)" class="search-form-row">
+                            <input type="text" id="dns-domain-input" class="form-input" placeholder="Ex: penserede.local, novavia.local" required>
+                            <button type="submit" class="btn btn-primary btn-sm">
+                                <i data-lucide="play"></i> Testar
+                            </button>
+                        </form>
+                        <div id="dns-inspect-result" class="dns-inspect-output mt-3">
+                            <div class="empty-state-hint">Valide resolução e controladores de domínio AD antes de executar o Join.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TOOL 6: NTP Time Sync & Kerberos Validator -->
+                <div class="surface-card tool-card">
+                    <div class="card-header-clean">
+                        <div class="tool-header-left">
+                            <i data-lucide="clock" class="text-accent"></i>
+                            <h2>Sincronismo de Relógio Atômico NTP</h2>
+                        </div>
+                        <span id="ntp-status-badge" class="badge-status-ok">Sincronizado</span>
+                    </div>
+                    <div class="tool-body">
+                        <div class="metric-block mb-3">
+                            <span class="metric-label">Data & Hora Local</span>
+                            <span id="ntp-local-time" class="metric-value mono">--:--:--</span>
+                        </div>
+                        <div class="telemetry-list">
+                            <div class="telemetry-row">
+                                <span class="t-key">Desvio (Drift NTP):</span>
+                                <span id="ntp-drift-val" class="t-val mono">0.000 s</span>
+                            </div>
+                            <div class="telemetry-row">
+                                <span class="t-key">Status Kerberos:</span>
+                                <span id="ntp-kerberos-status" class="t-val text-success">Compatível (&lt; 300s)</span>
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary btn-sm btn-full mt-3" onclick="checkNtpSync(true)">
+                            <i data-lucide="refresh-cw"></i> Validar com Servidor NTP
+                        </button>
+                    </div>
+                </div>
+
+                <!-- TOOL 7: Bench Tools Latest Releases (GitHub API) -->
+                <div class="surface-card tool-card">
+                    <div class="card-header-clean">
+                        <div class="tool-header-left">
+                            <i data-lucide="git-branch" class="text-accent"></i>
+                            <h2>Versões das Ferramentas (GitHub)</h2>
+                        </div>
+                        <button class="btn-text-action" onclick="checkToolVersions(true)"><i data-lucide="refresh-cw"></i></button>
+                    </div>
+                    <div class="tool-body">
+                        <div id="github-tools-list" class="tools-version-table">
+                            <div class="empty-state-hint">Carregando versões de automação...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TOOL 8: Mobile QR Code Generator -->
+                <div class="surface-card tool-card">
+                    <div class="card-header-clean">
+                        <div class="tool-header-left">
+                            <i data-lucide="qr-code" class="text-accent"></i>
+                            <h2>Gerador de QR Code Mobile</h2>
+                        </div>
+                        <span class="badge-subtle">Handoff Bancada</span>
+                    </div>
+                    <div class="tool-body">
+                        <div class="search-form-row">
+                            <input type="text" id="qr-input-text" class="form-input" placeholder="Texto, IP ou URL para QR Code" value="http://192.168.57.43:8000/dashboard">
+                            <button type="button" class="btn btn-primary btn-sm" onclick="generateMobileQr()">
+                                <i data-lucide="qr-code"></i> Gerar
+                            </button>
+                        </div>
+                        <div id="qr-display-container" class="qr-preview-box mt-3">
+                            <!-- Populated with QR image -->
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+    </div>
+
+    <!-- Generic Modal Dialog -->
+    <div id="main-modal" class="modal-backdrop">
+        <div class="modal-card">
+            <div class="modal-card-header">
+                <h3 id="modal-title" class="modal-title">Detalhes</h3>
+                <button type="button" class="modal-close-btn" onclick="closeModal()">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div id="modal-body" class="modal-card-body">
+                <!-- Dynamic Content -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Dedicated Milvus Connection & Token Hub Modal -->
+    <div id="milvus-modal" class="modal-backdrop">
+        <div class="modal-card modal-card-lg">
+            <div class="modal-card-header">
+                <div class="modal-title-with-icon">
+                    <i data-lucide="server" class="text-accent"></i>
+                    <div>
+                        <h3 class="modal-title">Central de Conexão & Tokens Milvus</h3>
+                        <p class="modal-subtitle">Configuração do Servidor Dashboard Milvus e Mapeamento de Tokens dos Clientes</p>
+                    </div>
+                </div>
+                <button type="button" class="modal-close-btn" onclick="closeMilvusModal()">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-card-body">
+                <!-- Subtabs inside Milvus Modal -->
+                <div class="tab-toggle-group mb-4">
+                    <button type="button" id="milvus-tab-conn-btn" class="tab-toggle active" onclick="switchMilvusModalTab('conn')">
+                        <i data-lucide="activity"></i> Conexão & Servidor Master
+                    </button>
+                    <button type="button" id="milvus-tab-tokens-btn" class="tab-toggle" onclick="switchMilvusModalTab('tokens')">
+                        <i data-lucide="key"></i> Tokens de Agente por Cliente
+                    </button>
+                </div>
+
+                <!-- Tab 1: Master Server Connection -->
+                <div id="milvus-view-conn">
+                    <form onsubmit="saveMilvusConfigForm(event)" class="form-stack">
+                        <div class="form-field">
+                            <label>URL do Servidor Milvus (Dashboard)</label>
+                            <input type="text" id="milvus-cfg-url" class="form-input mono" placeholder="http://192.168.57.7" required>
+                            <span class="field-hint">Endereço IP ou hostname da API de chamados e contatos da Pense Rede.</span>
+                        </div>
+
+                        <div class="form-field">
+                            <label>Token Master de API (Global)</label>
+                            <div class="input-with-action">
+                                <input type="password" id="milvus-cfg-token" class="form-input mono" placeholder="Cole o token master aqui se a API exigir chave">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="togglePasswordVisibility('milvus-cfg-token')">
+                                    <i data-lucide="eye" id="milvus-cfg-token-eye"></i>
+                                </button>
+                            </div>
+                            <span class="field-hint">Enviado nos cabeçalhos <code>x-api-key</code> e <code>Authorization</code> para autenticar na Dashboard.</span>
+                        </div>
+
+                        <div class="options-toggle-group">
+                            <label class="custom-checkbox">
+                                <input type="checkbox" id="milvus-cfg-demo">
+                                <span class="checkbox-box"></span>
+                                <span class="checkbox-text">Modo Demonstração / Bancada Offline (Fallback inteligente)</span>
+                            </label>
+                        </div>
+
+                        <div class="form-actions-split mt-3">
+                            <button type="button" id="btn-test-milvus" class="btn btn-secondary" onclick="testMilvusLiveConnection()">
+                                <i data-lucide="wifi"></i> Testar Conectividade Agora
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i data-lucide="save"></i> Salvar Configuração
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Live Test Diagnostic Card -->
+                    <div id="milvus-test-card" class="diagnostic-feedback-box mt-4 hidden">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <!-- Tab 2: Client Tokens Management Table -->
+                <div id="milvus-view-tokens" class="hidden">
+                    <div class="table-actions-header mb-3" style="display: flex; justify-content: space-between; align-items: center;">
+                        <p class="section-description" style="margin-bottom: 0;">
+                            Tokens individuais de instalação do agente Milvus para cada empresa (injetados no <code>Install-LabStandard.ps1</code>).
+                        </p>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="syncAllMilvusAgents()" title="Baixa os MSIs de todos os clientes com token para a pasta local">
+                            <i data-lucide="refresh-cw"></i> Sincronizar Todos os MSIs
+                        </button>
+                    </div>
+
+
+                    <div class="table-container max-h-350">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Cliente / Empresa</th>
+                                    <th>Domínio AD</th>
+                                    <th>Token Milvus</th>
+                                    <th style="text-align: right;">Ação</th>
+                                </tr>
+                            </thead>
+                            <tbody id="milvus-client-tokens-tbody">
+                                <!-- Populated via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dedicated QR Code Modal -->
+    <div id="qr-modal" class="modal-backdrop">
+        <div class="modal-card modal-card-sm text-center">
+            <div class="modal-card-header">
+                <h3 id="qr-modal-title" class="modal-title">QR Code Mobile</h3>
+                <button type="button" class="modal-close-btn" onclick="closeQrModal()">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-card-body">
+                <p id="qr-modal-subtitle" class="text-secondary text-sm mb-3">Escaneie com a câmera do smartphone para acessar na bancada</p>
+                <div id="qr-modal-image-box" class="qr-modal-box">
+                    <i data-lucide="loader-2" class="spin-icon"></i>
+                </div>
+                <div id="qr-modal-caption" class="mono text-sm mt-3 text-muted"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-stack"></div>
+
+    <!-- Application Script -->
+    <script src="/static/js/app.js"></script>
+    <script>
+        // Initialize Lucide Icons
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.lucide) {
+                lucide.createIcons();
+            }
+        });
+    </script>
+</body>
+</html>

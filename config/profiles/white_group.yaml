@@ -1,0 +1,28 @@
+# Perfil Específico: WHITE GROUP (Dev & Power User Suite)
+cliente_id: "white_group"
+nome_exibicao: "WHITE GROUP"
+
+softwares:
+  winget:
+    - "Google.Chrome"
+    - "Mozilla.Firefox"
+    - "AnyDeskSoftwareGmbH.AnyDesk"
+    - "Notepad++.Notepad++"
+    - "Microsoft.Office" # Office 2019 / C2R
+    - "Skillcaps.Lightshot"
+    - "Microsoft.Teams"
+    - "OpenVPNTechnologies.OpenVPN"
+    - "FileZilla.FileZillaClient"
+    - "Devolutions.RemoteDesktopManager"
+    - "Postman.Postman"
+    - "Git.Git"
+    - "Microsoft.VisualStudioCode"
+    - "Microsoft.SQLServer.2022.Developer" # ou Express
+    - "Microsoft.SQLServerManagementStudio"
+    - "Microsoft.VisualStudio.2022.Community"
+    - "MAGIX.VegasPro"
+    - "TeamViewer.TeamViewer"
+
+custom_scripts:
+  - "Install-Flutter.ps1" # Baixa, extrai em C:\flutter e adiciona no PATH
+  - "Install-MilvusAgent.ps1" # Agente HelpDesk Pense Rede

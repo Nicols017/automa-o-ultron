@@ -1,0 +1,18 @@
+# Perfil Específico: EXTINBRAS EXTINTORES DO BRASIL LTDA
+cliente_id: "extinbras"
+nome_exibicao: "EXTINBRAS EXTINTORES DO BRASIL LTDA"
+
+trueconf_server: "serra.extinbras.com.br"
+
+softwares:
+  locais:
+    - "CADEX_Setup.exe"
+    - "CADERP_Setup.exe"
+  winget:
+    - "AnyDeskSoftwareGmbH.AnyDesk"
+    - "Microsoft.Office"
+
+custom_scripts:
+  - "Configure-TrueConfClient.ps1 -ServerDomain 'serra.extinbras.com.br'"
+  - "Install-MilvusAgent.ps1"
+

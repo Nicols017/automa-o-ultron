@@ -1,0 +1,15 @@
+[Unit]
+Description=Ultron Lab Automation Server (Pense Rede)
+After=network.target ollama.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ultron-automation
+ExecStart=/opt/ultron-automation/venv/bin/python main.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

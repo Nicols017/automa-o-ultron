@@ -1,0 +1,325 @@
+clientes:
+  adcos:
+    dominio: ''
+    milvus_token: PAQYUS
+    nome: ADCOS - INDUSTRIA E COMERCIO LTDA
+  agilis:
+    dominio: ''
+    milvus_token: VQ5MRY
+    nome: AGILIS LABORATORIO DE PATOLOGIA
+  alinutri:
+    dominio: ''
+    milvus_token: N9W9Z9Y
+    nome: ALINUTRI
+  alterna:
+    dominio: ''
+    milvus_token: FYIDQH3
+    nome: ALTERNA-TELECOMUNICOES E CONECTIVIDADE LTDA
+  angio_suture:
+    dominio: ''
+    milvus_token: 4BEPYP
+    nome: ANGIO SUTURE
+  araujo_advogados:
+    dominio: araujoadv.local
+    milvus_token: 37VOCE
+    nome: ARAUJO & ADVOGADOS ASSOCIADOS
+  ascovi:
+    dominio: ''
+    milvus_token: OGQHJQ
+    nome: ASCOVI
+  autentica:
+    dominio: ''
+    milvus_token: 7SZ3Z8
+    nome: AUTENTICA
+  auto_peisino:
+    dominio: ''
+    milvus_token: ZK87FL
+    nome: AUTO PEISINO POSTO
+  autoglass:
+    dominio: ''
+    milvus_token: OF6LT99
+    nome: AUTOGLASS
+  banestes:
+    dominio: ''
+    milvus_token: HZOTO79
+    nome: BANESTES
+  benetech:
+    dominio: benetech.local
+    milvus_token: KQCYE3
+    nome: CSV BENETECH BRASIL
+  bertolini:
+    dominio: ''
+    milvus_token: 3BI0WWB
+    nome: BERTOLINI S/A
+  biancogres:
+    dominio: ''
+    milvus_token: V9E94OL
+    nome: BIANCOGRES CERAMICA S/A
+  brent_mar_azul:
+    dominio: ''
+    milvus_token: 944XR4T
+    nome: BRENT PETROLEO LTDA - POSTO MAR AZUL
+  brent_morro_novo:
+    dominio: ''
+    milvus_token: BI3GXVO
+    nome: BRENT PETROLEO LTDA - AUTO POSTO MORRO NOVO LTDA
+  byd:
+    dominio: ''
+    milvus_token: NFDIJJG
+    nome: BYD DO BRASIL LTDA.
+  camara_viana:
+    dominio: ''
+    milvus_token: AG6WV2C
+    nome: CAMARA MUNICIPAL DE VIANA
+  cedisa:
+    dominio: ''
+    milvus_token: 6XISQEE
+    nome: CEDISA
+  cesconetto:
+    dominio: ''
+    milvus_token: ILRYGAG
+    nome: CESCONETTO
+  cheim_jorge:
+    dominio: ''
+    milvus_token: 6UYZUJ7
+    nome: CHEIM JORGE & ABELHA RODRIGUES ADVOGADOS ASSOCIADOS
+  cliente_teste:
+    dominio: ''
+    milvus_token: AJRIQ9W
+    nome: CLIENTE TESTE
+  clinica_skopia:
+    dominio: ''
+    milvus_token: H1SONY
+    nome: CLINICA SKOPIA
+  cmosv:
+    dominio: ''
+    milvus_token: AD3EVA
+    nome: CMOSV - CENTRO MEDICO ODONTOLOGIA SHOPPING VITORIA
+  condominio_shopping_vitoria:
+    dominio: ''
+    milvus_token: JOI2TG8
+    nome: CONDOMINIO DO SHOPPING VITORIA
+  conselho_psicologia:
+    dominio: ''
+    milvus_token: 9VH6QWW
+    nome: CONSELHO DE PSICOLOGIA
+  cpvv:
+    dominio: ''
+    milvus_token: 2BD4L7K
+    nome: CPVV - COMPANHIA PORTUARIA VILA VELHA
+  darwin:
+    dominio: ''
+    milvus_token: NNI45DA
+    nome: CENTRO DE ENSINO CHARLES DARWIN LTDA
+  digitar:
+    dominio: ''
+    milvus_token: G7ACGSI
+    nome: DIGITAR ASSESSORIA CONTABIL LTDA
+  dupla_meninna:
+    dominio: ''
+    milvus_token: HAMZKWI
+    nome: DUPLA MENINNA
+  empresa_luz_forca:
+    dominio: ''
+    milvus_token: ROK6QN7
+    nome: EMPRESA DE LUZ E FORCA - SANTA MARIA PARTICIPACOES
+  es_logistic:
+    dominio: ''
+    milvus_token: ZTKHBYG
+    nome: ES LOGISTIC
+  eurotextil:
+    dominio: ''
+    milvus_token: PMD40NN
+    nome: EUROTEXTIL COMERCIO E IMPORTACAO LTDA
+  extinbras:
+    dominio: ''
+    milvus_token: 31QMSOB
+    nome: EXTINBRAS EXTINTORES DO BRASIL LTDA
+  extrafruti:
+    dominio: ''
+    milvus_token: 3DTITKA
+    nome: EXTRAFRUTI - CENTRAL CARIACICA
+  fatto:
+    dominio: ''
+    milvus_token: YI3OUZ
+    nome: FATTO CONSULTORIA E SISTEMAS LTDA
+  foco_clinica:
+    dominio: ''
+    milvus_token: ILW67J
+    nome: FOCO CLINICA OFTALMOLOGICA LTDA
+  gdl_logistica:
+    dominio: ''
+    milvus_token: 7EUXRAU
+    nome: GDL LOGISTICA INTEGRADA S.A.
+  gma_transportes:
+    dominio: ''
+    milvus_token: YZYZGI
+    nome: GMA TRANSPORTES LTDA
+  golden_investimentos:
+    dominio: ''
+    milvus_token: KCFS9N6
+    nome: GOLDEN INVESTIMENTOS
+  integra_info:
+    dominio: ''
+    milvus_token: XFDGJ2Z
+    nome: INTEGRA INFO LTDA
+  lojas_mattos:
+    dominio: ''
+    milvus_token: Y9EJA6
+    nome: LOJAS MATTOS
+  machine_dev:
+    dominio: ''
+    milvus_token: M6B79I
+    nome: MACHINE DESENVOLVIMENTO LTDA - ME
+  medical_hope:
+    dominio: ''
+    milvus_token: GDHE03
+    nome: MEDICAL HOPE ASSISTENCIA TECNICA E COMERCIO DE EQUIPAMENTOS
+  mellow_me:
+    dominio: ''
+    milvus_token: L0FB5BU
+    nome: MELLOW ME
+  nova_via:
+    dominio: novavia.local
+    milvus_token: TOKEN_TEST_NOVA_VIA_UPDATED
+    nome: NOVA VIA PECAS E ACESSORIOS
+  orbita_academia:
+    dominio: ''
+    milvus_token: CA5GK4T
+    nome: ORBITA ACADEMIA
+  pense_rede:
+    dominio: penserede.local
+    milvus_token: FQQG0K
+    nome: PENSE REDE NETWORK SOLUTION
+  perfil_aluminio:
+    dominio: ''
+    milvus_token: Z1H7W5Z
+    nome: PERFIL ALUMINIO DO BRASIL SA
+  perfilados_rio_doce:
+    dominio: ''
+    milvus_token: 2JZMEVK
+    nome: PERFILADOS RIO DOCE
+  perim:
+    dominio: ''
+    milvus_token: 2HA7SCH
+    nome: PERIM
+  peterfrut:
+    dominio: ''
+    milvus_token: Y0ILEEX
+    nome: PETERFRUT AGRICOLA LTDA
+  place_office:
+    dominio: ''
+    milvus_token: P9A7AI
+    nome: PLACE OFFICE
+  posto_atlantico:
+    dominio: ''
+    milvus_token: 9F3CAB
+    nome: POSTO ATLANTICO
+  posto_beira_mar:
+    dominio: ''
+    milvus_token: Y8OFY8
+    nome: POSTO BEIRA MAR
+  posto_limoeiro:
+    dominio: ''
+    milvus_token: V5GAEQ
+    nome: POSTO LIMOEIRO
+  posto_trilha:
+    dominio: ''
+    milvus_token: K6FV7O
+    nome: POSTO TRILHA LTDA
+  quitanda:
+    dominio: ''
+    milvus_token: DF828K
+    nome: QUITANDA COMERCIO DE ALIMENTOS LTDA
+  rdg_acos:
+    dominio: ''
+    milvus_token: HE0T9I4
+    nome: RDG ACOS DO BRASIL S/A
+  rede_bachour:
+    dominio: ''
+    milvus_token: GP2WCU
+    nome: REDE BACHOUR
+  rs_transportes:
+    dominio: ''
+    milvus_token: 0QJRFME
+    nome: R & S TRANSPORTES LTDA ME
+  sa_cavalcante:
+    dominio: ''
+    milvus_token: SDGAKXH
+    nome: SA CAVALCANTE
+  sicoob_sul_serrano:
+    dominio: ''
+    milvus_token: LUSEXCM
+    nome: SICOOB SUL-SERRANO
+  soares:
+    dominio: ''
+    milvus_token: IRNWXK8
+    nome: SOARES
+  soares_atacado:
+    dominio: ''
+    milvus_token: NMJSHBC
+    nome: SOARES ATACADO
+  superior_obras:
+    dominio: ''
+    milvus_token: BV5ZWU
+    nome: SUPERIOR OBRAS E SERVICOS LTDA
+  superior_transportes:
+    dominio: superiortransportes.local
+    milvus_token: P83BL6
+    nome: SUPERIOR TRANSPORTES
+  target_trading:
+    dominio: ''
+    milvus_token: JP78KEK
+    nome: TARGET TRADING
+  traco_arquitetos:
+    dominio: ''
+    milvus_token: V8Y2ZV
+    nome: TRACO ARQUITETOS
+  transcamilo:
+    dominio: ''
+    milvus_token: GG1A3I
+    nome: TRANSCAMILO
+  trig:
+    dominio: ''
+    milvus_token: 15ZW93
+    nome: TRIG
+  trivela_1:
+    dominio: ''
+    milvus_token: UYSG6Z
+    nome: AUTO POSTO TRIVELA 1 - SAO PEDRO
+  trivela_2:
+    dominio: ''
+    milvus_token: RUDB80
+    nome: AUTO POSTO TRIVELA 2 - CAMARA
+  tuboval:
+    dominio: ''
+    milvus_token: LVIFNX
+    nome: TUBOVAL COMERCIAL LTDA
+  unimar_transportes:
+    dominio: ''
+    milvus_token: I2FP99J
+    nome: UNIMAR TRANSPORTES - LTDA
+  unimarka:
+    dominio: ''
+    milvus_token: 7CMBTZL
+    nome: UNIMARKA
+  unimed_vitoria:
+    dominio: ''
+    milvus_token: BX6CJGQ
+    nome: UNIMED VITORIA COOPERATIVA DE TRABALHO MEDICO
+  viacao_sao_gabriel:
+    dominio: ''
+    milvus_token: NNKB5FC
+    nome: VIACAO SAO GABRIEL
+  viminas_vidros:
+    dominio: ''
+    milvus_token: 14NBVCR
+    nome: VIMINAS VIDROS
+  vulpe_tecnologia:
+    dominio: ''
+    milvus_token: GBJ8UYX
+    nome: VULPE TECNOLOGIA LTDA
+  white_group:
+    dominio: ''
+    milvus_token: XMC30F
+    nome: WHITE GROUP
