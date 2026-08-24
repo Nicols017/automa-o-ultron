@@ -17,6 +17,15 @@ from core.public_tools import (
     WindowsErrorLookupService,
 )
 
+import unicodedata
+
+def _normalize_token(s: str) -> str:
+    """Remove acentos e converte para minúsculas"""
+    if not s:
+        return ""
+    n = unicodedata.normalize('NFKD', s)
+    return "".join(c for c in n if not unicodedata.combining(c)).lower()
+
 class TrueConfChatOps:
     """Roteador central de comandos ChatOps do Ultron para o TrueConf."""
 
@@ -54,9 +63,10 @@ class TrueConfChatOps:
                 if result:
                     return result
 
-        # 2. Roteamento de comandos slash explícitos
-        parts       = text.split()
-        first_token = parts[0].lower() if parts else ""
+        # 2. Roteamento de comandos slash explícitos (com suporte a acentuação)
+        parts = text.split()
+        first_token = parts[0] if parts else ""
+        norm_token = _normalize_token(first_token)
 
         routes = {
             frozenset(["/ajuda", "/help", "/start", "ajuda", "help"]):
@@ -96,7 +106,7 @@ class TrueConfChatOps:
         }
 
         for keywords, handler in routes.items():
-            if first_token in keywords:
+            if norm_token in keywords:
                 return handler()
 
         # 3. Erro hexadecimal Windows em texto livre (ex: 0x80070005)
@@ -105,13 +115,14 @@ class TrueConfChatOps:
             return self._cmd_erro([hex_match.group(1)])
 
         # 4. Consulta rápida de bancada por linguagem natural
+        norm_text = _normalize_token(text)
         bench_kws = [
-            "tem máquina", "tem maquina", "pcs na bancada", "bancada tá cheia",
-            "computadores no lab", "quantas máquinas", "quantas maquinas",
-            "máquinas na bancada", "maquinas na bancada", "quais máquinas", "quais maquinas"
+            "tem maquina", "pcs na bancada", "bancada ta cheia",
+            "computadores no lab", "quantas maquinas",
+            "maquinas na bancada", "quais maquinas"
         ]
         for kw in bench_kws:
-            if kw in text.lower():
+            if kw in norm_text:
                 return self._cmd_bancada(user_id)
 
         # 5. IA Conversacional

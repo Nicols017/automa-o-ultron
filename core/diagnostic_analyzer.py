@@ -103,6 +103,13 @@ class DiagnosticAnalyzer:
             raw = response.json().get("response", "Resposta vazia recebida do modelo.")
             return self._clean_llm_response(raw)
         else:
+            try:
+                err_json = response.json()
+                err_msg = err_json.get("error", "")
+                if "requires more system memory" in err_msg:
+                    return f"⚠️ O modelo '{self.model}' requer mais memória que o disponível ({err_msg}). Recomenda-se usar um modelo otimizado como 'qwen2.5:3b' rodando 'ollama run qwen2.5:3b'."
+            except Exception:
+                pass
             return f"⚠️ Erro na API Ollama (Status {response.status_code}): {response.text}"
 
     def _call_openai_compatible(self, prompt: str, system_prompt: Optional[str] = None) -> str:
