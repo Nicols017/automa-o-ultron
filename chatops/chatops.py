@@ -180,20 +180,20 @@ class TrueConfChatOps:
     def _cmd_interactive_menu(self) -> str:
         return (
             "🤖 CENTRAL DE AUTOMAÇÃO ULTRON\n\n"
-            "Escolha a opção desejada digitando apenas o NÚMERO:\n\n"
-            "[ 1 ] 💻 Ver Computadores na Bancada\n"
-            "[ 2 ] 🩺 Diagnóstico Rápido de Hardware\n"
-            "[ 3 ] 📢 Enviar Mensagem / Pop-up na Tela\n"
-            "[ 4 ] 🚀 Preparar Máquina para Cliente\n"
-            "[ 5 ] 🔑 Ativar Windows e Office (MAS)\n"
-            "[ 6 ] 💾 Fazer Backup do Usuário\n"
-            "[ 7 ] 🛡️ Ingressar no Domínio (AD)\n"
-            "[ 8 ] 📦 Instalar Softwares Básicos\n"
-            "[ 9 ] 🔌 Reiniciar ou Desligar Máquina\n"
-            "[ 10 ] 🏢 Consultar Clientes Cadastrados\n"
-            "[ 11 ] 🎫 Consultar Chamados no Milvus\n"
-            "[ 12 ] 📄 Lista de Laudos Técnicos em PDF\n\n"
-            "💬 Digite o número da opção (ex: 1, 2, 3) ou 'menu' a qualquer momento para voltar."
+            "Clique na opção desejada ou digite o número:\n\n"
+            "💻 /bancada — [ 1 ] Ver Computadores no Lab\n"
+            "🩺 /diagnostico — [ 2 ] Diagnóstico de Hardware\n"
+            "📢 /msg — [ 3 ] Enviar Mensagem / Pop-up na Tela\n"
+            "🚀 /preparar — [ 4 ] Preparar Máquina para Cliente\n"
+            "🔑 /ativar — [ 5 ] Ativação Windows e Office (MAS)\n"
+            "💾 /backup — [ 6 ] Fazer Backup do Usuário\n"
+            "🛡️ /dominio — [ 7 ] Ingressar no Domínio (AD)\n"
+            "📦 /softwares — [ 8 ] Instalar Softwares Básicos\n"
+            "🔌 /reiniciar — [ 9 ] Reiniciar Computador Remoto\n"
+            "🏢 /clientes — [ 10 ] Consultar Empresas Cadastradas\n"
+            "🎫 /chamados — [ 11 ] Consultar Chamados no Milvus\n"
+            "📄 /laudos — [ 12 ] Lista de Laudos Técnicos em PDF\n\n"
+            "💡 Dica: Você pode simplesmente CLICAR no comando azul acima ou digitar o número."
         )
 
     def _cmd_help(self) -> str:
@@ -426,29 +426,35 @@ class TrueConfChatOps:
         )
 
     def _cmd_bancada(self, user_id: str) -> str:
-        devices = self.scanner.scan_network()
-        if not devices:
-            return (
-                "🔍 Status da Bancada:\n\n"
-                "⚠️ Nenhum computador ativo detectado na rede 192.168.57.0/24.\n"
-                "Verifique se os equipamentos estão ligados e conectados."
-            )
+        def _worker():
+            devices = self.scanner.scan_network()
+            if not devices:
+                reply = (
+                    "🔍 Status da Bancada:\n\n"
+                    "⚠️ Nenhum computador ativo detectado na subrede do laboratório.\n"
+                    "Verifique se os equipamentos estão ligados e conectados."
+                )
+            else:
+                lines = [f"💻 Bancada Ultron — {len(devices)} Máquina(s) Detectada(s):\n"]
+                for d in devices:
+                    status   = "🟢" if d.get("winrm_ready") else "🟡"
+                    winrm    = "WinRM Pronto" if d.get("winrm_ready") else "Sem WinRM"
+                    vendor   = f" [{d.get('vendor')}]" if d.get("vendor") not in (None, "Desconhecido") else ""
+                    bench    = f" ({d.get('bench_name')})" if d.get("bench_name") else ""
+                    ip       = d.get("ip", "?")
+                    hostname = d.get("hostname") or "Host"
+                    lines.append(
+                        f"{status} {hostname}{vendor}{bench}\n"
+                        f"   📍 IP: {ip} | {winrm}\n"
+                        f"   ⚡ Ações: /diagnostico {ip} | /msg {ip}\n"
+                    )
+                reply = "\n".join(lines)
 
-        lines = [f"💻 Bancada Ultron — {len(devices)} Máquina(s) Detectada(s):\n"]
-        for d in devices:
-            status   = "🟢" if d.get("winrm_ready") else "🟡"
-            winrm    = "WinRM Pronto" if d.get("winrm_ready") else "Sem WinRM"
-            vendor   = f" [{d.get('vendor')}]" if d.get("vendor") not in (None, "Desconhecido") else ""
-            bench    = f" ({d.get('bench_name')})" if d.get("bench_name") else ""
-            ip       = d.get("ip", "?")
-            hostname = d.get("hostname") or "Host"
-            lines.append(
-                f"{status} {hostname}{vendor}{bench}\n"
-                f"   📍 IP: {ip} | {winrm}\n"
-                f"   ⚡ /preparar {ip} <cliente> | /diagnostico {ip}\n"
-            )
+            if self.bot:
+                self.bot.send_direct_message(user_id, reply)
 
-        return "\n".join(lines)
+        threading.Thread(target=_worker, daemon=True).start()
+        return "🔍 Varrendo computadores na bancada..."
 
     def _cmd_clientes(self) -> str:
         clients = self.profile_mgr.list_clients()

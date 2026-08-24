@@ -114,9 +114,8 @@ class TestTrueConfChatOps(unittest.TestCase):
 
     def test_numbered_menu_choice(self):
         """Testa seleção digitando apenas o número '1' para bancada."""
-        with patch.object(self.chatops.scanner, "scan_network", return_value=[]):
-            reply = self.chatops.handle_incoming_message("nicolas", "1")
-            self.assertIn("Status da Bancada", reply)
+        reply = self.chatops.handle_incoming_message("nicolas", "1")
+        self.assertIn("Varrendo computadores", reply)
 
     def test_wizard_message_flow(self):
         """Testa fluxo passo a passo para envio de mensagem."""
@@ -137,13 +136,8 @@ class TestTrueConfChatOps(unittest.TestCase):
 
     def test_slash_bancada(self):
         """Testa o comando /bancada."""
-        with patch.object(self.chatops.scanner, "scan_network", return_value=[
-            {"ip": "192.168.57.25", "hostname": "LAB-PC25", "winrm_ready": True, "vendor": "Dell", "bench_name": "Bancada 01"}
-        ]):
-            reply = self.chatops.handle_incoming_message("nicolas", "/bancada")
-            self.assertIn("192.168.57.25", reply)
-            self.assertIn("LAB-PC25", reply)
-            self.assertIn("WinRM Pronto", reply)
+        reply = self.chatops.handle_incoming_message("nicolas", "/bancada")
+        self.assertIn("Varrendo computadores", reply)
 
     def test_natural_language_error_lookup(self):
         """Testa reconhecimento de intenção de código de erro hexadecimal."""
@@ -153,9 +147,8 @@ class TestTrueConfChatOps(unittest.TestCase):
 
     def test_natural_language_bench_query(self):
         """Testa intenção em linguagem natural para consultar bancada."""
-        with patch.object(self.chatops.scanner, "scan_network", return_value=[]):
-            reply = self.chatops.handle_incoming_message("nicolas", "quais máquinas estão ligadas agora?")
-            self.assertIn("Nenhum computador ativo", reply)
+        reply = self.chatops.handle_incoming_message("nicolas", "quais máquinas estão ligadas agora?")
+        self.assertIn("Varrendo computadores", reply)
 
     def test_slash_message(self):
         """Testa o comando /msg para envio de alerta na tela."""
