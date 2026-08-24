@@ -106,11 +106,34 @@ class TestTrueConfChatOps(unittest.TestCase):
         self.chatops = TrueConfChatOps()
 
     def test_slash_help(self):
-        """Testa o comando /ajuda."""
+        """Testa o comando /ajuda e menu interativo."""
         reply = self.chatops.handle_incoming_message("nicolas", "/ajuda")
-        self.assertIn("Ultron ChatOps", reply)
-        self.assertIn("/preparar", reply)
-        self.assertIn("/bancada", reply)
+        self.assertIn("CENTRAL DE AUTOMAÇÃO ULTRON", reply)
+        self.assertIn("[ 1 ]", reply)
+        self.assertIn("[ 3 ]", reply)
+
+    def test_numbered_menu_choice(self):
+        """Testa seleção digitando apenas o número '1' para bancada."""
+        with patch.object(self.chatops.scanner, "scan_network", return_value=[]):
+            reply = self.chatops.handle_incoming_message("nicolas", "1")
+            self.assertIn("Status da Bancada", reply)
+
+    def test_wizard_message_flow(self):
+        """Testa fluxo passo a passo para envio de mensagem."""
+        # Passo 1: Digita '3'
+        r1 = self.chatops.handle_incoming_message("nicolas", "3")
+        self.assertIn("ENVIAR MENSAGEM", r1)
+        self.assertIn("Digite o IP", r1)
+
+        # Passo 2: Digita o IP
+        r2 = self.chatops.handle_incoming_message("nicolas", "192.168.57.59")
+        self.assertIn("Destino: 192.168.57.59", r2)
+        self.assertIn("Digite o texto", r2)
+
+        # Passo 3: Digita o texto da mensagem
+        r3 = self.chatops.handle_incoming_message("nicolas", "Olá máquina de teste")
+        self.assertIn("Enviando mensagem", r3)
+        self.assertIn("192.168.57.59", r3)
 
     def test_slash_bancada(self):
         """Testa o comando /bancada."""

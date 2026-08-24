@@ -50,28 +50,57 @@ class TrueConfChatOps:
     def handle_incoming_message(self, user_id: str, message: str) -> str:
         """
         Recebe qualquer mensagem enviada ao bot no chat privado do TrueConf.
+        Suporta menus selecionáveis por números, wizards guiados passo a passo e comandos slash.
         """
         text = (message or "").strip()
         if not text:
-            return "Olá! Envie /ajuda para ver os comandos disponíveis."
+            return self._cmd_interactive_menu()
 
-        # 1. Sessão interativa pendente (ex: escolha de cliente pós-MDT)
+        norm_text = _normalize_token(text)
+
+        # 1. Sessão interativa pendente (Wizard passo a passo)
         if user_id in self.user_sessions:
-            session = self.user_sessions[user_id]
-            if session.get("type") == "pending_mdt":
-                result = self._handle_pending_mdt_choice(user_id, session, text)
-                if result:
-                    return result
+            return self._handle_wizard_step(user_id, self.user_sessions[user_id], text)
 
-        # 2. Roteamento de comandos slash explícitos (com suporte a acentuação)
+        # 2. Navegação rápida pelo Menu Numérico Principal
+        menu_choices = {
+            "1": lambda: self._cmd_bancada(user_id),
+            "01": lambda: self._cmd_bancada(user_id),
+            "2": lambda: self._start_wizard_diagnostico(user_id),
+            "02": lambda: self._start_wizard_diagnostico(user_id),
+            "3": lambda: self._start_wizard_msg(user_id),
+            "03": lambda: self._start_wizard_msg(user_id),
+            "4": lambda: self._start_wizard_preparar(user_id),
+            "04": lambda: self._start_wizard_preparar(user_id),
+            "5": lambda: self._start_wizard_ativar(user_id),
+            "05": lambda: self._start_wizard_ativar(user_id),
+            "6": lambda: self._start_wizard_backup(user_id),
+            "06": lambda: self._start_wizard_backup(user_id),
+            "7": lambda: self._start_wizard_dominio(user_id),
+            "07": lambda: self._start_wizard_dominio(user_id),
+            "8": lambda: self._start_wizard_softwares(user_id),
+            "08": lambda: self._start_wizard_softwares(user_id),
+            "9": lambda: self._start_wizard_power(user_id),
+            "09": lambda: self._start_wizard_power(user_id),
+            "10": lambda: self._cmd_clientes(),
+            "11": lambda: self._cmd_chamados(),
+            "12": lambda: self._cmd_laudos([]),
+        }
+
+        if text in menu_choices:
+            return menu_choices[text]()
+
+        # 3. Solicitação de Menu Principal
+        menu_kws = ["menu", "ajuda", "help", "inicio", "comecar", "ola", "oi", "bom dia", "boa tarde", "boa noite", "/menu", "/start", "/ajuda", "/help"]
+        if norm_text in menu_kws or norm_text == "opcoes":
+            return self._cmd_interactive_menu()
+
+        # 4. Roteamento de comandos slash explícitos (com suporte a acentuação)
         parts = text.split()
         first_token = parts[0] if parts else ""
         norm_token = _normalize_token(first_token)
-        norm_text = _normalize_token(text)
 
         routes = {
-            frozenset(["/ajuda", "/help", "/start", "ajuda", "help"]):
-                lambda: self._cmd_help(),
             frozenset(["/bancada", "/status", "/maquinas", "/lab", "/hosts"]):
                 lambda: self._cmd_bancada(user_id),
             frozenset(["/clientes", "/perfis", "/empresas"]):
@@ -112,28 +141,26 @@ class TrueConfChatOps:
             if norm_token in keywords:
                 return handler()
 
-        # 3. Disparo de mensagem para o usuário por linguagem natural
+        # 5. Disparo de mensagem para o usuário por linguagem natural
         # Ex: "manda uma mensagem para o IP 192.168.57.59 'Ultron está rodando'"
         ip_match = re.search(r"\b(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})\b", text)
         msg_action_kws = ["manda uma mensagem", "mandar mensagem", "enviar mensagem", "avisa o ip", "notifica o ip", "avise o ip", "mande uma mensagem"]
         if ip_match and any(kw in norm_text for kw in msg_action_kws):
             target_ip = ip_match.group(1)
-            # Extrai o texto da mensagem (entre aspas ou o resto da frase)
             quoted = re.search(r'["\']([^"\']+)["\']', text)
             if quoted:
                 clean_msg = quoted.group(1)
             else:
-                # Remove o prefixo do comando para pegar o texto
                 clean_msg = re.sub(r'^(?:.*?)' + re.escape(target_ip) + r'[:\s-]*', '', text, flags=re.IGNORECASE).strip()
             if clean_msg:
                 return self._cmd_message(user_id, [target_ip] + clean_msg.split())
 
-        # 4. Erro hexadecimal Windows em texto livre (ex: 0x80070005)
+        # 6. Erro hexadecimal Windows em texto livre (ex: 0x80070005)
         hex_match = re.search(r"\b(0x[0-9a-fA-F]{8})\b", text)
         if hex_match:
             return self._cmd_erro([hex_match.group(1)])
 
-        # 5. Consulta rápida de bancada por linguagem natural
+        # 7. Consulta rápida de bancada por linguagem natural
         bench_kws = [
             "tem maquina", "pcs na bancada", "bancada ta cheia",
             "computadores no lab", "quantas maquinas",
@@ -143,36 +170,259 @@ class TrueConfChatOps:
             if kw in norm_text:
                 return self._cmd_bancada(user_id)
 
-        # 6. IA Conversacional
+        # 8. IA Conversacional
         return self._handle_ai_conversation(user_id, text)
 
     # ------------------------------------------------------------------
     # Comandos
     # ------------------------------------------------------------------
 
-    def _cmd_help(self) -> str:
+    def _cmd_interactive_menu(self) -> str:
         return (
-            "🤖 Ultron ChatOps - Central de Comando de Bancada\n\n"
-            "💻 Bancada & Máquinas:\n"
-            "• /bancada — Lista computadores ativos no lab\n"
-            "• /preparar <IP> <cliente> — Inicia esteira completa de automação\n"
-            "• /diagnostico <IP> — Diagnóstico de hardware e S.M.A.R.T\n"
-            "• /msg <IP> <texto> — Exibe mensagem na tela do usuário remoto (Pop-up/Alerta)\n"
-            "• /ativar <IP> — Ativação do Windows e Office via MAS\n"
-            "• /backup <IP> — Backup de dados do usuário para o Storage\n"
-            "• /dominio <IP> <cliente> — Ingressa o computador no domínio\n"
-            "• /softwares <IP> <apps> — Instala softwares avulsos (ex: chrome,anydesk)\n"
-            "• /reiniciar <IP> ou /desligar <IP> — Controle remoto de energia\n\n"
-            "🏢 Clientes & Chamados:\n"
-            "• /clientes — Lista empresas cadastradas e domínios\n"
-            "• /chamados — Consulta chamados pendentes no Milvus\n"
-            "• /laudos — Lista laudos técnicos em PDF gerados\n\n"
-            "🛠️ Diagnóstico & Segurança:\n"
-            "• /erro <código> — Decodifica erros do Windows (ex: /erro 0x80070005)\n"
-            "• /cve <programa> — Consulta falhas de segurança conhecidas\n"
-            "• /clima — Telemetria térmica do laboratório\n"
-            "• /wan — IP público e link de internet\n\n"
-            "💬 Dica: Você também pode fazer perguntas técnicas em linguagem natural ou mandar avisos (ex: 'manda uma mensagem para o IP 192.168.57.59 reiniciando em 5min')."
+            "🤖 CENTRAL DE AUTOMAÇÃO ULTRON\n\n"
+            "Escolha a opção desejada digitando apenas o NÚMERO:\n\n"
+            "[ 1 ] 💻 Ver Computadores na Bancada\n"
+            "[ 2 ] 🩺 Diagnóstico Rápido de Hardware\n"
+            "[ 3 ] 📢 Enviar Mensagem / Pop-up na Tela\n"
+            "[ 4 ] 🚀 Preparar Máquina para Cliente\n"
+            "[ 5 ] 🔑 Ativar Windows e Office (MAS)\n"
+            "[ 6 ] 💾 Fazer Backup do Usuário\n"
+            "[ 7 ] 🛡️ Ingressar no Domínio (AD)\n"
+            "[ 8 ] 📦 Instalar Softwares Básicos\n"
+            "[ 9 ] 🔌 Reiniciar ou Desligar Máquina\n"
+            "[ 10 ] 🏢 Consultar Clientes Cadastrados\n"
+            "[ 11 ] 🎫 Consultar Chamados no Milvus\n"
+            "[ 12 ] 📄 Lista de Laudos Técnicos em PDF\n\n"
+            "💬 Digite o número da opção (ex: 1, 2, 3) ou 'menu' a qualquer momento para voltar."
+        )
+
+    def _cmd_help(self) -> str:
+        return self._cmd_interactive_menu()
+
+    # ------------------------------------------------------------------
+    # Wizard Interativo Passo a Passo
+    # ------------------------------------------------------------------
+
+    def _handle_wizard_step(self, user_id: str, session: Dict[str, Any], text: str) -> str:
+        norm = _normalize_token(text)
+        if norm in ["0", "cancelar", "cancela", "voltar", "sair", "menu", "parar"]:
+            self.user_sessions.pop(user_id, None)
+            return "❌ Operação cancelada.\n\n" + self._cmd_interactive_menu()
+
+        wtype = session.get("type")
+
+        # 1. Escolha pós-MDT
+        if wtype == "pending_mdt":
+            return self._handle_pending_mdt_choice(user_id, session, text)
+
+        # 2. Wizard de Diagnóstico
+        if wtype == "wizard_diag":
+            ip = text.strip()
+            self.user_sessions.pop(user_id, None)
+            return self._cmd_diagnostico(user_id, [ip])
+
+        # 3. Wizard de Mensagem na Tela
+        if wtype == "wizard_msg":
+            step = session.get("step")
+            if step == "ip":
+                ip = text.strip()
+                session["ip"] = ip
+                session["step"] = "text"
+                return (
+                    f"📢 Destino: {ip}\n\n"
+                    f"💬 Digite o texto da mensagem que vai aparecer no meio da tela do usuário:\n"
+                    f"(ex: O laboratório está finalizando a configuração do seu computador)\n\n"
+                    f"[ 0 ] Cancelar"
+                )
+            elif step == "text":
+                ip = session.get("ip")
+                msg_text = text.strip()
+                self.user_sessions.pop(user_id, None)
+                return self._cmd_message(user_id, [ip] + msg_text.split())
+
+        # 4. Wizard de Preparação
+        if wtype == "wizard_preparar":
+            step = session.get("step")
+            if step == "ip":
+                ip = text.strip()
+                session["ip"] = ip
+                session["step"] = "client"
+                clients = self.profile_mgr.list_clients()
+                lines = [f"🚀 Preparar Máquina {ip}\n\nEscolha o Perfil do Cliente digitando o número:\n"]
+                for idx, c in enumerate(clients[:10], 1):
+                    lines.append(f"[ {idx} ] {c.get('nome')} ({c.get('id')})")
+                lines.append("\n[ 0 ] Cancelar")
+                return "\n".join(lines)
+            elif step == "client":
+                ip = session.get("ip")
+                client_id = text.strip()
+                if client_id.isdigit():
+                    clients = self.profile_mgr.list_clients()
+                    idx = int(client_id) - 1
+                    if 0 <= idx < len(clients):
+                        client_id = clients[idx].get("id", client_id)
+                self.user_sessions.pop(user_id, None)
+                return self._cmd_preparar(user_id, [ip, client_id])
+
+        # 5. Wizard de Ativação MAS
+        if wtype == "wizard_ativar":
+            ip = text.strip()
+            self.user_sessions.pop(user_id, None)
+            return self._cmd_ativar(user_id, [ip])
+
+        # 6. Wizard de Backup
+        if wtype == "wizard_backup":
+            ip = text.strip()
+            self.user_sessions.pop(user_id, None)
+            return self._cmd_backup(user_id, [ip])
+
+        # 7. Wizard de Domínio
+        if wtype == "wizard_dominio":
+            step = session.get("step")
+            if step == "ip":
+                ip = text.strip()
+                session["ip"] = ip
+                session["step"] = "domain"
+                return (
+                    f"🛡️ Ingressar {ip} no Domínio\n\n"
+                    f"Digite o nome do domínio ou o ID do cliente:\n"
+                    f"(ex: penserede.local ou penserede)\n\n"
+                    f"[ 0 ] Cancelar"
+                )
+            elif step == "domain":
+                ip = session.get("ip")
+                dom = text.strip()
+                self.user_sessions.pop(user_id, None)
+                return self._cmd_dominio(user_id, [ip, dom])
+
+        # 8. Wizard de Softwares
+        if wtype == "wizard_softwares":
+            step = session.get("step")
+            if step == "ip":
+                ip = text.strip()
+                session["ip"] = ip
+                session["step"] = "choice"
+                return (
+                    f"📦 Instalação de Softwares em {ip}\n\n"
+                    f"Escolha o pacote digitando o número:\n"
+                    f"[ 1 ] Pacote Padrão de Escritório (Chrome, AnyDesk, WinRAR, 7-Zip, Acrobat Reader)\n"
+                    f"[ 2 ] Google Chrome\n"
+                    f"[ 3 ] AnyDesk\n"
+                    f"[ 4 ] WinRAR + 7-Zip\n"
+                    f"[ 5 ] Digitar nomes avulsos (ex: Google.Chrome,AnyDesk)\n\n"
+                    f"[ 0 ] Cancelar"
+                )
+            elif step == "choice":
+                ip = session.get("ip")
+                pkgs_map = {
+                    "1": "Google.Chrome,AnyDeskSoftwareGmbH.AnyDesk,RARLab.WinRAR,7zip.7zip,Adobe.Acrobat.Reader.64-bit",
+                    "2": "Google.Chrome",
+                    "3": "AnyDeskSoftwareGmbH.AnyDesk",
+                    "4": "RARLab.WinRAR,7zip.7zip",
+                }
+                pkgs = pkgs_map.get(text.strip(), text.strip())
+                self.user_sessions.pop(user_id, None)
+                return self._cmd_softwares(user_id, [ip, pkgs])
+
+        # 9. Wizard de Energia
+        if wtype == "wizard_power":
+            step = session.get("step")
+            if step == "ip":
+                ip = text.strip()
+                session["ip"] = ip
+                session["step"] = "action"
+                return (
+                    f"🔌 Controle de Energia para {ip}\n\n"
+                    f"Escolha a ação digitando o número:\n"
+                    f"[ 1 ] Reiniciar Computador\n"
+                    f"[ 2 ] Desligar Computador\n\n"
+                    f"[ 0 ] Cancelar"
+                )
+            elif step == "action":
+                ip = session.get("ip")
+                act = "restart" if text.strip() == "1" else "shutdown" if text.strip() == "2" else None
+                self.user_sessions.pop(user_id, None)
+                if act:
+                    return self._cmd_power(user_id, [ip], act)
+                return "❌ Opção inválida. Operação cancelada."
+
+        self.user_sessions.pop(user_id, None)
+        return self._cmd_interactive_menu()
+
+    # ------------------------------------------------------------------
+    # Starters dos Wizards
+    # ------------------------------------------------------------------
+
+    def _start_wizard_diagnostico(self, user_id: str) -> str:
+        self.user_sessions[user_id] = {"type": "wizard_diag", "step": "ip"}
+        return (
+            "🩺 DIAGNÓSTICO DE HARDWARE & S.M.A.R.T\n\n"
+            "Digite o IP do computador que deseja inspecionar:\n"
+            "(ex: 192.168.57.59 ou 192.168.58.182)\n\n"
+            "[ 0 ] Cancelar e voltar ao Menu"
+        )
+
+    def _start_wizard_msg(self, user_id: str) -> str:
+        self.user_sessions[user_id] = {"type": "wizard_msg", "step": "ip"}
+        return (
+            "📢 ENVIAR MENSAGEM / POP-UP NA TELA\n\n"
+            "Digite o IP do computador de destino:\n"
+            "(ex: 192.168.57.59 ou 192.168.58.182)\n\n"
+            "[ 0 ] Cancelar e voltar ao Menu"
+        )
+
+    def _start_wizard_preparar(self, user_id: str) -> str:
+        self.user_sessions[user_id] = {"type": "wizard_preparar", "step": "ip"}
+        return (
+            "🚀 PREPARAÇÃO AUTOMÁTICA DE MÁQUINA\n\n"
+            "Digite o IP do computador na bancada:\n"
+            "(ex: 192.168.57.59 ou 192.168.58.182)\n\n"
+            "[ 0 ] Cancelar e voltar ao Menu"
+        )
+
+    def _start_wizard_ativar(self, user_id: str) -> str:
+        self.user_sessions[user_id] = {"type": "wizard_ativar", "step": "ip"}
+        return (
+            "🔑 ATIVAÇÃO DO WINDOWS E OFFICE (MAS)\n\n"
+            "Digite o IP do computador que deseja ativar:\n"
+            "(ex: 192.168.57.59)\n\n"
+            "[ 0 ] Cancelar e voltar ao Menu"
+        )
+
+    def _start_wizard_backup(self, user_id: str) -> str:
+        self.user_sessions[user_id] = {"type": "wizard_backup", "step": "ip"}
+        return (
+            "💾 BACKUP DE DADOS PARA O STORAGE\n\n"
+            "Digite o IP do computador de origem:\n"
+            "(ex: 192.168.57.59)\n\n"
+            "[ 0 ] Cancelar e voltar ao Menu"
+        )
+
+    def _start_wizard_dominio(self, user_id: str) -> str:
+        self.user_sessions[user_id] = {"type": "wizard_dominio", "step": "ip"}
+        return (
+            "🛡️ INGRESSO NO DOMÍNIO (ACTIVE DIRECTORY)\n\n"
+            "Digite o IP do computador:\n"
+            "(ex: 192.168.57.59)\n\n"
+            "[ 0 ] Cancelar e voltar ao Menu"
+        )
+
+    def _start_wizard_softwares(self, user_id: str) -> str:
+        self.user_sessions[user_id] = {"type": "wizard_softwares", "step": "ip"}
+        return (
+            "📦 INSTALAÇÃO DE SOFTWARES\n\n"
+            "Digite o IP do computador:\n"
+            "(ex: 192.168.57.59)\n\n"
+            "[ 0 ] Cancelar e voltar ao Menu"
+        )
+
+    def _start_wizard_power(self, user_id: str) -> str:
+        self.user_sessions[user_id] = {"type": "wizard_power", "step": "ip"}
+        return (
+            "🔌 CONTROLE REMOTO DE ENERGIA\n\n"
+            "Digite o IP do computador:\n"
+            "(ex: 192.168.57.59)\n\n"
+            "[ 0 ] Cancelar e voltar ao Menu"
         )
 
     def _cmd_bancada(self, user_id: str) -> str:
