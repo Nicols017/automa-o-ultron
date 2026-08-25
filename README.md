@@ -1,4 +1,4 @@
-﻿# 🤖 Ultron Lab Automation - Pense Rede
+# 🤖 Ultron Lab Automation - Pense Rede
 
 Sistema inteligente de orquestração, provisionamento e automação de bancada/remoto, com validação de hardware por IA local (RTX 5060 Ti / Ollama), execução remota via WinRM/PowerShell e emissão automática de laudos técnicos em PDF para clientes corporativos da **Pense Rede**.
 
@@ -12,7 +12,7 @@ O Ultron foi projetado para operar tanto na **bancada física do laboratório** 
 Em qualquer computador com Windows (no Wi-Fi, em outra filial, pós-formatação ou na bancada), basta abrir o PowerShell como Administrador e executar:
 
 ```powershell
-irm http://192.168.57.43:8000/bootstrap.ps1 | iex
+irm http://192.168.57.43:7000/bootstrap.ps1 | iex
 ```
 *(Substitua pelo IP/DNS do servidor Ultron ou pelo IP do túnel Tailscale/VPN)*.
 
@@ -25,7 +25,7 @@ irm http://192.168.57.43:8000/bootstrap.ps1 | iex
 
 ## 🏛️ Topologia e Conectividade da Rede
 
-* **Ultron Server (Host Linux + RTX 5060 Ti):** `http://192.168.57.43:8000` ou `http://localhost:8000`
+* **Ultron Server (Host Linux + RTX 5060 Ti):** `http://192.168.57.43:7000` ou `http://localhost:7000`
 * **Servidor PXE / MDT & Repositório de Softwares:** `192.168.57.87` (Compartilhamento `\\192.168.57.87\MilvusAgents`)
 * **Servidor Storage de Backups Macrium:** `192.168.57.112` (Compartilhamento `\\192.168.57.112\Backups`)
 * **Subrede Padrão da Bancada:** `192.168.57.0/24` (Suporta também qualquer subrede arbitrária ou IP individual).
@@ -108,9 +108,9 @@ pip install -r requirements.txt
 
 ### 4. Executar o Servidor em Modo de Desenvolvimento:
 ```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+uvicorn main:app --reload --host 0.0.0.0 --port 7000
 ```
-Acesse o painel em: **`http://localhost:8000`** ou **`http://<SEU_IP>:8000`**.
+Acesse o painel em: **`http://localhost:7000`** ou **`http://<SEU_IP>:7000`**.
 
 ---
 

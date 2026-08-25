@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copia o código da aplicação
 COPY . .
 
-EXPOSE 8000
+EXPOSE 7000
 
 # Executa o servidor FastAPI com Uvicorn
 CMD ["python", "main.py"]

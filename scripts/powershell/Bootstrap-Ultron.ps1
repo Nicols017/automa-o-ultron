@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Bootstrap Universal - Ultron Automation Client
 .DESCRIPTION
@@ -6,14 +6,14 @@
     registra o host no Ultron Server e inicia a esteira de automacao/diagnostico de qualquer lugar
     (Bancada, Wi-Fi, VPN, Filiais ou Home Office), sem depender de porta fisica de switch.
 .EXAMPLE
-    irm http://192.168.57.43:8000/bootstrap.ps1 | iex
+    irm http://192.168.57.43:7000/bootstrap.ps1 | iex
     ou
-    .\Bootstrap-Ultron.ps1 -UltronServerUrl "http://192.168.57.43:8000" -ClientId "cliente_padrao" -AutoRun
+    .\Bootstrap-Ultron.ps1 -UltronServerUrl "http://192.168.57.43:7000" -ClientId "cliente_padrao" -AutoRun
 #>
 
 [CmdletBinding()]
 param(
-    [string]$UltronServerUrl = "http://192.168.57.43:8000",
+    [string]$UltronServerUrl = "http://192.168.57.43:7000",
     [string]$ClientId = "cliente_padrao",
     [string]$TechUserId = "nicolas",
     [switch]$AutoRun = $true

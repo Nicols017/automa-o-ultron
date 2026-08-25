@@ -1,6 +1,6 @@
 # Script acionado no final da Task Sequence do MDT
 param (
-    [string]$UltronServerUrl = "http://192.168.57.43:8000/api/v1/mdt/completed"
+    [string]$UltronServerUrl = "http://192.168.57.43:7000/api/v1/mdt/completed"
 )
 
 Write-Host "==================================================" -ForegroundColor Cyan

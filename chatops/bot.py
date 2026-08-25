@@ -57,6 +57,10 @@ class TrueConfBot:
         self._is_running = False
         self._p2p_chats: Dict[str, str] = {}  # user_id -> chat_id cache
 
+    @property
+    def server_url(self) -> str:
+        return self.raw_server_url
+
     def start_polling(self, interval_sec: int = 3):
         """Inicia o Bot do TrueConf em segundo plano conectando via WebSocket"""
         if self._is_running:

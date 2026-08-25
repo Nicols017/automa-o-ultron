@@ -18,7 +18,7 @@ network:
 server:
   env: production
   host: 0.0.0.0
-  port: 8000
+  port: 7000
 switch:
   enabled: false
   host: 192.168.57.1
@@ -32,24 +32,24 @@ switch:
   type: mikrotik_ssh
   user: admin
 trueconf:
-  server_url: https://trueconf.penserede.com.br
-  bot_username: ultron
-  bot_password: 55JnRSa8UsS10GnF4Q65
   api_token: DH233ZbAAlnzc3b2suuFjwjyXhHRLob2
+  bot_password: 55JnRSa8UsS10GnF4Q65
+  bot_username: ultron
   channel_id: lab_bench_channel
   default_tech_user_id: nicolas.silva
+  server_url: https://trueconf.penserede.com.br
 winrm:
-  default_user: penserede
   default_pass: '@C3por2d2'
-  port: 5985
+  default_user: penserede
   fallback_credentials:
-    - user: penserede
-      pass: '@C3por2d2'
-    - user: Administrator
-      pass: '@C3por2d2'
-    - user: Administrador
-      pass: '@C3por2d2'
-    - user: Administrator
-      pass: SenhaTemporariaLab123!
-    - user: Administrador
-      pass: SenhaTemporariaLab123!
+  - pass: '@C3por2d2'
+    user: penserede
+  - pass: '@C3por2d2'
+    user: Administrator
+  - pass: '@C3por2d2'
+    user: Administrador
+  - pass: SenhaTemporariaLab123!
+    user: Administrator
+  - pass: SenhaTemporariaLab123!
+    user: Administrador
+  port: 5985

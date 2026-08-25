@@ -423,7 +423,7 @@ def test_public_tools_suite():
     print("✅ MAC OEM Vendor Resolver OK: Dell Inc.")
 
     # 11. Gerador de QR Code
-    res_qr = client.get("/api/v1/tools/qr?data=http://192.168.57.43:8000/dashboard&size=200")
+    res_qr = client.get("/api/v1/tools/qr?data=http://192.168.57.43:7000/dashboard&size=200")
     assert res_qr.status_code == 200
     assert "qr_url" in res_qr.json()
     print("✅ QR Code Mobile Generator OK")

@@ -861,7 +861,7 @@ def download_report(filename: str):
 if __name__ == "__main__":
     srv_cfg = settings.get("server", {})
     host = srv_cfg.get("host", "0.0.0.0")
-    port = srv_cfg.get("port", 8000)
+    port = srv_cfg.get("port", 7000)
     is_dev = srv_cfg.get("env", "production") == "development"
     print(f"🚀 Iniciando Servidor Ultron na RTX 5060Ti em {host}:{port}...")
     uvicorn.run("main:app", host=host, port=port, reload=is_dev)
