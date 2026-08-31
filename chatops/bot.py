@@ -4,24 +4,50 @@ Utiliza a biblioteca oficial python-trueconf-bot com WebSocket e suporte a crede
 Garante que o Ultron permaneça ONLINE 24/7 e atenda qualquer técnico em tempo real.
 """
 
+import os
 import asyncio
 import logging
 import threading
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import urllib3
 import requests
 
-from chatops.chatops import TrueConfChatOps
+from chatops.chatops import TrueConfChatOps, _normalize_token
 
 try:
     from trueconf import Bot, Dispatcher, Router, Message, F, ParseMode
+    from trueconf.types.input_file import FSInputFile
     TRUECONF_LIB_AVAILABLE = True
 except ImportError:
     TRUECONF_LIB_AVAILABLE = False
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger("ultron_trueconf_bot")
+
+def _split_message(text: str, max_chars: int = 3800) -> List[str]:
+    """Divide mensagens longas em blocos seguros para o limite do TrueConf (4096 chars)."""
+    if not text or len(text) <= max_chars:
+        return [text] if text else []
+
+    chunks = []
+    lines = text.split("\n")
+    current = []
+    current_len = 0
+
+    for line in lines:
+        if current_len + len(line) + 1 > max_chars:
+            if current:
+                chunks.append("\n".join(current))
+                current = []
+                current_len = 0
+        current.append(line)
+        current_len += len(line) + 1
+
+    if current:
+        chunks.append("\n".join(current))
+
+    return chunks
 
 
 class TrueConfBot:
@@ -61,11 +87,30 @@ class TrueConfBot:
     def server_url(self) -> str:
         return self.raw_server_url
 
+    def _ensure_avatar(self):
+        """Garante que a foto de perfil oficial do Ultron esteja aplicada no TrueConf Server"""
+        try:
+            logo_path = os.path.join("static", "img", "ultron_logo.jpg")
+            if not os.path.exists(logo_path):
+                logo_path = os.path.join("static", "img", "ultron_logo.png")
+            if os.path.exists(logo_path) and self.api_token:
+                url = f"{self.raw_server_url}/api/v4/users/{self.bot_username}/avatar"
+                headers = {"Authorization": f"Bearer {self.api_token}"}
+                with open(logo_path, "rb") as img_f:
+                    files = {"image": ("ultron_logo.jpg", img_f, "image/jpeg")}
+                    requests.put(url, headers=headers, files=files, verify=False, timeout=5)
+                logger.info("🎨 Avatar oficial do Ultron verificado e atualizado no TrueConf Server!")
+        except Exception as e:
+            logger.debug(f"Não foi possível sincronizar avatar do TrueConf: {e}")
+
     def start_polling(self, interval_sec: int = 3):
         """Inicia o Bot do TrueConf em segundo plano conectando via WebSocket"""
         if self._is_running:
             return
         self._is_running = True
+
+        # Sincroniza avatar em background
+        threading.Thread(target=self._ensure_avatar, daemon=True).start()
 
         self._thread = threading.Thread(target=self._run_event_loop, daemon=True, name="TrueConfBotWorker")
         self._thread.start()
@@ -134,17 +179,48 @@ class TrueConfBot:
                         raw_author = raw_author or self.default_tech_user_id
                         user_id = str(raw_author).split("@")[0] if "@" in str(raw_author) else str(raw_author)
 
-                        logger.info(f"📩 Mensagem recebida de {user_id}: {text}")
-                        
-                        # Executa o ChatOps em thread separada para NUNCA travar os pings do WebSocket
+                        # Armazena chat_id da mensagem para este usuário
+                        chat_id = getattr(msg, "chat_id", None) or getattr(getattr(msg, "chat", None), "id", None)
+                        if chat_id:
+                            self._p2p_chats[user_id] = str(chat_id)
+                            self._p2p_chats[str(raw_author)] = str(chat_id)
+
+                        logger.info(f"📩 Mensagem recebida de {user_id} (chat_id: {chat_id}): {text}")
+
+                        # 1. Se for pedido de download do agente, envia o arquivo .exe diretamente na conversa
+                        norm_text = _normalize_token(text)
+                        agent_kws = ["download", "baixar", "agente", "agent", "executavel", "exe", "arquivo"]
+                        is_download = any(k in norm_text for k in agent_kws) or text.strip() in ["13", "/download", "/agent", "/agente", "/exe", "/baixar"]
+
+                        if is_download:
+                            exe_paths = [
+                                os.path.join("static", "downloads", "UltronAgent.exe"),
+                                os.path.join("agent", "UltronAgent.exe")
+                            ]
+                            found_exe = next((p for p in exe_paths if os.path.exists(p)), None)
+                            if found_exe:
+                                try:
+                                    logger.info(f"📤 Enviando UltronAgent.exe diretamente para {user_id}...")
+                                    input_file = FSInputFile(path=found_exe, filename="UltronAgent.exe")
+                                    await msg.answer_document(
+                                        file=input_file,
+                                        caption="📎 UltronAgent.exe — Agente de Automação de Bancada (Pense Rede)"
+                                    )
+                                    logger.info(f"✅ UltronAgent.exe enviado com sucesso para {user_id}")
+                                except Exception as doc_err:
+                                    logger.error(f"Erro ao anexar documento via msg.answer_document: {doc_err}")
+
+                        # 2. Executa o ChatOps e responde com a instrução/menu
                         reply = await asyncio.to_thread(self.chatops.handle_incoming_message, user_id, text)
                         if reply:
-                            try:
-                                await msg.answer(reply, parse_mode=ParseMode.TEXT)
-                                logger.info(f"📤 Resposta enviada para {user_id}")
-                            except Exception as send_err:
-                                logger.warning(f"Falha ao responder via msg.answer ({send_err}). Enviando DM direta...")
-                                self.send_direct_message(user_id, reply)
+                            chunks = _split_message(reply)
+                            for chunk in chunks:
+                                try:
+                                    await msg.answer(chunk, parse_mode=ParseMode.TEXT)
+                                    logger.info(f"📤 Resposta enviada para {user_id}")
+                                except Exception as send_err:
+                                    logger.warning(f"Falha ao responder via msg.answer ({send_err}). Enviando DM direta...")
+                                    self.send_direct_message(user_id, chunk)
                     except Exception as err:
                         logger.error(f"Erro ao processar mensagem do TrueConf: {err}", exc_info=True)
 
@@ -195,7 +271,7 @@ class TrueConfBot:
         return self._rest_send_dm(target_user, message)
 
     async def _async_send_dm(self, user_id: str, message: str) -> bool:
-        """Cria chat P2P e envia mensagem via WebSocket"""
+        """Cria chat P2P e envia mensagem via WebSocket com suporte a mensagens longas"""
         try:
             if not self._bot:
                 return False
@@ -208,13 +284,15 @@ class TrueConfBot:
                 if chat_id:
                     self._p2p_chats[user_id] = str(chat_id)
 
-            # 2. Envia a mensagem com formatação de texto limpa
+            # 2. Envia a mensagem (dividida em blocos se ultrapassar o limite)
             if chat_id:
-                await self._bot.send_message(
-                    chat_id=chat_id,
-                    text=message,
-                    parse_mode=ParseMode.TEXT
-                )
+                chunks = _split_message(message)
+                for chunk in chunks:
+                    await self._bot.send_message(
+                        chat_id=chat_id,
+                        text=chunk,
+                        parse_mode=ParseMode.TEXT
+                    )
                 return True
             return False
         except Exception as e:
@@ -230,6 +308,54 @@ class TrueConfBot:
             r = requests.post(endpoint, json=payload, headers=self.headers, verify=False, timeout=5)
             return r.status_code in [200, 201]
         except Exception:
+            return False
+
+    def send_direct_file(self, user_id: str, file_path: str, caption: Optional[str] = None, filename: Optional[str] = None) -> bool:
+        """
+        Envia um arquivo diretamente como anexo no chat privado do TrueConf.
+        """
+        target_user = user_id or self.default_tech_user_id
+
+        if not os.path.exists(file_path):
+            logger.warning(f"Arquivo para envio não encontrado: {file_path}")
+            return False
+
+        if self._bot and self._loop and self._loop.is_running():
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    self._async_send_file(target_user, file_path, caption, filename),
+                    self._loop
+                )
+                return future.result(timeout=15)
+            except Exception as e:
+                logger.warning(f"Falha ao enviar arquivo via WebSocket ({e}).")
+        return False
+
+    async def _async_send_file(self, user_id: str, file_path: str, caption: Optional[str] = None, filename: Optional[str] = None) -> bool:
+        """Cria chat P2P e envia documento/anexo via WebSocket"""
+        try:
+            if not self._bot or not os.path.exists(file_path):
+                return False
+
+            chat_id = self._p2p_chats.get(user_id)
+            if not chat_id:
+                chat_resp = await self._bot.create_personal_chat(user_id=user_id)
+                chat_id = getattr(chat_resp, "chat_id", None) or getattr(chat_resp, "id", None)
+                if chat_id:
+                    self._p2p_chats[user_id] = str(chat_id)
+
+            if chat_id:
+                input_file = FSInputFile(path=file_path, filename=filename or os.path.basename(file_path))
+                await self._bot.send_document(
+                    chat_id=chat_id,
+                    file=input_file,
+                    caption=caption or ""
+                )
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Erro em _async_send_file para {user_id}: {e}")
+            self._p2p_chats.pop(user_id, None)
             return False
 
     def process_incoming_message(self, user_id: str, message_text: str, reply_directly: bool = True) -> str:
@@ -259,17 +385,27 @@ class TrueConfBot:
     ):
         """Notifica a conclusão da esteira com AnyDesk ID e PDF"""
         target_user = user_id or self.default_tech_user_id
-        anydesk_line = f"🔑 **AnyDesk ID:** `{anydesk_id}`\n" if anydesk_id and anydesk_id != "NÃO_DETECTADO" else ""
+        anydesk_line = f"🔑 AnyDesk ID: {anydesk_id}\n" if anydesk_id and anydesk_id != "NÃO_DETECTADO" else ""
         msg = (
-            f"🎉 **Ultron - Automação Concluída com Sucesso!**\n\n"
-            f"📍 **Localização:** `{bench_name}`\n"
-            f"🌐 **IP:** `{ip}`\n"
-            f"🏷️ **Serial:** `{serial}`\n"
-            f"🏢 **Cliente:** `{client_name}`\n"
+            f"🎉 ULTRON — AUTOMAÇÃO CONCLUÍDA COM SUCESSO!\n\n"
+            f"📍 Localização: {bench_name}\n"
+            f"🌐 IP: {ip}\n"
+            f"🏷️ Serial: {serial}\n"
+            f"🏢 Cliente: {client_name}\n"
             f"{anydesk_line}"
-            f"⚡ **Teste de Estresse:** `{burnin_status}`\n"
-            f"📄 **Laudo Técnico:** `{pdf_filename}`\n\n"
+            f"⚡ Teste de Estresse: {burnin_status}\n"
+            f"📄 Laudo Técnico: {pdf_filename}\n\n"
             f"Máquina 100% configurada e pronta para entrega.\n"
-            f"💡 *Envie `/bancada` para ver as próximas máquinas prontas.*"
+            f"💡 Envie /bancada para ver as próximas máquinas."
         )
-        return self.send_direct_message(target_user, msg)
+        self.send_direct_message(target_user, msg)
+
+        # Envia também o PDF diretamente como anexo no TrueConf
+        pdf_path = os.path.join("reports", pdf_filename)
+        if os.path.exists(pdf_path):
+            self.send_direct_file(
+                user_id=target_user,
+                file_path=pdf_path,
+                caption=f"📄 Laudo Técnico: {pdf_filename}",
+                filename=pdf_filename
+            )

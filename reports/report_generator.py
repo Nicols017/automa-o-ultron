@@ -114,10 +114,30 @@ class ReportGenerator:
 
         story = []
 
-        # 1. Cabeçalho Institucional
+        # 1. Cabeçalho Institucional com Logo do Ultron
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        logo_path = os.path.join(base_dir, "static", "img", "ultron_logo.png")
+
+        from reportlab.platypus import Image as RLImage
+        logo_cell = Paragraph("<b>PENSE REDE</b> | Network Solutions & Hardware Lab", subtitle_style)
+        if os.path.exists(logo_path):
+            try:
+                logo_cell = Table([
+                    [
+                        RLImage(logo_path, width=32, height=32),
+                        Paragraph("<b>PENSE REDE</b> | Network Solutions & Hardware Lab<br/><font size='7.5' color='#64748B'>Ultron Autonomous Bench Engine</font>", subtitle_style)
+                    ]
+                ], colWidths=[38, 320])
+                logo_cell.setStyle(TableStyle([
+                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                    ('PADDING', (0,0), (-1,-1), 0),
+                ]))
+            except Exception:
+                logo_cell = Paragraph("<b>PENSE REDE</b> | Network Solutions & Hardware Lab", subtitle_style)
+
         header_data = [
             [
-                Paragraph("<b>PENSE REDE</b> | Network Solutions & Hardware Lab", subtitle_style),
+                logo_cell,
                 Paragraph(f"<b>Data:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", subtitle_style)
             ]
         ]

@@ -6,14 +6,14 @@
     registra o host no Ultron Server e inicia a esteira de automacao/diagnostico de qualquer lugar
     (Bancada, Wi-Fi, VPN, Filiais ou Home Office), sem depender de porta fisica de switch.
 .EXAMPLE
-    irm http://192.168.57.43:7000/bootstrap.ps1 | iex
+    irm http://192.168.57.48:7000/bootstrap.ps1 | iex
     ou
-    .\Bootstrap-Ultron.ps1 -UltronServerUrl "http://192.168.57.43:7000" -ClientId "cliente_padrao" -AutoRun
+    .\Bootstrap-Ultron.ps1 -UltronServerUrl "http://192.168.57.48:7000" -ClientId "cliente_padrao" -AutoRun
 #>
 
 [CmdletBinding()]
 param(
-    [string]$UltronServerUrl = "http://192.168.57.43:7000",
+    [string]$UltronServerUrl = "http://192.168.57.48:7000",
     [string]$ClientId = "cliente_padrao",
     [string]$TechUserId = "nicolas",
     [switch]$AutoRun = $true
@@ -77,6 +77,13 @@ try {
     netsh advfirewall firewall set rule group="Windows Remote Management" new enable=yes | Out-Null
     netsh advfirewall firewall add rule name="WinRM 5985" dir=in action=allow protocol=TCP localport=5985 | Out-Null
     Write-Host "    -> WinRM configurado com sucesso!" -ForegroundColor Green
+
+    # Provisiona conta de automacao UltronAdmin (Zero-Prompt)
+    $autoUser = "UltronAdmin"
+    $autoPass = "Ultron@AutoBench2026!"
+    cmd.exe /c "net user $autoUser $autoPass /add /expires:never /passwordchg:no /active:yes 2>nul || net user $autoUser $autoPass /active:yes" | Out-Null
+    cmd.exe /c "net localgroup Administrators $autoUser /add 2>nul & net localgroup Administradores $autoUser /add 2>nul" | Out-Null
+    Write-Host "    -> Conta de automacao UltronAdmin provisionada!" -ForegroundColor Green
 } catch {
     Write-Warning "    -> Nao foi possivel ajustar todas as regras do WinRM. Continuando..."
 }
@@ -90,6 +97,8 @@ $payload = @{
     status = "READY_FOR_PIPELINE"
     client_id = $ClientId
     auto_run = [bool]$AutoRun
+    auth_user = "UltronAdmin"
+    auth_pass = "Ultron@AutoBench2026!"
 } | ConvertTo-Json
 
 Write-Host "[*] Registrando maquina no Ultron Server ($UltronServerUrl)..." -ForegroundColor Yellow
@@ -97,7 +106,7 @@ Write-Host "[*] Registrando maquina no Ultron Server ($UltronServerUrl)..." -For
 try {
     $endpoint = "$UltronServerUrl/api/v1/mdt/completed"
     $response = Invoke-RestMethod -Uri $endpoint -Method Post -Body $payload -ContentType "application/json" -TimeoutSec 15
-    Write-Host "    -> Registro concluido com sucesso!" -ForegroundColor Green
+    Write-Host "    -> Registro concluido com sucesso (Zero-Prompt Ativo)!" -ForegroundColor Green
     Write-Host "    -> Resposta do Servidor: $($response | ConvertTo-Json -Compress)" -ForegroundColor Cyan
 } catch {
     Write-Host "⚠️ Falha ao contactar o servidor Ultron em $UltronServerUrl. Erro: $_" -ForegroundColor Red

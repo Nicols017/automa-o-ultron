@@ -14,7 +14,7 @@ network:
   milvus_demo_mode: true
   milvus_share: \\192.168.57.87\MilvusAgents
   software_share: \\192.168.57.87\Softwares
-  ultron_ip: 192.168.57.43
+  ultron_ip: 192.168.57.48
 server:
   env: production
   host: 0.0.0.0
@@ -22,7 +22,7 @@ server:
 switch:
   enabled: false
   host: 192.168.57.1
-  password: SenhaDoSwitchLab123!
+  password: ''
   ports_mapping:
     ether1: Bancada 01 (Cabo Azul)
     ether2: Bancada 02 (Cabo Verde)
@@ -39,17 +39,17 @@ trueconf:
   default_tech_user_id: nicolas.silva
   server_url: https://trueconf.penserede.com.br
 winrm:
-  default_pass: '@C3por2d2'
-  default_user: penserede
+  default_pass: Ultron@AutoBench2026!
+  default_user: UltronAdmin
   fallback_credentials:
-  - pass: '@C3por2d2'
+  - pass: Ultron@AutoBench2026!
+    user: UltronAdmin
+  - pass: Ultron@AutoBench2026!
+    user: ultron_admin
+  - pass: ''
+    user: Administrator
+  - pass: ''
+    user: Administrador
+  - pass: ''
     user: penserede
-  - pass: '@C3por2d2'
-    user: Administrator
-  - pass: '@C3por2d2'
-    user: Administrador
-  - pass: SenhaTemporariaLab123!
-    user: Administrator
-  - pass: SenhaTemporariaLab123!
-    user: Administrador
   port: 5985

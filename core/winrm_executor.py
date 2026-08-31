@@ -13,10 +13,21 @@ class WinRMExecutor:
     def __init__(self, config_path: str = None):
         self.config = self._load_config(config_path)
         self.default_user = self.config.get("winrm", {}).get("default_user", "Administrator")
-        self.default_pass = self.config.get("winrm", {}).get("default_pass", "SenhaTemporariaLab123!")
+        self.default_pass = self.config.get("winrm", {}).get("default_pass", "")
         self.port = self.config.get("winrm", {}).get("port", 5985)
         self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.scripts_dir = os.path.join(self.base_dir, "scripts", "powershell")
+        # Cache dinâmico de credenciais fornecidas pelos técnicos por IP
+        self.cached_credentials: Dict[str, Tuple[str, str]] = {}
+
+    def set_host_credentials(self, ip: str, username: str, password: str):
+        """Armazena credenciais válidas fornecidas pelo técnico para um IP de máquina"""
+        if ip and username:
+            self.cached_credentials[ip.strip()] = (username.strip(), password or "")
+
+    def get_host_credentials(self, ip: str) -> Optional[Tuple[str, str]]:
+        """Recupera credenciais em cache para uma máquina"""
+        return self.cached_credentials.get(ip.strip()) if ip else None
 
     def _load_config(self, config_path: Optional[str]) -> Dict[str, Any]:
         if not config_path:
@@ -65,7 +76,7 @@ class WinRMExecutor:
         Executa 100% silencioso em Session 0 (invisível ao usuário).
         """
         user = username or self.default_user
-        pwd = password or self.default_pass
+        pwd = password if password is not None else self.default_pass
         endpoint = f"http://{ip}:{self.port}/wsman"
         return winrm.Session(
             endpoint,
@@ -74,18 +85,49 @@ class WinRMExecutor:
             server_cert_validation="ignore"
         )
 
-    def _get_credential_candidates(self, username: Optional[str] = None, password: Optional[str] = None) -> List[Tuple[str, str]]:
-        primary_user = username or self.default_user
-        primary_pass = password or self.default_pass
+    def _get_credential_candidates(self, ip: str, username: Optional[str] = None, password: Optional[str] = None) -> List[Tuple[str, str]]:
+        candidates = []
         
-        candidates = [(primary_user, primary_pass)]
-        
-        # Fallback credentials configuradas no settings.yaml
+        # 1. Credencial fornecida explicitamente na chamada
+        if username:
+            candidates.append((username, password or ""))
+
+        # 2. Credencial em cache obtida do registro do agente ou técnico para este IP
+        cached = self.get_host_credentials(ip)
+        if cached and cached not in candidates:
+            candidates.append(cached)
+
+        # 3. Credencial padrão de automação do UltronAgent (Zero-Prompt)
+        agent_cred = ("UltronAdmin", "Ultron@AutoBench2026!")
+        if agent_cred not in candidates:
+            candidates.append(agent_cred)
+
+        # 4. Usuário padrão configurado se houver
+        if self.default_user and (self.default_user, self.default_pass) not in candidates:
+            candidates.append((self.default_user, self.default_pass))
+
+        # 5. Fallback credentials configuradas no settings.yaml
         fb_list = self.config.get("winrm", {}).get("fallback_credentials", [])
         for fb in fb_list:
             u = fb.get("user")
-            p = fb.get("pass")
-            if u and p and (u, p) not in candidates:
+            p = fb.get("pass", "")
+            if u and (u, p) not in candidates:
+                candidates.append((u, p))
+
+        # 6. Contas padrão adicionais de bancada e suporte
+        extra_fallbacks = [
+            ("Administrator", ""),
+            ("Administrador", ""),
+            ("penserede", ""),
+            ("suporte", ""),
+            ("admin", ""),
+            ("nicolas.silva", ""),
+            ("nicolas", ""),
+            ("penserede\\Administrator", ""),
+            ("penserede\\Administrador", ""),
+        ]
+        for u, p in extra_fallbacks:
+            if (u, p) not in candidates:
                 candidates.append((u, p))
 
         # Alterna entre Administrator e Administrador (padrão EN/PT-BR do Windows)
@@ -110,6 +152,7 @@ class WinRMExecutor:
         if not self.test_connection(ip):
             return {
                 "success": False,
+                "auth_failed": False,
                 "status_code": -1,
                 "stdout": "",
                 "stderr": f"Host {ip}:{self.port} inacessível ou porta WinRM fechada.",
@@ -117,7 +160,10 @@ class WinRMExecutor:
             }
 
         last_error = ""
-        for user, pwd in self._get_credential_candidates(username, password):
+        is_auth_error = False
+        candidates = self._get_credential_candidates(ip, username, password)
+
+        for user, pwd in candidates:
             try:
                 session = self.get_session(ip, user, pwd)
                 response = session.run_ps(script_code)
@@ -126,9 +172,12 @@ class WinRMExecutor:
                 stderr_str = response.std_err.decode("utf-8", errors="replace").strip() if response.std_err else ""
                 
                 # Se autenticou com sucesso (mesmo que o script retorne erro de execução)
-                if response.status_code == 0 or "credentials were rejected" not in stderr_str:
+                if response.status_code == 0 or ("credentials were rejected" not in stderr_str.lower() and "401" not in stderr_str and "access is denied" not in stderr_str.lower()):
+                    # Salva no cache como credencial funcional
+                    self.set_host_credentials(ip, user, pwd)
                     return {
                         "success": response.status_code == 0,
+                        "auth_failed": False,
                         "status_code": response.status_code,
                         "stdout": stdout_str,
                         "stderr": stderr_str,
@@ -136,16 +185,21 @@ class WinRMExecutor:
                         "user_used": user
                     }
                 last_error = stderr_str
+                is_auth_error = True
             except Exception as e:
                 last_error = str(e)
-                if "credentials were rejected" not in str(e).lower() and "401" not in str(e):
+                err_lower = str(e).lower()
+                if "credentials were rejected" in err_lower or "401" in err_lower or "unauthorized" in err_lower or "access is denied" in err_lower:
+                    is_auth_error = True
+                else:
                     break
 
         return {
             "success": False,
+            "auth_failed": is_auth_error,
             "status_code": -1,
             "stdout": "",
-            "stderr": f"Erro durante a execução WinRM: {last_error}",
+            "stderr": f"Erro de autenticação ou execução WinRM: {last_error}",
             "ip": ip
         }
 

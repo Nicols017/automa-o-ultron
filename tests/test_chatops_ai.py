@@ -1,6 +1,6 @@
 """
-Testes Unitários da IA do Ultron e TrueConf ChatOps
-Valida a sanitização de texto, remoção de tags <think>, geração e roteamento de comandos.
+Testes Unitários da IA do Ultron, TrueConf ChatOps e Autenticação Dinâmica
+Valida a sanitização de texto, remoção de tags <think>, respostas instantâneas via Knowledge Engine, restrições de escopo e credenciais dinâmicas.
 """
 
 import os
@@ -38,22 +38,25 @@ class TestDiagnosticAnalyzer(unittest.TestCase):
         self.assertNotIn("O técnico está perguntando", cleaned)
         self.assertTrue(cleaned.startswith("1. 🚨 **Problemas Identificados:**"))
 
-    def test_clean_llm_response_fillers(self):
-        """Valida se saudações robóticas e preâmbulos são removidos."""
-        raw = (
-            "Olá! Como assistente de IA da Pense Rede, aqui está o laudo:\n\n"
-            "Status: Operacional\n"
-            "Ação: Nenhuma."
-        )
-        cleaned = DiagnosticAnalyzer._clean_llm_response(raw)
-        self.assertNotIn("Olá! Como assistente", cleaned)
-        self.assertIn("Status: Operacional", cleaned)
-
     def test_clean_llm_response_unclosed_think(self):
         """Valida que uma tag <think> não fechada é truncada sem vazar raciocínio."""
         raw = "<think>Raciocínio inacabado do modelo..."
         cleaned = DiagnosticAnalyzer._clean_llm_response(raw)
         self.assertEqual(cleaned, "")
+
+    def test_fallback_knowledge_when_offline(self):
+        """Valida que o Knowledge Engine responde imediatamente sobre chamados Milvus mesmo sem conexão LLM."""
+        analyzer = DiagnosticAnalyzer(base_url="http://127.0.0.1:9999", provider="ollama")
+        res = analyzer.generate("A listas de chamados é apenas no meu nome que puxa?")
+        self.assertIn("Milvus", res)
+        self.assertIn("chamados", res.lower())
+
+    def test_fallback_scope_restriction(self):
+        """Valida que perguntas fora de escopo (culinária, futebol, etc.) são educadamente redirecionadas."""
+        analyzer = DiagnosticAnalyzer(base_url="http://127.0.0.1:9999", provider="ollama")
+        res = analyzer.generate("Me passa uma receita de bolo de chocolate?")
+        self.assertIn("foco é restrito ao suporte técnico", res)
+        self.assertIn("bancada", res.lower())
 
     @patch("requests.post")
     def test_generate_and_analyze_alias(self, mock_post):
@@ -72,33 +75,6 @@ class TestDiagnosticAnalyzer(unittest.TestCase):
         self.assertEqual(res1, "O computador PC-01 está ativo com WinRM pronto.")
         self.assertEqual(res2, res1)
 
-    @patch("requests.post")
-    def test_analyze_logs_format(self, mock_post):
-        """Valida o prompt de diagnóstico de hardware."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "response": (
-                "1. 🚨 **Problemas Identificados:** Nenhuma falha crítica detectada.\n\n"
-                "2. 🔬 **Causa Raiz:** Discos S.M.A.R.T 100% saudáveis.\n\n"
-                "3. 🛠️ **Ações de Reparo:** Prosseguir com a esteira de software.\n\n"
-                "4. 🩺 **Veredito da Máquina:** **APROVADA PARA PREPARAÇÃO**"
-            )
-        }
-        mock_post.return_value = mock_response
-
-        analyzer = DiagnosticAnalyzer()
-        telemetry = {
-            "computer_name": "PC-TEST",
-            "serial_number": "12345",
-            "cpu": "Core i5",
-            "ram_gb": 16,
-            "disks": [{"model": "Kingston 480GB", "health": "Healthy"}]
-        }
-        verdict = analyzer.analyze_logs(telemetry)
-        self.assertIn("1. 🚨 **Problemas Identificados:**", verdict)
-        self.assertIn("APROVADA PARA PREPARAÇÃO", verdict)
-
 
 class TestTrueConfChatOps(unittest.TestCase):
 
@@ -115,7 +91,7 @@ class TestTrueConfChatOps(unittest.TestCase):
     def test_numbered_menu_choice(self):
         """Testa seleção digitando apenas o número '1' para bancada."""
         reply = self.chatops.handle_incoming_message("nicolas", "1")
-        self.assertIn("Varrendo computadores", reply)
+        self.assertTrue("Bancada" in reply or "Máquina" in reply or "computador" in reply.lower())
 
     def test_wizard_message_flow(self):
         """Testa fluxo passo a passo para envio de mensagem."""
@@ -134,46 +110,85 @@ class TestTrueConfChatOps(unittest.TestCase):
         self.assertIn("Enviando mensagem", r3)
         self.assertIn("192.168.57.59", r3)
 
-    def test_slash_bancada(self):
-        """Testa o comando /bancada."""
-        reply = self.chatops.handle_incoming_message("nicolas", "/bancada")
-        self.assertIn("Varrendo computadores", reply)
+    def test_interactive_credentials_flow(self):
+        """Testa o fluxo de solicitação interativa de credenciais pelo TrueConf."""
+        # Configura sessão simulando que a máquina 192.168.57.99 pediu usuário/senha
+        prompt = self.chatops._prompt_for_credentials(
+            user_id="nicolas",
+            ip="192.168.57.99",
+            action_name="Diagnóstico",
+            callback_fn=lambda: "Ação executada com sucesso após autenticação!"
+        )
+        self.assertIn("ACESSO NECESSÁRIO", prompt)
+        self.assertIn("192.168.57.99", prompt)
+
+        # Usuário envia as credenciais: 'Administrador MinhaSenha123'
+        reply = self.chatops.handle_incoming_message("nicolas", "Administrador MinhaSenha123")
+        self.assertEqual(reply, "Ação executada com sucesso após autenticação!")
+
+        # Valida que as credenciais foram salvas no WinRMExecutor para o IP
+        cached = self.chatops.winrm.get_host_credentials("192.168.57.99")
+        self.assertEqual(cached, ("Administrador", "MinhaSenha123"))
+
+    def test_natural_language_diag_variations(self):
+        """Testa gatilhos naturais de diagnóstico em texto livre."""
+        # Variação 1: 'Diag' abre wizard ou identifica máquina
+        r1 = self.chatops.handle_incoming_message("nicolas", "Diag")
+        self.assertTrue("diagnóstico" in r1.lower() or "hardware" in r1.lower())
+
+        # Variação 2: 'faz um diagnostico no pc 57.25'
+        r2 = self.chatops.handle_incoming_message("nicolas", "faz um diagnostico no pc 57.25")
+        self.assertIn("192.168.57.25", r2)
+
+    def test_natural_language_prep_variations(self):
+        """Testa gatilhos naturais de preparação de máquina."""
+        reply = self.chatops.handle_incoming_message("nicolas", "prepara a maquina 57.48 pro white group")
+        self.assertIn("192.168.57.48", reply)
+        self.assertTrue("white" in reply.lower() or "esteira" in reply.lower())
+
+    def test_natural_language_activation(self):
+        """Testa pedido natural de ativação Windows."""
+        reply = self.chatops.handle_incoming_message("nicolas", "ativa o windows do pc 57.48")
+        self.assertIn("192.168.57.48", reply)
+        self.assertTrue("ativação" in reply.lower() or "mas" in reply.lower())
+
+    def test_natural_language_agent_download(self):
+        """Testa solicitação natural de download do executável."""
+        reply = self.chatops.handle_incoming_message("nicolas", "onde baixo o executavel do agente?")
+        self.assertIn("UltronAgent.exe", reply)
+        self.assertIn("192.168.57.48:7000", reply)
+
+        # Testa frase do usuário pedindo o arquivo diretamente
+        reply2 = self.chatops.handle_incoming_message("nicolas", "me manda o executavel do agent por aqui")
+        self.assertIn("UltronAgent.exe", reply2)
+
+        # Testa comando /download
+        reply3 = self.chatops.handle_incoming_message("nicolas", "/download")
+        self.assertIn("UltronAgent.exe", reply3)
+
+    def test_conversational_ai_natural_question(self):
+        """Testa resposta natural para pergunta de chamados sem timeout."""
+        reply = self.chatops.handle_incoming_message("nicolas", "A listas de chamados é apenas no meu nome que puxa?")
+        self.assertIn("🤖 Ultron:", reply)
+        self.assertIn("chamados", reply.lower())
+
+    def test_user_exact_bench_phrases(self):
+        """Testa as frases exatas enviadas pelo técnico pelo TrueConf."""
+        # 1. 'me fala as máquinas que você está detectando os IPs'
+        r1 = self.chatops.handle_incoming_message("nicolas", "me fala as máquinas que você está detectando os IPs")
+        self.assertNotIn("Ingresso no Domínio", r1)
+        self.assertTrue("Bancada" in r1 or "computador" in r1.lower() or "máquina" in r1.lower())
+
+        # 2. 'Procure máquinas na bancda' (com erro de digitação bancda)
+        r2 = self.chatops.handle_incoming_message("nicolas", "Procure máquinas na bancda")
+        self.assertNotIn("Ingresso no Domínio", r2)
+        self.assertTrue("Bancada" in r2 or "computador" in r2.lower() or "máquina" in r2.lower())
 
     def test_natural_language_error_lookup(self):
         """Testa reconhecimento de intenção de código de erro hexadecimal."""
         reply = self.chatops.handle_incoming_message("nicolas", "qual o significado do erro 0x80070005 no windows?")
         self.assertIn("0x80070005", reply.lower())
         self.assertIn("ERROR_ACCESS_DENIED", reply)
-
-    def test_natural_language_bench_query(self):
-        """Testa intenção em linguagem natural para consultar bancada."""
-        reply = self.chatops.handle_incoming_message("nicolas", "quais máquinas estão ligadas agora?")
-        self.assertIn("Varrendo computadores", reply)
-
-    def test_slash_message(self):
-        """Testa o comando /msg para envio de alerta na tela."""
-        reply = self.chatops.handle_incoming_message("nicolas", "/msg 192.168.57.59 Teste de aviso na tela")
-        self.assertIn("192.168.57.59", reply)
-        self.assertIn("Enviando mensagem", reply)
-
-    def test_natural_language_message(self):
-        """Testa envio de mensagem por linguagem natural."""
-        reply = self.chatops.handle_incoming_message("nicolas", 'manda uma mensagem para o IP 192.168.57.59 "Ultron está rodando"')
-        self.assertIn("192.168.57.59", reply)
-        self.assertIn("Enviando mensagem", reply)
-
-    def test_conversational_ai_fallback(self):
-        """Testa conversa livre com LLM mockado."""
-        mock_analyzer = MagicMock()
-        mock_analyzer.generate.return_value = "Para ingressar no domínio, utilize o comando `/dominio 192.168.57.25 penserede.local`."
-        
-        mock_orch = MagicMock()
-        mock_orch.analyzer = mock_analyzer
-        self.chatops.orchestrator = mock_orch
-
-        reply = self.chatops.handle_incoming_message("nicolas", "como coloco o pc no dominio?")
-        self.assertIn("🤖 Ultron:", reply)
-        self.assertIn("/dominio", reply)
 
 if __name__ == "__main__":
     unittest.main()

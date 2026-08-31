@@ -5,6 +5,7 @@ Ponto de entrada principal da aplicação FastAPI, Web Dashboard e orquestraçã
 
 import os
 import sys
+import time
 import glob
 import socket
 import requests
@@ -201,7 +202,29 @@ class TrueConfWebhookPayload(BaseModel):
     message: Optional[str] = None
     event: Optional[Dict[str, Any]] = None
 
-# --- Rotas da Interface Web ---
+class AgentRegistration(BaseModel):
+    serial: str = Field(..., description="Número de série ou Service Tag")
+    ip: str = Field(..., description="Endereço IP da máquina")
+    computer_name: Optional[str] = Field("HOST", description="Nome do computador")
+    manufacturer: Optional[str] = Field("Generic", description="Fabricante")
+    model: Optional[str] = Field("Generic", description="Modelo")
+    cpu: Optional[str] = Field("", description="Processador")
+    ram_gb: Optional[float] = Field(0.0, description="Memória RAM em GB")
+    mac: Optional[str] = Field("", description="MAC Address")
+    client_id: Optional[str] = Field("cliente_padrao", description="ID do cliente")
+    disks: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Lista de discos físicos")
+    status: Optional[str] = Field("READY_FOR_PIPELINE", description="Status do Agente")
+    winrm_ready: Optional[bool] = Field(True, description="Se WinRM foi desbloqueado")
+    agent_version: Optional[str] = Field("1.5.0", description="Versão do UltronAgent.exe")
+    auth_user: Optional[str] = Field("UltronAdmin", description="Usuário de automação local provisionado")
+    auth_pass: Optional[str] = Field("Ultron@AutoBench2026!", description="Senha da conta de automação local")
+
+class AgentHeartbeat(BaseModel):
+    ip: str = Field(..., description="Endereço IP da máquina")
+    hostname: Optional[str] = Field("", description="Nome da máquina")
+    status: Optional[str] = Field("IDLE", description="Status atual")
+
+# --- Rotas da Interface Web & Downloads ---
 
 @app.get("/", response_class=HTMLResponse)
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -213,6 +236,26 @@ def get_dashboard():
             return HTMLResponse(content=f.read())
     return HTMLResponse(content="<h2>Ultron Lab Automation Server Online</h2>")
 
+@app.get("/download/UltronAgent.exe")
+@app.get("/download/UltronAgent.exe.")
+@app.get("/downloads/UltronAgent.exe")
+@app.get("/downloads/UltronAgent.exe.")
+@app.get("/download/UltronUnlocker.exe")
+@app.get("/UltronAgent.exe")
+@app.get("/UltronUnlocker.exe")
+def download_ultron_agent():
+    """Entrega o executável nativo do Agente Ultron para execução direta na máquina alvo ou pendrive"""
+    exe_path = os.path.join(STATIC_DIR, "downloads", "UltronAgent.exe")
+    if not os.path.exists(exe_path):
+        exe_path = os.path.join(BASE_DIR, "agent", "UltronAgent.exe")
+    if os.path.exists(exe_path):
+        return FileResponse(
+            exe_path,
+            media_type="application/octet-stream",
+            filename="UltronAgent.exe"
+        )
+    raise HTTPException(status_code=404, detail="Executável UltronAgent.exe não encontrado")
+
 @app.get("/bootstrap.ps1", response_class=PlainTextResponse)
 def get_bootstrap_script():
     """Entrega o script de bootstrap universal para execução via One-Liner PowerShell em qualquer máquina"""
@@ -221,6 +264,64 @@ def get_bootstrap_script():
         with open(script_path, "r", encoding="utf-8") as f:
             return PlainTextResponse(content=f.read(), media_type="text/plain; charset=utf-8")
     raise HTTPException(status_code=404, detail="Script Bootstrap-Ultron.ps1 não encontrado")
+
+@app.post("/api/v1/agent/register")
+def agent_register(data: AgentRegistration, background_tasks: BackgroundTasks):
+    """Webhook chamado pelo UltronAgent.exe após liberar a máquina e coletar hardware"""
+    print(f"🤖 [ULTRON AGENT] Máquina registrada: {data.computer_name} ({data.ip}) - Serial: {data.serial} - RAM: {data.ram_gb} GB")
+    
+    # Salva credenciais de automação zero-prompt no WinRMExecutor e no ChatOps
+    auth_user = data.auth_user or "UltronAdmin"
+    auth_pass = data.auth_pass or "Ultron@AutoBench2026!"
+    orchestrator.winrm.set_host_credentials(data.ip, auth_user, auth_pass)
+    if bot and bot.chatops:
+        bot.chatops.winrm.set_host_credentials(data.ip, auth_user, auth_pass)
+        # Atualiza o cache local de dispositivos no ChatOps imediatamente
+        new_dev = {
+            "ip": data.ip,
+            "hostname": data.computer_name,
+            "mac": data.mac,
+            "vendor": f"{data.manufacturer} {data.model}".strip(),
+            "winrm_ready": True,
+            "bench_name": "Bancada Ultron",
+            "last_seen": time.time()
+        }
+        # Substitui ou adiciona ao cache
+        updated_cache = [d for d in bot.chatops._cached_devices if d.get("ip") != data.ip]
+        updated_cache.insert(0, new_dev)
+        bot.chatops._cached_devices = updated_cache
+        bot.chatops._last_scan_time = time.time()
+
+    # Notifica o técnico no TrueConf com formatação limpa
+    msg = (
+        f"💻 ULTRON AGENT CONECTADO — MÁQUINA PRONTA\n\n"
+        f"📍 IP: {data.ip}\n"
+        f"🏷️ Serial: {data.serial}\n"
+        f"🏷️ Host: {data.computer_name} ({data.manufacturer} {data.model})\n"
+        f"🧠 Processador: {data.cpu}\n"
+        f"💾 Memória RAM: {data.ram_gb} GB\n"
+        f"🛡️ Acesso e WinRM: 100% Liberados (Zero-Prompt Ativo)\n\n"
+        f"💡 Ações Rápidas:\n"
+        f"• \"faz o diagnóstico no {data.ip}\"\n"
+        f"• \"prepara o {data.ip} para o White Group\"\n"
+        f"• \"ativa o Windows do {data.ip}\""
+    )
+    tc_user = settings.get("trueconf", {}).get("default_tech_user_id", "nicolas.silva")
+    bot.send_direct_message(tc_user, msg)
+    
+    return {
+        "success": True,
+        "message": "Máquina registrada e liberada com sucesso no Ultron Server (Zero-Prompt Ativo)",
+        "ip": data.ip,
+        "serial": data.serial
+    }
+
+@app.post("/api/v1/agent/heartbeat")
+def agent_heartbeat(data: AgentHeartbeat):
+    """Heartbeat periódico do UltronAgent.exe em segundo plano"""
+    import time
+    return {"status": "ok", "server_time": time.time(), "ip": data.ip}
+
 
 # --- WebSocket Log Stream ---
 

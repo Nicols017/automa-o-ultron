@@ -1,11 +1,18 @@
 """
 TrueConf ChatOps — Ultron Lab Automation
-Processa comandos slash, diálogos interativos e conversação com IA no chat do TrueConf.
+Processa comandos slash, diálogos interativos, solicitação dinâmica de credenciais e conversação com IA no TrueConf.
 """
 
+import os
+import socket
+import logging
+import time
 import re
 import threading
 from typing import Any, Dict, List, Optional
+import unicodedata
+
+logger = logging.getLogger("ultron_chatops")
 
 from core.profile_manager import ProfileManager
 from core.network_scanner import NetworkScanner
@@ -16,8 +23,6 @@ from core.public_tools import (
     NetworkDiagnosticsService,
     WindowsErrorLookupService,
 )
-
-import unicodedata
 
 def _normalize_token(s: str) -> str:
     """Remove acentos e converte para minúsculas"""
@@ -44,13 +49,291 @@ class TrueConfChatOps:
         self.cve_svc     = CveSecurityService()
         self.wan_svc     = NetworkDiagnosticsService()
 
-        # Sessões interativas pendentes por técnico
+        # Sessões interativas e credenciais por técnico
         self.user_sessions: Dict[str, Dict[str, Any]] = {}
+        self.user_conversations: Dict[str, List[Dict[str, str]]] = {}
+
+        # Cache de varredura de bancada para resposta instantânea
+        self._cached_devices: List[Dict[str, Any]] = []
+        self._last_scan_time: float = 0
+
+    def _get_server_url(self) -> str:
+        """Resolve dinamicamente o IP do servidor na rede local para qualquer máquina/técnico acessar"""
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(0.5)
+            s.connect(("192.168.57.1", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            if ip and not ip.startswith("127."):
+                return f"http://{ip}:7000"
+        except Exception:
+            pass
+
+        try:
+            ip = socket.gethostbyname(socket.gethostname())
+            if ip and not ip.startswith("127."):
+                return f"http://{ip}:7000"
+        except Exception:
+            pass
+
+        return "http://localhost:7000"
+
+    def _extract_target_ip(self, text: str) -> Optional[str]:
+        """Extrai um endereço IP alvo a partir de texto livre (formatos completos, abreviados ou numéricos)."""
+        # 1. IP completo (ex: 192.168.57.48, 10.0.0.15, 172.20.1.10)
+        m_full = re.search(r"\b((?:192\.168|10\.\d{1,3}|172\.\d{1,3})\.\d{1,3}\.\d{1,3})\b", text)
+        if m_full:
+            return m_full.group(1)
+
+        # 2. Notação abreviada de subrede (ex: 57.48, 57.25)
+        m_sub = re.search(r"\b57\.(\d{1,3})\b", text)
+        if m_sub:
+            return f"192.168.57.{m_sub.group(1)}"
+
+        # 3. Notação por número de máquina (ex: pc 48, maquina 25, ip 48, host 15)
+        m_pc = re.search(r"\b(?:pc|maquina|máquina|ip|host|bancada|final)\s*[:#-]?\s*(\d{1,3})\b", text, re.IGNORECASE)
+        if m_pc:
+            num = int(m_pc.group(1))
+            if 1 <= num <= 254:
+                return f"192.168.57.{num}"
+
+        # 4. Se o texto for apenas um número isolado entre 1 e 254
+        stripped = text.strip()
+        if stripped.isdigit():
+            num = int(stripped)
+            if 10 <= num <= 254:
+                return f"192.168.57.{num}"
+
+        return None
+
+    def _extract_client_id(self, text: str) -> Optional[str]:
+        """Identifica o perfil de cliente a partir de menções em texto livre."""
+        norm = _normalize_token(text)
+        clients = self.profile_mgr.list_clients()
+        for c in clients:
+            c_id = c.get("id", "").lower()
+            c_nome = _normalize_token(c.get("nome", ""))
+            if c_id and (c_id in norm or c_id.replace("_", " ") in norm):
+                return c.get("id")
+            if c_nome and len(c_nome) >= 3 and c_nome in norm:
+                return c.get("id")
+
+        if "white group" in norm or "whitegroup" in norm or "white" in norm:
+            return "white_group"
+        if "nova via" in norm or "novavia" in norm or "nova" in norm:
+            return "nova_via"
+        if "pense rede" in norm or "penserede" in norm or "padrao" in norm or "padrão" in norm:
+            return "cliente_padrao"
+        return None
+
+    def _get_cached_devices(self, force_fresh: bool = False) -> List[Dict[str, Any]]:
+        """Retorna dispositivos em cache imediatamente e agenda atualização em background se expirado."""
+        now = time.time()
+        if force_fresh or (now - self._last_scan_time > 60) or not self._cached_devices:
+            def _async_scan():
+                try:
+                    devs = self.scanner.scan_network(timeout=0.25)
+                    if devs:
+                        self._cached_devices = devs
+                        self._last_scan_time = time.time()
+                except Exception:
+                    pass
+
+            if force_fresh:
+                try:
+                    self._cached_devices = self.scanner.scan_network(timeout=0.3)
+                    self._last_scan_time = time.time()
+                except Exception:
+                    pass
+            else:
+                threading.Thread(target=_async_scan, daemon=True).start()
+
+        return self._cached_devices
+
+    def _match_natural_intent(self, user_id: str, text: str, norm_text: str) -> Optional[str]:
+        """Processa intenções em linguagem natural livre sem exigir comandos rígidos (/slash)."""
+        # 1. Download do UltronAgent.exe (com envio direto do arquivo no TrueConf)
+        agent_dl_kws = [
+            "baixar agent", "baixar agente", "download agent", "download do agente", "onde baixo o exe",
+            "link do exe", "ultronagent.exe", "baixar o exe", "como baixar", "link do agent",
+            "manda o agent", "me manda o agent", "manda o agente", "me manda o agente",
+            "manda o executavel", "me manda o executavel", "manda o exe", "me manda o exe",
+            "quero o executavel", "quero o agente", "quero o agent", "passa o executavel",
+            "passa o agent", "passa o agente", "passa o exe", "me passa o executavel",
+            "me passa o agent", "me passa o agente", "me passa o exe", "envia o executavel",
+            "me envia o executavel", "envia o agent", "me envia o agent", "envia o agente",
+            "me envia o agente", "ultronagent", "arquivo do agent", "arquivo do agente",
+            "arquivo executavel", "arquivo de download", "download", "baixar", "o executavel",
+            "o arquivo de download", "disponivel o download", "mandar o executavel", "mandar o exe",
+            "manda o arquivo", "me manda o arquivo", "passa o arquivo", "me passa o arquivo"
+        ]
+        if any(kw in norm_text for kw in agent_dl_kws):
+            return self._cmd_download_agent(user_id)
+
+        # 2. Diagnóstico de Hardware / S.M.A.R.T / Teste
+        diag_kws = ["diag", "diagnostico", "diagnóstico", "diagnosticar", "smart", "saude do disco", "saúde do disco", "testar hardware", "teste de estresse", "verificar maquina", "verificar máquina", "checar maquina", "checar máquina", "olha a maquina", "olha o pc", "analisar maquina", "analisa a maquina", "analisar computador", "integridade"]
+        if any(kw in norm_text for kw in diag_kws):
+            ip = self._extract_target_ip(text)
+            if not ip:
+                cached = self._get_cached_devices()
+                winrm_devs = [d for d in cached if d.get("winrm_ready")]
+                if len(winrm_devs) == 1:
+                    ip = winrm_devs[0].get("ip")
+                    return f"🔍 Identifiquei a máquina {ip} ({winrm_devs[0].get('hostname', 'PC')}) na bancada.\n\n" + self._cmd_diagnostico(user_id, [ip])
+                elif len(cached) == 1:
+                    ip = cached[0].get("ip")
+                    return f"🔍 Identifiquei a máquina {ip} na bancada.\n\n" + self._cmd_diagnostico(user_id, [ip])
+                else:
+                    self.user_sessions[user_id] = {"type": "wizard_diag"}
+                    return (
+                        "🩺 DIAGNÓSTICO DE HARDWARE\n\n"
+                        "Em qual máquina da bancada você gostaria que eu fizesse a análise? (Você pode me mandar o IP ou apenas o final dele, por exemplo 57.48 ou 48)\n\n"
+                        "[ 0 ] Cancelar"
+                    )
+            return self._cmd_diagnostico(user_id, [ip])
+
+        # 3. Preparar / Formatar / Esteira
+        prep_kws = ["preparar", "prepara", "formatar", "formata", "esteira", "deploy", "iniciar esteira", "inicia a esteira", "rodar esteira", "roda a esteira", "aplicar perfil", "montar pc", "configurar maquina"]
+        if any(kw in norm_text for kw in prep_kws):
+            ip = self._extract_target_ip(text)
+            client_id = self._extract_client_id(text)
+            if ip and client_id:
+                return self._cmd_preparar(user_id, [ip, client_id])
+            elif client_id and not ip:
+                cached = self._get_cached_devices()
+                winrm_devs = [d for d in cached if d.get("winrm_ready")]
+                target = winrm_devs[0] if len(winrm_devs) == 1 else (cached[0] if len(cached) == 1 else None)
+                if target:
+                    ip = target.get("ip")
+                    return self._cmd_preparar(user_id, [ip, client_id])
+                else:
+                    self.user_sessions[user_id] = {"type": "wizard_preparar_ip", "client_id": client_id}
+                    return f"🚀 PREPARAÇÃO DE MÁQUINA — {client_id.upper()}\n\nQual é o IP do computador na bancada? (Ex: 57.48)\n\n[ 0 ] Cancelar"
+            elif ip and not client_id:
+                self.user_sessions[user_id] = {"type": "wizard_preparar_client", "ip": ip}
+                return (
+                    f"🚀 PREPARAÇÃO DA MÁQUINA {ip}\n\n"
+                    f"Para qual cliente devemos configurar? (Ex: White Group, Nova Via, Perfil Padrão ou digite o número do perfil)\n\n"
+                    f"[ 0 ] Cancelar"
+                )
+            else:
+                return self._start_wizard_preparar(user_id)
+
+        # 4. Ativação Windows / Office (MAS)
+        ativ_kws = ["ativar", "ativa", "ativacao", "ativação", "licenca", "licença", "ativar windows", "ativar office", "validar windows", "massgrave", "mas"]
+        if any(kw in norm_text for kw in ativ_kws):
+            ip = self._extract_target_ip(text)
+            if not ip:
+                cached = self._get_cached_devices()
+                winrm_devs = [d for d in cached if d.get("winrm_ready")]
+                target = winrm_devs[0] if len(winrm_devs) == 1 else (cached[0] if len(cached) == 1 else None)
+                if target:
+                    ip = target.get("ip")
+                    return self._cmd_ativar(user_id, [ip])
+                else:
+                    self.user_sessions[user_id] = {"type": "wizard_ativar"}
+                    return "🔑 ATIVAÇÃO WINDOWS & OFFICE\n\nQual é o IP da máquina na bancada que você deseja ativar? (Ex: 57.48)\n\n[ 0 ] Cancelar"
+            return self._cmd_ativar(user_id, [ip])
+
+        # 5. Domínio Active Directory
+        dom_kws = ["dominio", "domínio", "active directory", "ingressar no dominio", "colocar no dominio", "ad join", "join domain"]
+        if any(kw in norm_text for kw in dom_kws):
+            ip = self._extract_target_ip(text)
+            m_dom = re.search(r"\b([a-zA-Z0-9-]+\.(?:local|corp|lan|com(?:\.br)?))\b", text, re.IGNORECASE)
+            dom_name = m_dom.group(1) if m_dom else None
+            if ip and dom_name:
+                return self._cmd_dominio(user_id, [ip, dom_name])
+            elif ip and not dom_name:
+                self.user_sessions[user_id] = {"type": "wizard_dominio_domain", "ip": ip}
+                return f"🛡️ INGRESSO NO DOMÍNIO — MÁQUINA {ip}\n\nQual é o nome do domínio? (Ex: penserede.local ou o nome do cliente)\n\n[ 0 ] Cancelar"
+            else:
+                return self._start_wizard_dominio(user_id)
+
+        # 6. Reiniciar / Desligar
+        if any(kw in norm_text for kw in ["reiniciar", "reinicia", "reboot", "restart"]):
+            ip = self._extract_target_ip(text)
+            if not ip:
+                cached = self._get_cached_devices()
+                winrm_devs = [d for d in cached if d.get("winrm_ready")]
+                target = winrm_devs[0] if len(winrm_devs) == 1 else (cached[0] if len(cached) == 1 else None)
+                if target:
+                    ip = target.get("ip")
+                else:
+                    self.user_sessions[user_id] = {"type": "wizard_power", "action": "restart"}
+                    return "🔌 REINICIAR COMPUTADOR\n\nQual é o IP da máquina que você deseja reiniciar?\n\n[ 0 ] Cancelar"
+            return self._cmd_power(user_id, [ip], "restart")
+
+        if any(kw in norm_text for kw in ["desligar", "desliga", "shutdown", "apagar pc", "desligar maquina"]):
+            ip = self._extract_target_ip(text)
+            if not ip:
+                cached = self._get_cached_devices()
+                winrm_devs = [d for d in cached if d.get("winrm_ready")]
+                target = winrm_devs[0] if len(winrm_devs) == 1 else (cached[0] if len(cached) == 1 else None)
+                if target:
+                    ip = target.get("ip")
+                else:
+                    self.user_sessions[user_id] = {"type": "wizard_power", "action": "shutdown"}
+                    return "🔌 DESLIGAR COMPUTADOR\n\nQual é o IP da máquina que você deseja desligar?\n\n[ 0 ] Cancelar"
+            return self._cmd_power(user_id, [ip], "shutdown")
+
+        # 7. Backup
+        if any(kw in norm_text for kw in ["backup", "salvar dados", "copiar perfil", "fazer backup", "storage"]):
+            ip = self._extract_target_ip(text)
+            if not ip:
+                cached = self._get_cached_devices()
+                winrm_devs = [d for d in cached if d.get("winrm_ready")]
+                target = winrm_devs[0] if len(winrm_devs) == 1 else (cached[0] if len(cached) == 1 else None)
+                if target:
+                    ip = target.get("ip")
+                else:
+                    self.user_sessions[user_id] = {"type": "wizard_backup"}
+                    return "💾 BACKUP DE USUÁRIO\n\nQual é o IP da máquina que você deseja fazer o backup?\n\n[ 0 ] Cancelar"
+            return self._cmd_backup(user_id, [ip])
+
+        # 8. Consulta / Varredura de Bancada e Detecção de IPs
+        bench_kws = [
+            "bancada", "bancda", "bancad", "maquinas na bancada", "máquinas na bancada",
+            "pcs na bancada", "computadores no lab", "computadores na bancada",
+            "quem ta ligado", "quem tá ligado", "quem ta online", "quem tá online",
+            "tem maquina", "quais maquinas", "quais máquinas", "status da bancada",
+            "ver bancada", "maquinas conectadas", "maquinas ligadas", "detectando os ips",
+            "detectando ips", "detectando", "detecta", "me fala as maquinas", "me fala as máquinas",
+            "me fala os ips", "quais ips", "procura maquinas", "procure maquinas", "procure máquinas",
+            "procura máquinas", "busca maquinas", "buscar maquinas", "acha maquinas", "achar maquinas",
+            "varrer bancada", "varre bancada", "varrer a bancada", "varre a bancada", "scanner", "scan"
+        ]
+        if any(kw in norm_text for kw in bench_kws):
+            return self._cmd_bancada(user_id)
+
+        # 9. Consulta de Chamados Milvus
+        tickets_kws = ["chamados", "chamado", "tickets", "ticket", "milvus", "ordens de servico", "ordens de serviço", "minhas os", "o que tem pra fazer"]
+        is_inquiry = any(w in norm_text for w in ["apenas no meu", "meu nome", "como funciona", "por que", "porque", "o que e", "o que é", "qual a diferenca", "como puxa"])
+        if any(kw in norm_text for kw in tickets_kws) and not is_inquiry:
+            return self._cmd_chamados()
+
+        # 10. Consulta de Clientes
+        clients_kws = ["clientes", "cliente", "empresas", "empresa", "perfis", "quais perfis", "quais clientes", "lista de clientes"]
+        if any(kw in norm_text for kw in clients_kws):
+            return self._cmd_clientes()
+
+        # 11. Consulta de Laudos
+        laudos_kws = ["laudos", "laudo", "relatorios", "relatórios", "ver laudos", "pdfs"]
+        if any(kw in norm_text for kw in laudos_kws):
+            return self._cmd_laudos([])
+
+        # 12. Clima / Térmica / WAN
+        if any(kw in norm_text for kw in ["clima", "temperatura", "termica", "térmica", "calor"]):
+            return self._cmd_clima()
+        if any(kw in norm_text for kw in ["ip wan", "meu ip", "provedor", "link de internet"]):
+            return self._cmd_wan()
+
+        return None
 
     def handle_incoming_message(self, user_id: str, message: str) -> str:
         """
         Recebe qualquer mensagem enviada ao bot no chat privado do TrueConf.
-        Suporta menus selecionáveis por números, wizards guiados passo a passo e comandos slash.
+        Suporta linguagem natural livre, menus interativos, wizards passo a passo e autenticação dinâmica.
         """
         text = (message or "").strip()
         if not text:
@@ -58,7 +341,7 @@ class TrueConfChatOps:
 
         norm_text = _normalize_token(text)
 
-        # 1. Sessão interativa pendente (Wizard passo a passo)
+        # 1. Sessão interativa pendente (Wizard passo a passo ou Solicitação de Senha)
         if user_id in self.user_sessions:
             return self._handle_wizard_step(user_id, self.user_sessions[user_id], text)
 
@@ -85,17 +368,18 @@ class TrueConfChatOps:
             "10": lambda: self._cmd_clientes(),
             "11": lambda: self._cmd_chamados(),
             "12": lambda: self._cmd_laudos([]),
+            "13": lambda: self._cmd_download_agent(user_id),
         }
 
         if text in menu_choices:
             return menu_choices[text]()
 
         # 3. Solicitação de Menu Principal
-        menu_kws = ["menu", "ajuda", "help", "inicio", "comecar", "ola", "oi", "bom dia", "boa tarde", "boa noite", "/menu", "/start", "/ajuda", "/help"]
-        if norm_text in menu_kws or norm_text == "opcoes":
+        menu_kws = ["menu", "ajuda", "help", "inicio", "comecar", "/menu", "/start", "/ajuda", "/help", "opcoes", "opções"]
+        if norm_text in menu_kws:
             return self._cmd_interactive_menu()
 
-        # 4. Roteamento de comandos slash explícitos (com suporte a acentuação)
+        # 4. Roteamento de comandos slash explícitos
         parts = text.split()
         first_token = parts[0] if parts else ""
         norm_token = _normalize_token(first_token)
@@ -127,6 +411,8 @@ class TrueConfChatOps:
                 lambda: self._cmd_message(user_id, parts[1:]),
             frozenset(["/laudos", "/laudo", "/relatorios"]):
                 lambda: self._cmd_laudos(parts[1:]),
+            frozenset(["/download", "/agent", "/agente", "/exe", "/baixar"]):
+                lambda: self._cmd_download_agent(user_id),
             frozenset(["/erro", "/error", "/bsod"]):
                 lambda: self._cmd_erro(parts[1:]),
             frozenset(["/cve", "/seguranca", "/vuln"]):
@@ -141,8 +427,7 @@ class TrueConfChatOps:
             if norm_token in keywords:
                 return handler()
 
-        # 5. Disparo de mensagem para o usuário por linguagem natural
-        # Ex: "manda uma mensagem para o IP 192.168.57.59 'Ultron está rodando'"
+        # 5. Disparo de mensagem para a máquina por linguagem natural
         ip_match = re.search(r"\b(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})\b", text)
         msg_action_kws = ["manda uma mensagem", "mandar mensagem", "enviar mensagem", "avisa o ip", "notifica o ip", "avise o ip", "mande uma mensagem"]
         if ip_match and any(kw in norm_text for kw in msg_action_kws):
@@ -155,22 +440,17 @@ class TrueConfChatOps:
             if clean_msg:
                 return self._cmd_message(user_id, [target_ip] + clean_msg.split())
 
-        # 6. Erro hexadecimal Windows em texto livre (ex: 0x80070005)
+        # 6. Erro hexadecimal Windows em texto livre
         hex_match = re.search(r"\b(0x[0-9a-fA-F]{8})\b", text)
         if hex_match:
             return self._cmd_erro([hex_match.group(1)])
 
-        # 7. Consulta rápida de bancada por linguagem natural
-        bench_kws = [
-            "tem maquina", "pcs na bancada", "bancada ta cheia",
-            "computadores no lab", "quantas maquinas",
-            "maquinas na bancada", "quais maquinas"
-        ]
-        for kw in bench_kws:
-            if kw in norm_text:
-                return self._cmd_bancada(user_id)
+        # 7. Reconhecimento Avançado de Intenções em Linguagem Natural
+        natural_reply = self._match_natural_intent(user_id, text, norm_text)
+        if natural_reply:
+            return natural_reply
 
-        # 8. IA Conversacional
+        # 8. IA Conversacional Fluida
         return self._handle_ai_conversation(user_id, text)
 
     # ------------------------------------------------------------------
@@ -192,16 +472,49 @@ class TrueConfChatOps:
             "[ 9 ] 🔌 Reiniciar ou Desligar Máquina\n"
             "[ 10 ] 🏢 Consultar Empresas Cadastradas\n"
             "[ 11 ] 🎫 Consultar Chamados no Milvus\n"
-            "[ 12 ] 📄 Lista de Laudos Técnicos em PDF\n\n"
-            "💬 Digite o número (ex: 1, 2, 3) ou 'menu' para voltar."
+            "[ 12 ] 📄 Lista de Laudos Técnicos em PDF\n"
+            "[ 13 ] 📥 Baixar UltronAgent.exe (Anexo Direto)\n\n"
+            "💬 Digite o número (ex: 1, 2, 3, 13) ou converse diretamente com o Ultron."
         )
 
     def _cmd_help(self) -> str:
         return self._cmd_interactive_menu()
 
     # ------------------------------------------------------------------
-    # Wizard Interativo Passo a Passo
+    # Wizard Interativo & Solicitação Dinâmica de Credenciais
     # ------------------------------------------------------------------
+
+    def _prompt_for_credentials(self, user_id: str, ip: str, action_name: str, callback_fn, retry_msg: str = "") -> str:
+        """Configura a sessão do técnico para receber usuário e senha de uma máquina"""
+        self.user_sessions[user_id] = {
+            "type": "wizard_credentials",
+            "ip": ip,
+            "action_name": action_name,
+            "callback": callback_fn
+        }
+        prefix = f"{retry_msg}\n\n" if retry_msg else ""
+        return (
+            f"{prefix}🔐 ACESSO NECESSÁRIO — MÁQUINA {ip}\n\n"
+            f"Para executar '{action_name}' na máquina {ip}, por favor informe o usuário e senha de Administrador local.\n\n"
+            f"💬 Responda no formato: `usuario senha`\n"
+            f"(Ex: `Administrador Senha123` ou `.\\suporte P@ssword`)\n\n"
+            f"[ 0 ] Cancelar"
+        )
+
+    def _prompt_for_domain_credentials(self, user_id: str, ip: str, domain: str) -> str:
+        """Solicita credenciais do domínio Active Directory"""
+        self.user_sessions[user_id] = {
+            "type": "wizard_domain_credentials",
+            "ip": ip,
+            "domain": domain
+        }
+        return (
+            f"🛡️ CREDENCIAIS DE DOMÍNIO — {domain}\n\n"
+            f"Para ingressar a máquina {ip} no domínio '{domain}', informe as credenciais de Administrador do Domínio.\n\n"
+            f"💬 Responda no formato: `usuario senha`\n"
+            f"(Ex: `admin_rede P@ssAD2026`)\n\n"
+            f"[ 0 ] Cancelar"
+        )
 
     def _handle_wizard_step(self, user_id: str, session: Dict[str, Any], text: str) -> str:
         norm = _normalize_token(text)
@@ -211,21 +524,57 @@ class TrueConfChatOps:
 
         wtype = session.get("type")
 
-        # 1. Escolha pós-MDT
+        # 1. Tratamento de Credenciais de Máquina
+        if wtype == "wizard_credentials":
+            ip = session.get("ip")
+            action_name = session.get("action_name", "Operação")
+            callback = session.get("callback")
+
+            parts = text.strip().split(None, 1)
+            if not parts:
+                return "⚠️ Formato inválido. Envie no formato: `usuario senha` (ou '0' para cancelar)."
+
+            user = parts[0]
+            pwd = parts[1] if len(parts) > 1 else ""
+
+            # Armazena credencial para o IP
+            self.winrm.set_host_credentials(ip, user, pwd)
+            self.user_sessions.pop(user_id, None)
+
+            if callback:
+                return callback()
+            return f"✅ Credenciais para {ip} salvas. Reexecutando {action_name}..."
+
+        # 2. Tratamento de Credenciais de Domínio
+        if wtype == "wizard_domain_credentials":
+            ip = session.get("ip")
+            domain = session.get("domain")
+
+            parts = text.strip().split(None, 1)
+            if not parts:
+                return "⚠️ Formato inválido. Envie no formato: `usuario senha` (ou '0' para cancelar)."
+
+            dom_user = parts[0]
+            dom_pwd = parts[1] if len(parts) > 1 else ""
+            self.user_sessions.pop(user_id, None)
+
+            return self._execute_domain_join(user_id, ip, domain, dom_user, dom_pwd)
+
+        # 3. Escolha pós-MDT
         if wtype == "pending_mdt":
             return self._handle_pending_mdt_choice(user_id, session, text)
 
-        # 2. Wizard de Diagnóstico
+        # 4. Wizard de Diagnóstico
         if wtype == "wizard_diag":
-            ip = text.strip()
+            ip = self._extract_target_ip(text) or text.strip()
             self.user_sessions.pop(user_id, None)
             return self._cmd_diagnostico(user_id, [ip])
 
-        # 3. Wizard de Mensagem na Tela
+        # 5. Wizard de Mensagem na Tela
         if wtype == "wizard_msg":
             step = session.get("step")
             if step == "ip":
-                ip = text.strip()
+                ip = self._extract_target_ip(text) or text.strip()
                 session["ip"] = ip
                 session["step"] = "text"
                 return (
@@ -240,47 +589,70 @@ class TrueConfChatOps:
                 self.user_sessions.pop(user_id, None)
                 return self._cmd_message(user_id, [ip] + msg_text.split())
 
-        # 4. Wizard de Preparação
+        # 6. Wizard de Preparação (IP & Cliente)
         if wtype == "wizard_preparar":
             step = session.get("step")
             if step == "ip":
-                ip = text.strip()
+                ip = self._extract_target_ip(text) or text.strip()
                 session["ip"] = ip
                 session["step"] = "client"
                 clients = self.profile_mgr.list_clients()
-                lines = [f"🚀 Preparar Máquina {ip}\n\nEscolha o Perfil do Cliente digitando o número:\n"]
+                lines = [f"🚀 Preparar Máquina {ip}\n\nEscolha o Perfil do Cliente digitando o número ou o nome:\n"]
                 for idx, c in enumerate(clients[:10], 1):
                     lines.append(f"[ {idx} ] {c.get('nome')} ({c.get('id')})")
                 lines.append("\n[ 0 ] Cancelar")
                 return "\n".join(lines)
             elif step == "client":
                 ip = session.get("ip")
-                client_id = text.strip()
-                if client_id.isdigit():
-                    clients = self.profile_mgr.list_clients()
-                    idx = int(client_id) - 1
-                    if 0 <= idx < len(clients):
-                        client_id = clients[idx].get("id", client_id)
+                client_id = self._extract_client_id(text)
+                if not client_id:
+                    if text.strip().isdigit():
+                        clients = self.profile_mgr.list_clients()
+                        idx = int(text.strip()) - 1
+                        if 0 <= idx < len(clients):
+                            client_id = clients[idx].get("id", text.strip())
+                    else:
+                        client_id = text.strip()
                 self.user_sessions.pop(user_id, None)
                 return self._cmd_preparar(user_id, [ip, client_id])
 
-        # 5. Wizard de Ativação MAS
+        if wtype == "wizard_preparar_ip":
+            client_id = session.get("client_id")
+            ip = self._extract_target_ip(text) or text.strip()
+            self.user_sessions.pop(user_id, None)
+            return self._cmd_preparar(user_id, [ip, client_id])
+
+        if wtype == "wizard_preparar_client":
+            ip = session.get("ip")
+            client_id = self._extract_client_id(text)
+            if not client_id:
+                if text.strip().isdigit():
+                    clients = self.profile_mgr.list_clients()
+                    idx = int(text.strip()) - 1
+                    if 0 <= idx < len(clients):
+                        client_id = clients[idx].get("id", text.strip())
+                else:
+                    client_id = text.strip()
+            self.user_sessions.pop(user_id, None)
+            return self._cmd_preparar(user_id, [ip, client_id])
+
+        # 7. Wizard de Ativação MAS
         if wtype == "wizard_ativar":
-            ip = text.strip()
+            ip = self._extract_target_ip(text) or text.strip()
             self.user_sessions.pop(user_id, None)
             return self._cmd_ativar(user_id, [ip])
 
-        # 6. Wizard de Backup
+        # 8. Wizard de Backup
         if wtype == "wizard_backup":
-            ip = text.strip()
+            ip = self._extract_target_ip(text) or text.strip()
             self.user_sessions.pop(user_id, None)
             return self._cmd_backup(user_id, [ip])
 
-        # 7. Wizard de Domínio
+        # 9. Wizard de Domínio
         if wtype == "wizard_dominio":
             step = session.get("step")
             if step == "ip":
-                ip = text.strip()
+                ip = self._extract_target_ip(text) or text.strip()
                 session["ip"] = ip
                 session["step"] = "domain"
                 return (
@@ -295,7 +667,19 @@ class TrueConfChatOps:
                 self.user_sessions.pop(user_id, None)
                 return self._cmd_dominio(user_id, [ip, dom])
 
-        # 8. Wizard de Softwares
+        if wtype == "wizard_dominio_domain":
+            ip = session.get("ip")
+            dom = text.strip()
+            self.user_sessions.pop(user_id, None)
+            return self._cmd_dominio(user_id, [ip, dom])
+
+        if wtype == "wizard_power":
+            ip = self._extract_target_ip(text) or text.strip()
+            action = session.get("action", "restart")
+            self.user_sessions.pop(user_id, None)
+            return self._cmd_power(user_id, [ip], action)
+
+        # 10. Wizard de Softwares
         if wtype == "wizard_softwares":
             step = session.get("step")
             if step == "ip":
@@ -324,7 +708,7 @@ class TrueConfChatOps:
                 self.user_sessions.pop(user_id, None)
                 return self._cmd_softwares(user_id, [ip, pkgs])
 
-        # 9. Wizard de Energia
+        # 11. Wizard de Energia
         if wtype == "wizard_power":
             step = session.get("step")
             if step == "ip":
@@ -425,49 +809,91 @@ class TrueConfChatOps:
             "[ 0 ] Cancelar e voltar ao Menu"
         )
 
+    def _format_device_display(self, d: Dict[str, Any]) -> str:
+        ip = d.get("ip", "?")
+        raw_host = d.get("hostname") or ""
+        if not raw_host or raw_host == ip:
+            host_label = f"Máquina {ip}"
+        else:
+            host_label = raw_host.replace(".penserede.local", "")
+
+        vendor = d.get("vendor")
+        vendor_part = f" ({vendor})" if vendor and vendor not in ["Desconhecido", None] else ""
+        return f"{host_label} — IP: {ip}{vendor_part}"
+
+
     def _cmd_bancada(self, user_id: str) -> str:
-        def _worker():
-            devices = self.scanner.scan_network()
-            if not devices:
-                reply = (
-                    "🔍 Status da Bancada:\n\n"
-                    "⚠️ Nenhum computador ativo detectado na subrede do laboratório.\n"
-                    "Verifique se os equipamentos estão ligados e conectados."
-                )
-            else:
-                lines = [f"💻 Bancada Ultron — {len(devices)} Máquina(s) Detectada(s):\n"]
-                for d in devices:
-                    status   = "🟢" if d.get("winrm_ready") else "🟡"
-                    winrm    = "WinRM Pronto" if d.get("winrm_ready") else "Sem WinRM"
-                    vendor   = f" [{d.get('vendor')}]" if d.get("vendor") not in (None, "Desconhecido") else ""
-                    bench    = f" ({d.get('bench_name')})" if d.get("bench_name") else ""
-                    ip       = d.get("ip", "?")
-                    hostname = d.get("hostname") or "Host"
-                    lines.append(
-                        f"{status} {hostname}{vendor}{bench}\n"
-                        f"   📍 IP: {ip} | {winrm}\n"
-                        f"   ⚡ Ações: /diagnostico {ip} | /msg {ip}\n"
-                    )
-                reply = "\n".join(lines)
+        cached = self._cached_devices
 
-            if self.bot:
-                self.bot.send_direct_message(user_id, reply)
+        def _worker_refresh():
+            try:
+                devs = self.scanner.scan_network(timeout=0.3)
+                if devs:
+                    self._cached_devices = devs
+                    self._last_scan_time = time.time()
+            except Exception:
+                pass
 
-        threading.Thread(target=_worker, daemon=True).start()
-        return "🔍 Varrendo computadores na bancada..."
+        threading.Thread(target=_worker_refresh, daemon=True).start()
+
+        if not cached:
+            try:
+                cached = self.scanner.scan_network(timeout=0.35)
+                self._cached_devices = cached
+                self._last_scan_time = time.time()
+            except Exception:
+                cached = []
+
+        if not cached:
+            return (
+                "🔍 STATUS DA BANCADA (192.168.57.0/24)\n\n"
+                "⚠️ Nenhum computador ativo com WinRM detectado no momento.\n\n"
+                "💡 Dica: Verifique se a máquina está ligada na bancada e execute o UltronAgent.exe para liberar o WinRM e registrar o IP."
+            )
+
+        winrm_ready = [d for d in cached if d.get("winrm_ready")]
+        other_devices = [d for d in cached if not d.get("winrm_ready")]
+
+        lines = [f"💻 BANCADA ULTRON — {len(cached)} EQUIPAMENTOS NA REDE\n"]
+
+        if winrm_ready:
+            lines.append(f"🟢 PRONTAS PARA AUTOMAÇÃO (WinRM Ativo — {len(winrm_ready)}):")
+            for d in winrm_ready[:6]:
+                lines.append(f"• {self._format_device_display(d)}")
+            if len(winrm_ready) > 6:
+                lines.append(f"• ... e mais {len(winrm_ready) - 6} máquina(s) com WinRM ativo.")
+            lines.append("")
+
+        if other_devices:
+            lines.append(f"🟡 OUTROS DISPOSITIVOS NA REDE ({len(other_devices)}):")
+            for d in other_devices[:6]:
+                lines.append(f"• {self._format_device_display(d)}")
+            if len(other_devices) > 6:
+                lines.append(f"• ... e mais {len(other_devices) - 6} dispositivo(s) conectados.")
+            lines.append("")
+
+        lines.append("💡 AÇÕES RÁPIDAS:")
+        lines.append("• \"faz o diagnóstico no <IP>\"")
+        lines.append("• \"prepara o <IP> para o White Group\"")
+        lines.append("• \"ativa o Windows do <IP>\"")
+
+        return "\n".join(lines)
 
     def _cmd_clientes(self) -> str:
         clients = self.profile_mgr.list_clients()
         if not clients:
             return "🏢 Nenhum cliente cadastrado no sistema."
 
-        lines = ["🏢 Perfis de Clientes Cadastrados:\n"]
-        for idx, c in enumerate(clients[:15], 1):
-            dom = f" | AD: {c.get('dominio')}" if c.get("dominio") else ""
+        lines = [f"🏢 PERFIS DE CLIENTES CADASTRADOS ({len(clients)} Empresas):\n"]
+        for idx, c in enumerate(clients[:10], 1):
+            dom = f" • AD: {c.get('dominio')}" if c.get("dominio") else ""
             token_icon = "🔑 Milvus OK" if c.get("milvus_token") else "⚠️ Sem Token"
-            lines.append(f"{idx:02d}. {c.get('nome')} ({c.get('id')}){dom} | {token_icon}")
+            lines.append(f"{idx:02d}. {c.get('nome')} ({c.get('id')}){dom} • {token_icon}")
 
-        lines.append("\n💡 Para preparar um PC, use: /preparar <IP> <id_do_cliente>")
+        if len(clients) > 10:
+            lines.append(f"\n... e mais {len(clients) - 10} perfis configurados no Ultron.")
+
+        lines.append("\n💡 Para iniciar a esteira: \"prepara o <IP> para <Nome do Cliente>\"")
         return "\n".join(lines)
 
     def _cmd_chamados(self) -> str:
@@ -475,19 +901,21 @@ class TrueConfChatOps:
         if not tickets:
             return "📋 Nenhum chamado pendente na Dashboard Milvus no momento."
 
-        lines = [f"📋 Chamados Abertos no Milvus ({len(tickets)}):\n"]
+        lines = [f"📋 CHAMADOS ABERTOS NO MILVUS ({len(tickets)} Pendentes):\n"]
         for t in tickets[:8]:
             status_badge = "🔴" if t.get("status") == "Aberto" else "🟡"
+            num = t.get("numero") or "S/N"
             lines.append(
-                f"{status_badge} #{t.get('numero')} — {t.get('cliente')}\n"
-                f"   Assunto: {t.get('assunto')} (Técnico: {t.get('tecnico')})\n"
+                f"{status_badge} #{num} — {t.get('cliente')}\n"
+                f"   Assunto: {t.get('assunto')}\n"
+                f"   Técnico: {t.get('tecnico')}\n"
             )
 
         return "\n".join(lines)
 
     def _cmd_preparar(self, user_id: str, args: List[str]) -> str:
         if not args:
-            return "⚠️ Uso: /preparar <IP> <cliente>\nExemplo: /preparar 192.168.57.25 nova_via"
+            return "⚠️ Uso: /preparar <IP> <cliente>\nExemplo: /preparar 192.168.57.25 white_group"
 
         ip        = args[0]
         client_id = args[1] if len(args) > 1 else "cliente_padrao"
@@ -510,18 +938,18 @@ class TrueConfChatOps:
         threading.Thread(target=_worker, daemon=True).start()
 
         return (
-            f"🚀 Esteira de Preparação Iniciada!\n\n"
-            f"📍 IP: {ip}\n"
-            f"🏢 Cliente: {client_id}\n\n"
-            f"Etapas em andamento:\n"
-            f"1. Conexão WinRM & Telemetria inicial\n"
-            f"2. Agente Milvus & Softwares Padrão\n"
-            f"3. Softwares do cliente (Winget)\n"
+            f"🚀 ESTEIRA DE PREPARAÇÃO INICIADA\n\n"
+            f"📍 Computador: {ip}\n"
+            f"🏢 Perfil do Cliente: {client_id.upper()}\n\n"
+            f"Etapas em execução automática:\n"
+            f"1. Coleta de telemetria inicial & WinRM\n"
+            f"2. Instalação do Agente Milvus & Softwares Padrão\n"
+            f"3. Instalação dos softwares do cliente (Winget)\n"
             f"4. Domínio Active Directory (se configurado)\n"
             f"5. Ativação permanente Windows/Office (MAS)\n"
-            f"6. Teste de Estresse Térmico & CPU\n"
+            f"6. Teste de estresse térmico de hardware\n"
             f"7. Emissão do Laudo Técnico em PDF\n\n"
-            f"📱 O AnyDesk ID e o laudo em PDF serão enviados aqui assim que concluir."
+            f"📱 Você receberá o ID do AnyDesk e o laudo em PDF aqui assim que concluir."
         )
 
     def _cmd_diagnostico(self, user_id: str, args: List[str]) -> str:
@@ -536,14 +964,25 @@ class TrueConfChatOps:
                 diag = self.orchestrator.run_diagnostics_only(ip=ip)
                 if not diag.get("success", True) or diag.get("error"):
                     err = diag.get("error", "Host inacessível via WinRM na porta 5985.")
-                    reply = (
-                        f"❌ Falha de Conexão WinRM com a Máquina {ip}\n\n"
-                        f"⚠️ Motivo: {err}\n\n"
-                        f"🔍 O que verificar na máquina alvo:\n"
-                        f"1. A máquina está ligada e com o Windows ativo na rede 192.168.57.X?\n"
-                        f"2. O WinRM está habilitado? (Execute 'Enable-PSRemoting -Force' no PowerShell)\n"
-                        f"3. A senha do Administrador local bate com o settings.yaml ('SenhaTemporariaLab123!')?"
-                    )
+                    
+                    if "401" in err or "credentials" in err.lower() or "unauthorized" in err.lower() or "acesso negado" in err.lower() or "rejected" in err.lower():
+                        srv_url = self._get_server_url()
+                        reply = (
+                            f"⚠️ MÁQUINA NÃO DESBLOQUEADA — {ip}\n\n"
+                            f"O computador está conectado na rede, mas ainda não foi desbloqueado com o Agente Ultron.\n\n"
+                            f"💡 Como liberar em 1 clique (sem precisar de senha):\n"
+                            f"1. Baixe o executável: {srv_url}/download/UltronAgent.exe\n"
+                            f"2. Execute como Administrador no computador {ip}.\n"
+                            f"3. O acesso será liberado com Zero-Prompt e você poderá rodar o diagnóstico imediatamente!"
+                        )
+                    else:
+                        reply = (
+                            f"❌ FALHA DE CONEXÃO — MÁQUINA {ip}\n\n"
+                            f"⚠️ Motivo: {err}\n\n"
+                            f"🔍 O que verificar na máquina alvo:\n"
+                            f"1. A máquina está ligada e conectada na rede?\n"
+                            f"2. Execute o UltronAgent.exe nela como Administrador para desbloquear o WinRM e Firewall automaticamente."
+                        )
                 else:
                     telem   = diag.get("telemetry", {})
                     ai_diag = diag.get("ai_diagnosis", "")
@@ -571,9 +1010,9 @@ class TrueConfChatOps:
                         f"💽 Armazenamento (S.M.A.R.T):{disks_str or ' Não detectado'}"
                         f"{bsod_str}"
                         f"{dev_str}\n\n"
-                        f"🤖 PARECER TÉCNICO DA IA:\n\n"
+                        f"🤖 PARECER TÉCNICO DA IA:\n"
                         f"{ai_diag}\n\n"
-                        f"💡 Para preparar a máquina: /preparar {ip} <cliente>"
+                        f"💡 Para preparar a máquina: \"prepara o {ip} para <cliente>\""
                     )
             except Exception as e:
                 reply = f"❌ Erro inesperado ao diagnosticar {ip}: {e}"
@@ -582,7 +1021,7 @@ class TrueConfChatOps:
                 self.bot.send_direct_message(user_id, reply)
 
         threading.Thread(target=_worker, daemon=True).start()
-        return f"🔍 Coletando telemetria e S.M.A.R.T em {ip}...\nAssim que o laudo da IA estiver pronto, enviarei aqui."
+        return f"🔍 Coletando telemetria e análise S.M.A.R.T em {ip}...\nAssim que o parecer estiver pronto, enviarei aqui."
 
     def _cmd_ativar(self, user_id: str, args: List[str]) -> str:
         if not args:
@@ -591,8 +1030,18 @@ class TrueConfChatOps:
 
         def _worker():
             res = self.winrm.run_script_file(ip, "Activate-WindowsOffice.ps1")
+            if res.get("auth_failed"):
+                srv_url = self._get_server_url()
+                reply = (
+                    f"⚠️ MÁQUINA NÃO DESBLOQUEADA — {ip}\n\n"
+                    f"Acesso WinRM não autorizado. Para liberar o acesso sem senha, execute o UltronAgent.exe nela como Administrador:\n"
+                    f"👉 {srv_url}/download/UltronAgent.exe"
+                )
+                if self.bot: self.bot.send_direct_message(user_id, reply)
+                return
+
             if res["success"]:
-                reply = f"🔑 Ativação MAS Concluída em {ip}!\nWindows e Office ativados permanentemente."
+                reply = f"🔑 ATIVAÇÃO CONCLUÍDA — MÁQUINA {ip}\n\n✅ Windows e Office licenciados permanentemente com êxito via MAS."
             else:
                 reply = f"⚠️ Falha na ativação em {ip}: {res.get('stderr') or 'Erro de conexão WinRM'}"
             if self.bot:
@@ -607,9 +1056,19 @@ class TrueConfChatOps:
         ip = args[0]
 
         def _worker():
-            res = self.winrm.run_script_file(ip, "Backup-UserProfile.ps1")
+            res = self.winrm.run_script_file(ip, "Backup-UserData.ps1")
+            if res.get("auth_failed"):
+                srv_url = self._get_server_url()
+                reply = (
+                    f"⚠️ MÁQUINA NÃO DESBLOQUEADA — {ip}\n\n"
+                    f"Para liberar o backup sem senha, execute o UltronAgent.exe nela como Administrador:\n"
+                    f"👉 {srv_url}/download/UltronAgent.exe"
+                )
+                if self.bot: self.bot.send_direct_message(user_id, reply)
+                return
+
             if res["success"]:
-                reply = f"💾 Backup Concluído em {ip}!\nDados transferidos para o Storage (192.168.57.112)."
+                reply = f"💾 BACKUP CONCLUÍDO — MÁQUINA {ip}\n\n✅ Dados do perfil transferidos com sucesso para o Storage de Backup."
             else:
                 reply = f"⚠️ Falha no backup em {ip}: {res.get('stderr') or 'Erro de conexão'}"
             if self.bot:
@@ -624,24 +1083,33 @@ class TrueConfChatOps:
         ip = args[0]
         dom_target = args[1]
 
-        def _worker():
-            profile     = self.profile_mgr.get_client_profile(dom_target)
-            domain_name = profile.get("dominio", dom_target) if profile else dom_target
+        profile = self.profile_mgr.get_client_profile(dom_target)
+        domain_name = profile.get("dominio", dom_target) if profile else dom_target
 
+        # Solicita credenciais do AD ao técnico
+        return self._prompt_for_domain_credentials(user_id, ip, domain_name)
+
+    def _execute_domain_join(self, user_id: str, ip: str, domain_name: str, dom_user: str, dom_pass: str) -> str:
+        def _worker():
             res = self.winrm.run_script_file(
                 ip,
-                "Join-ActiveDirectory.ps1",
-                params={"DomainName": domain_name, "OUPath": "OU=Workstations,DC=penserede,DC=local"},
+                "Join-CustomerDomain.ps1",
+                params={
+                    "DomainName": domain_name,
+                    "DomainUser": dom_user,
+                    "DomainPassword": dom_pass,
+                    "OUPath": "OU=Workstations,DC=penserede,DC=local"
+                },
             )
             if res["success"]:
-                reply = f"🛡️ Ingresso no Domínio Concluído!\n{ip} conectada ao domínio {domain_name}."
+                reply = f"🛡️ INGRESSO NO DOMÍNIO CONCLUÍDO\n\n✅ Máquina {ip} ingressada com sucesso no domínio '{domain_name}'."
             else:
-                reply = f"⚠️ Falha no ingresso ao domínio em {ip}: {res.get('stderr') or 'Verifique DNS e credenciais'}"
+                reply = f"⚠️ Falha no ingresso ao domínio em {ip}: {res.get('stderr') or 'Verifique DNS e credenciais de AD'}"
             if self.bot:
                 self.bot.send_direct_message(user_id, reply)
 
         threading.Thread(target=_worker, daemon=True).start()
-        return f"🛡️ Ingressando {ip} no domínio {dom_target}..."
+        return f"🛡️ Ingressando {ip} no domínio '{domain_name}' com usuário '{dom_user}'..."
 
     def _cmd_softwares(self, user_id: str, args: List[str]) -> str:
         if len(args) < 2:
@@ -654,8 +1122,18 @@ class TrueConfChatOps:
 
         def _worker():
             res = self.winrm.run_script_file(ip, "Install-CustomPackages.ps1", params={"Packages": ",".join(pkgs)})
+            if res.get("auth_failed"):
+                srv_url = self._get_server_url()
+                reply = (
+                    f"⚠️ MÁQUINA NÃO DESBLOQUEADA — {ip}\n\n"
+                    f"Para instalar softwares sem senha, execute o UltronAgent.exe nela como Administrador:\n"
+                    f"👉 {srv_url}/download/UltronAgent.exe"
+                )
+                if self.bot: self.bot.send_direct_message(user_id, reply)
+                return
+
             if res["success"]:
-                reply = f"📦 Softwares Instalados em {ip}!\nPacotes: {', '.join(pkgs)}"
+                reply = f"📦 SOFTWARES INSTALADOS — MÁQUINA {ip}\n\n✅ Pacotes concluídos: {', '.join(pkgs)}"
             else:
                 reply = f"⚠️ Falha na instalação em {ip}: {res.get('stderr') or 'Erro Winget'}"
             if self.bot:
@@ -672,37 +1150,52 @@ class TrueConfChatOps:
         act = "reiniciada" if action == "restart" else "desligada"
 
         def _worker():
-            res = self.winrm.execute_powershell(ip, cmd)
-            if res["success"]:
-                reply = f"🔌 Máquina {ip} foi {act} com sucesso."
-            else:
-                reply = f"⚠️ Falha ao executar comando de energia em {ip}."
+            res = self.winrm.run_command(ip, cmd)
+            if res.get("auth_failed"):
+                srv_url = self._get_server_url()
+                reply = (
+                    f"⚠️ MÁQUINA NÃO DESBLOQUEADA — {ip}\n\n"
+                    f"Para controlar energia remotamente, execute o UltronAgent.exe nela como Administrador:\n"
+                    f"👉 {srv_url}/download/UltronAgent.exe"
+                )
+                if self.bot: self.bot.send_direct_message(user_id, reply)
+                return
+
+            reply = f"🔌 MÁQUINA {ip.upper()}\n\n✅ A máquina foi {act} com sucesso." if res["success"] else f"⚠️ Falha ao executar comando de energia em {ip}: {res.get('stderr')}"
             if self.bot:
                 self.bot.send_direct_message(user_id, reply)
 
         threading.Thread(target=_worker, daemon=True).start()
-        return f"🔌 Enviando comando para {act} {ip}..."
+        return f"🔌 Enviando comando para {action} a máquina {ip}..."
 
     def _cmd_message(self, user_id: str, args: List[str]) -> str:
         if len(args) < 2:
-            return (
-                "⚠️ Uso: /msg <IP> <mensagem>\n"
-                "Exemplo: /msg 192.168.57.59 O laboratório está preparando a sua máquina."
-            )
+            return "⚠️ Uso: /msg <IP> <mensagem>\nExemplo: /msg 192.168.57.25 Máquina pronta para entrega"
         ip = args[0]
-        msg_text = " ".join(args[1:]).strip('\'"')
+        msg_text = " ".join(args[1:])
 
         def _worker():
             res = self.winrm.run_script_file(
                 ip,
-                "Send-UserMessage.ps1",
+                "Show-UserMessage.ps1",
                 params={
                     "Message": msg_text,
-                    "Title": f"🤖 ULTRON SUPORTE (Técnico: {user_id.capitalize()})"
+                    "Title": "Ultron — Suporte Pense Rede",
+                    "Icon": "Information"
                 }
             )
+            if res.get("auth_failed"):
+                srv_url = self._get_server_url()
+                reply = (
+                    f"⚠️ MÁQUINA NÃO DESBLOQUEADA — {ip}\n\n"
+                    f"Para enviar mensagens na tela, execute o UltronAgent.exe nela como Administrador:\n"
+                    f"👉 {srv_url}/download/UltronAgent.exe"
+                )
+                if self.bot: self.bot.send_direct_message(user_id, reply)
+                return
+
             if res["success"]:
-                reply = f"📢 Mensagem exibida na tela do usuário em {ip} com sucesso!\n💬 Texto: \"{msg_text}\""
+                reply = f"📢 MENSAGEM EXIBIDA COM SUCESSO\n\n📍 Destino: {ip}\n💬 Mensagem: \"{msg_text}\""
             else:
                 reply = f"⚠️ Falha ao exibir mensagem na tela de {ip}: {res.get('stderr') or 'Máquina inacessível'}"
 
@@ -719,7 +1212,7 @@ class TrueConfChatOps:
         if not reports:
             return "📄 Nenhum laudo técnico encontrado no sistema."
 
-        lines = [f"📄 Últimos Laudos Técnicos Gerados ({len(reports)}):\n"]
+        lines = [f"📄 ÚLTIMOS LAUDOS TÉCNICOS GERADOS ({len(reports)}):\n"]
         for r in reports[:6]:
             lines.append(
                 f"• {r.get('hostname')} ({r.get('client')})\n"
@@ -737,7 +1230,7 @@ class TrueConfChatOps:
         
         cmd_part = f"\n\n🔧 Comando de Reparo PowerShell:\n{data.get('command')}" if data.get("command") else ""
         return (
-            f"🐞 Decodificador de Erro do Windows\n\n"
+            f"🐞 DECODIFICADOR DE ERROS WINDOWS\n\n"
             f"🔍 Código: {data.get('code')} — {data.get('name')}\n"
             f"📌 Categoria: {data.get('category')}\n\n"
             f"⚠️ Causa Provável:\n{data.get('cause')}\n\n"
@@ -754,7 +1247,7 @@ class TrueConfChatOps:
         if not vulns:
             return f"🛡️ Nenhuma vulnerabilidade crítica recente encontrada para {pkg}."
 
-        lines = [f"🛡️ Vulnerabilidades Encontradas para {pkg} ({len(vulns)}):\n"]
+        lines = [f"🛡️ VULNERABILIDADES ENCONTRADAS — {pkg.upper()} ({len(vulns)}):\n"]
         for v in vulns[:4]:
             lines.append(
                 f"• {v.get('id')} [{v.get('severity')}] ({v.get('published')})\n"
@@ -765,21 +1258,58 @@ class TrueConfChatOps:
     def _cmd_clima(self) -> str:
         data = self.weather_svc.get_ambient_conditions()
         return (
-            f"🌡️ Telemetria Térmica do Laboratório\n\n"
+            f"🌡️ TELEMETRIA TÉRMICA DO LABORATÓRIO\n\n"
             f"• Temperatura Atual: {data.get('temperature_c')}°C (Sensação: {data.get('apparent_temperature_c')}°C)\n"
             f"• Umidade Relativa: {data.get('relative_humidity_pct')}%\n"
             f"• Margem Térmica: {data.get('thermal_headroom_rating')}\n\n"
-            f"📝 {data.get('thermal_delta_note')}"
+            f"💡 Avaliação: {data.get('thermal_warning')}"
         )
 
     def _cmd_wan(self) -> str:
-        data = self.wan_svc.get_wan_telemetry()
+        data = self.wan_svc.get_public_ip_info()
         return (
-            f"🌐 Telemetria de Conexão WAN do Lab\n\n"
-            f"• IP Público: {data.get('wan_ip')}\n"
-            f"• Provedor (ISP): {data.get('isp')} (ASN: {data.get('asn')})\n"
-            f"• Localização: {data.get('city')}, {data.get('region')} - {data.get('country')}\n"
-            f"• Latência DNS DoH: {data.get('ping_ms')} ms"
+            f"🌐 TELEMETRIA DE CONEXÃO & LINK WAN\n\n"
+            f"• IP Público: {data.get('ip')}\n"
+            f"• Provedor (ISP): {data.get('isp')} ({data.get('asn')})\n"
+            f"• Localização: {data.get('city')}, {data.get('region')} — {data.get('country')}\n"
+            f"• Latência DNS: {data.get('dns_probe_latency_ms')} ms\n"
+            f"• Status: {data.get('link_status')}"
+        )
+
+    def _cmd_download_agent(self, user_id: str) -> str:
+        """Envia o executável UltronAgent.exe diretamente como anexo no TrueConf e fornece link"""
+        exe_paths = [
+            os.path.join("static", "downloads", "UltronAgent.exe"),
+            os.path.join("agent", "UltronAgent.exe")
+        ]
+        found_path = None
+        for p in exe_paths:
+            if os.path.exists(p):
+                found_path = p
+                break
+
+        # Se o bot estiver conectado, envia o arquivo diretamente como anexo no TrueConf
+        if self.bot and found_path:
+            try:
+                self.bot.send_direct_file(
+                    user_id=user_id,
+                    file_path=found_path,
+                    caption="📎 UltronAgent.exe — Agente de Automação de Bancada (Pense Rede)",
+                    filename="UltronAgent.exe"
+                )
+            except Exception as e:
+                logger.warning(f"Não foi possível anexar arquivo no chat: {e}")
+
+        srv_url = self._get_server_url()
+        return (
+            "📥 ULTRON AGENT (.EXE) — PRONTO PARA USO\n\n"
+            "📎 O arquivo UltronAgent.exe foi enviado como anexo diretamente aqui no seu chat!\n\n"
+            "💡 Como utilizar no computador da bancada:\n"
+            "1. Baixe o arquivo anexado aqui no TrueConf (ou via link abaixo).\n"
+            "2. Execute como Administrador na máquina alvo.\n"
+            "3. O computador será configurado e liberado com Zero-Prompt (sem pedir senha).\n\n"
+            "🌐 Link para download direto no navegador:\n"
+            f"{srv_url}/download/UltronAgent.exe"
         )
 
     # ------------------------------------------------------------------
@@ -828,57 +1358,66 @@ class TrueConfChatOps:
         return None
 
     # ------------------------------------------------------------------
-    # IA Conversacional Local
+    # IA Conversacional com Histórico e Restrições de Domínio
     # ------------------------------------------------------------------
 
     def _handle_ai_conversation(self, user_id: str, text: str) -> str:
-        """Responde a perguntas livres usando o LLM local com contexto ao vivo do laboratório."""
+        """Responde a conversas livres usando IA e Knowledge Engine com contexto de bancada instantâneo."""
         try:
-            devices = self.scanner.scan_network()
+            devices = self._get_cached_devices()
             clients = self.profile_mgr.list_clients()
-            weather = self.weather_svc.get_ambient_conditions()
 
-            bench_summary = (
-                f"{len(devices)} computadores ativos: "
-                + ", ".join(f"{d.get('ip')} ({d.get('hostname')})" for d in devices)
-                if devices else "Nenhum computador ativo no momento."
-            )
+            winrm_devs = [d for d in devices if d.get("winrm_ready")]
+            if winrm_devs:
+                winrm_str = f"{len(winrm_devs)} máquina(s) prontas com WinRM (" + ", ".join(f"{d.get('ip')} - {d.get('hostname', 'PC').replace('.penserede.local', '')}" for d in winrm_devs[:4]) + ")"
+            else:
+                winrm_str = "Nenhuma máquina com WinRM ativo"
+
+            bench_summary = f"{len(devices)} dispositivos conectados ({winrm_str})" if devices else "Nenhum computador ativo detectado na bancada no momento."
             client_summary = ", ".join(f"{c.get('nome')} ({c.get('id')})" for c in clients[:8])
+
+            if user_id not in self.user_conversations:
+                self.user_conversations[user_id] = []
+
+            self.user_conversations[user_id].append({"role": "user", "content": text})
+            if len(self.user_conversations[user_id]) > 12:
+                self.user_conversations[user_id] = self.user_conversations[user_id][-12:]
 
             system_prompt = (
                 "Você é o ULTRON, Inteligência Artificial de Automação de Bancada e Suporte Técnico da Pense Rede.\n"
-                "Você conversa diretamente com os técnicos de TI do laboratório no chat do TrueConf.\n\n"
-                "REGRAS OBRIGATÓRIAS:\n"
-                "1. Responda em Português do Brasil (pt-BR) com perfeição gramatical e precisão técnica.\n"
-                "2. Seja DIRETO, CONCISO e OBJETIVO.\n"
-                "3. Use formatação limpa com tópicos e marcadores simples.\n"
-                "4. Se o técnico pedir uma ação, indique o comando correspondente (/bancada, /preparar, /diagnostico, etc).\n"
-                "5. NUNCA gere tags <think> ou blocos de pensamento interno."
+                "Você conversa diretamente com os técnicos de TI do laboratório no TrueConf.\n\n"
+                "DIRETRIZES DE FORMATAÇÃO E COERÊNCIA:\n"
+                "1. Responda em Português do Brasil (pt-BR) de forma amigável, clara, técnica e objetiva.\n"
+                "2. NÃO use formatações com asteriscos duplos (**) ou crases brutas repetidas que possam poluir o chat.\n"
+                "3. Use tópicos limpos com bullet points (•) e títulos em MAIÚSCULAS para organizar a resposta.\n"
+                "4. Converse naturalmente tirando dúvidas sobre procedimentos de bancada, formatação, chamados Milvus, diagnósticos e suporte.\n"
+                "5. Mantenha o foco estritamente em computadores da bancada, suporte técnico, hardware, automação e TI."
             )
 
             prompt = (
-                f"CONTEXTO ATUAL DO LABORATÓRIO:\n"
-                f"- Máquinas na Bancada: {bench_summary}\n"
-                f"- Perfis de Clientes: {client_summary}\n"
-                f"- Temperatura do Lab: {weather.get('temperature_c')}°C\n\n"
-                f"Mensagem do Técnico ({user_id}): \"{text}\"\n\n"
-                "Instrução: Responda diretamente ao técnico com a informação técnica solicitada ou comando sugerido."
+                f"CONTEXTO DO LABORATÓRIO:\n"
+                f"- Bancada: {bench_summary}\n"
+                f"- Clientes cadastrados: {client_summary}\n\n"
+                f"Mensagem do Técnico ({user_id}): \"{text}\"\n"
             )
 
             self._ensure_orchestrator()
             reply = self.orchestrator.analyzer.generate(prompt, system_prompt=system_prompt)
+
             if reply and not reply.startswith("⚠️"):
-                # Limpa eventuais tags HTML ou Markdown que possam ter sido geradas
                 clean_reply = reply.replace("<br />", "\n").replace("<br/>", "\n").replace("<br>", "\n")
+                self.user_conversations[user_id].append({"role": "assistant", "content": clean_reply})
                 return f"🤖 Ultron:\n\n{clean_reply}"
-            elif reply and reply.startswith("⚠️"):
-                return f"{reply}\n\n💡 Dica: Você pode usar comandos diretos como /bancada, /clientes ou /ajuda."
-        except Exception:
+            elif reply:
+                return reply
+
+        except Exception as e:
             pass
 
         return (
-            f"🤖 Não reconheci o comando '{text}'.\n\n"
-            "Envie /ajuda para ver os comandos disponíveis ou /bancada para listar os PCs ativos."
+            "🤖 Ultron:\n\n"
+            "Recebi sua mensagem. Em que posso te ajudar na bancada hoje?\n\n"
+            "💡 Dica: Você pode me pedir \"quem tá online na bancada\" ou \"faz o diagnóstico no <IP>\"."
         )
 
     # ------------------------------------------------------------------
