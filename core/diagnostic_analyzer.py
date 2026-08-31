@@ -87,7 +87,7 @@ class DiagnosticAnalyzer:
         """
         # Extrai a mensagem real do usuário se o prompt contiver cabeçalhos de contexto
         user_msg = prompt
-        m_user = re.search(r'Mensagem do T[ée]cnico\s*(?:\([^)]+\))?\s*:\s*["\']?([^"\'\n]+)["\']?', prompt, re.IGNORECASE)
+        m_user = re.search(r'(?:Mensagem do T[ée]cnico\s*(?:\([^)]+\))?|Mensagem recebida)\s*:\s*["\']?([^"\'\n]+)["\']?', prompt, re.IGNORECASE)
         if m_user:
             user_msg = m_user.group(1).strip()
 
@@ -153,7 +153,7 @@ class DiagnosticAnalyzer:
             )
 
         # 7. Ativação Windows / Office (MAS)
-        if any(w in p_lower for w in ["ativar", "ativacao", "ativação", "licenca", "licença", "office", "windows", "mas"]):
+        if any(w in p_lower for w in ["ativar", "ativacao", "ativação", "licenca", "licença", "office", "windows"]) or re.search(r"\b(mas|massgrave)\b", p_lower):
             return (
                 "🔑 ATIVAÇÃO WINDOWS & OFFICE (MAS)\n\n"
                 "Aplico a ativação permanente digital via MAS remotamente em qualquer máquina liberada da bancada.\n\n"

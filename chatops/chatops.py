@@ -14,9 +14,12 @@ import unicodedata
 
 logger = logging.getLogger("ultron_chatops")
 
+from datetime import datetime, timedelta
+import requests
 from core.profile_manager import ProfileManager
 from core.network_scanner import NetworkScanner
 from core.winrm_executor import WinRMExecutor
+from core.scheduler import UltronScheduler
 from core.public_tools import (
     CveSecurityService,
     LabWeatherService,
@@ -42,6 +45,7 @@ class TrueConfChatOps:
         self.profile_mgr = ProfileManager()
         self.scanner     = NetworkScanner()
         self.winrm       = WinRMExecutor()
+        self.scheduler   = UltronScheduler(bot=bot)
 
         # Serviços públicos / consultas externas
         self.weather_svc = LabWeatherService()
@@ -367,6 +371,131 @@ class TrueConfChatOps:
 
         return None
 
+    def _is_master_user(self, user_id: str) -> bool:
+        """Verifica se o usuário possui privilégios de Administrador Master (Nicolas Silva)"""
+        clean_user = (user_id or "").lower().strip().lstrip("@")
+        return clean_user in ["nicolas.silva", "nicolas", "nicolas_silva", "admin"]
+
+    def _cmd_list_trueconf_users(self) -> str:
+        """Consulta os usuários cadastrados no TrueConf Server via REST API"""
+        if not self.bot or not self.bot.api_token:
+            return "⚠️ Integração com TrueConf API Token não configurada para listar usuários."
+        try:
+            url = f"{self.bot.raw_server_url}/api/v4/users"
+            headers = {"Authorization": f"Bearer {self.bot.api_token}"}
+            r = requests.get(url, headers=headers, verify=False, timeout=5)
+            if r.status_code == 200:
+                data = r.json().get("users", [])
+                if not data:
+                    return "ℹ️ Nenhum usuário retornado pelo TrueConf Server."
+                lines = [f"👥 USUÁRIOS NO TRUECONF ({len(data)} cadastrados):\n"]
+                for u in data[:25]:
+                    uid = u.get("id", "")
+                    display = u.get("display_name", "") or (u.get("first_name", "") + " " + u.get("last_name", ""))
+                    status = "🟢 Online" if u.get("status") == 1 else "⚪ Offline"
+                    lines.append(f"• @{uid} ({display.strip()}) — {status}")
+                return "\n".join(lines)
+            return f"⚠️ Resposta da API TrueConf: HTTP {r.status_code}"
+        except Exception as e:
+            return f"⚠️ Erro ao consultar usuários no TrueConf: {e}"
+
+    def _handle_master_intent(self, user_id: str, text: str, norm_text: str) -> Optional[str]:
+        """Processa comandos administrativos e controle mestre para Nicolas Silva"""
+        if not self._is_master_user(user_id):
+            return None
+
+        # 1. Consulta de usuários do TrueConf
+        if any(kw in norm_text for kw in ["usuarios do trueconf", "usuarios da empresa", "lista usuarios", "usuarios trueconf", "quem esta no trueconf", "colaboradores"]):
+            return self._cmd_list_trueconf_users()
+
+        # 2. Cancelamento de agendamento
+        m_cancel = re.search(r"(?:cancela|cancelar|apaga|remover|excluir)\s+(?:o\s+)?(?:agendamento|agendada|mensagem)?\s*(?:id\s*)?([a-zA-Z0-9_]+)", text, re.IGNORECASE)
+        if m_cancel and ("agend" in norm_text or "sch_" in text or "cancela" in norm_text):
+            t_id = m_cancel.group(1).strip()
+            if self.scheduler.cancel_task(t_id):
+                return f"✅ Agendamento `{t_id}` cancelado com sucesso."
+            return f"⚠️ Agendamento `{t_id}` não encontrado ou já executado."
+
+        # 3. Listagem de mensagens agendadas
+        if any(kw in norm_text for kw in ["agendad", "agendamento", "agendamentos", "agendados", "agendadas", "o que ta agendado", "minhas mensagens agendadas", "/agendados"]):
+            tasks = self.scheduler.list_scheduled()
+            if not tasks:
+                return "ℹ️ Nenhuma mensagem agendada no momento."
+            res = ["⏰ MENSAGENS PROGRAMADAS NO TRUECONF:\n"]
+            for t in tasks:
+                res.append(f"• ID: `{t['id']}` | Para: @{t['target']} | Horário: {t['time']} | Faltam: {t['remaining_sec']//60}min\n  📝 \"{t['message']}\"")
+            res.append("\n💡 Para cancelar: 'cancela o agendamento <ID>'")
+            return "\n".join(res)
+
+        # 4. Agendamento com horário fixo (ex: "manda uma mensagem para o arthur.gabriel às 15:30 [texto]")
+        m_time_sched = re.search(
+            r"(?:manda|mandar|mande|envia|enviar|envie|avisa|avise|agenda|agendar)\s+(?:uma\s+)?mensagem\s+(?:para\s+(?:o\s+)?|pro\s+|ao\s+)?([a-zA-Z0-9._-]+)\s+(?:[àa]s\s+|para\s+[àa]s\s+)(\d{1,2}:\d{2})\s*(?:com\s+o\s+texto|dizendo|falando|que|:)?\s*([\s\S]+)",
+            text, re.IGNORECASE
+        )
+        if m_time_sched:
+            target_user = m_time_sched.group(1).strip().lstrip("@")
+            time_str = m_time_sched.group(2).strip()
+            msg_content = m_time_sched.group(3).strip()
+
+            if not re.match(r"^\d{1,3}\.\d{1,3}", target_user):
+                try:
+                    now = datetime.now()
+                    hh, mm = map(int, time_str.split(":"))
+                    target_dt = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+                    if target_dt <= now:
+                        target_dt += timedelta(days=1)
+
+                    self.scheduler.schedule_message(user_id, target_user, msg_content, target_dt)
+                    return (
+                        f"⏰ MENSAGEM AGENDADA COM SUCESSO!\n\n"
+                        f"👤 Destinatário: @{target_user}\n"
+                        f"🕒 Horário Programado: {target_dt.strftime('%H:%M')} ({'Hoje' if target_dt.day == now.day else 'Amanhã'})\n"
+                        f"📝 Mensagem: \"{msg_content}\"\n\n"
+                        f"💡 Assim que for entregue no chat dele(a), te confirmarei aqui em tempo real!"
+                    )
+                except Exception as e:
+                    return f"⚠️ Erro ao calcular horário do agendamento: {e}"
+
+        # 5. Agendamento com delay relativo (ex: "daqui a 10 minutos manda mensagem para o joao.brasileiro [texto]")
+        m_delay_sched = re.search(
+            r"(?:daqui\s+a\s+|em\s+)(\d+)\s*(?:min|minuto|minutos|m)\s*(?:manda|mandar|mande|envia|enviar|envie|avisa|avise)?\s*(?:uma\s+)?mensagem\s+(?:para\s+(?:o\s+)?|pro\s+|ao\s+)?([a-zA-Z0-9._-]+)\s*(?:com\s+o\s+texto|dizendo|falando|que|:)?\s*([\s\S]+)",
+            text, re.IGNORECASE
+        )
+        if m_delay_sched:
+            minutes = int(m_delay_sched.group(1))
+            target_user = m_delay_sched.group(2).strip().lstrip("@")
+            msg_content = m_delay_sched.group(3).strip()
+
+            if not re.match(r"^\d{1,3}\.\d{1,3}", target_user):
+                target_dt = datetime.now() + timedelta(minutes=minutes)
+                self.scheduler.schedule_message(user_id, target_user, msg_content, target_dt)
+                return (
+                    f"⏰ MENSAGEM PROGRAMADA (DAQUI A {minutes} MINUTOS)!\n\n"
+                    f"👤 Destinatário: @{target_user}\n"
+                    f"🕒 Envio previsto para: {target_dt.strftime('%H:%M:%S')}\n"
+                    f"📝 Mensagem: \"{msg_content}\"\n\n"
+                    f"💡 Te avisarei assim que a mensagem for entregue!"
+                )
+
+        # 6. Envio Imediato de mensagem para outro colaborador da empresa no TrueConf
+        m_direct_colleague = re.search(
+            r"(?:manda|mandar|mande|envia|enviar|envie|avisa|avise)\s+(?:uma\s+)?mensagem\s+(?:para\s+(?:o\s+)?|pro\s+|ao\s+)(?:usuario\s+|usuário\s+)?([a-zA-Z0-9._-]+)\s*(?:com\s+o\s+texto|dizendo|falando|que|:)\s*([\s\S]+)",
+            text, re.IGNORECASE
+        )
+        if m_direct_colleague:
+            target_user = m_direct_colleague.group(1).strip().lstrip("@")
+            msg_content = m_direct_colleague.group(2).strip()
+
+            if not re.match(r"^\d{1,3}\.\d{1,3}", target_user) and target_user.lower() not in ["ip", "maquina", "computador", "pc"]:
+                if self.bot:
+                    formatted = f"📢 Mensagem de Nicolas Silva:\n\n{msg_content}"
+                    success = self.bot.send_direct_message(target_user, formatted)
+                    if success:
+                        return f"🚀 Mensagem enviada com sucesso no TrueConf para @{target_user}!\n\n📝 \"{msg_content}\""
+                    return f"⚠️ Não foi possível entregar a mensagem para @{target_user}. Verifique se o usuário existe no TrueConf."
+
+        return None
+
     def handle_incoming_message(self, user_id: str, message: str) -> str:
         """
         Recebe qualquer mensagem enviada ao bot no chat privado do TrueConf.
@@ -381,6 +510,11 @@ class TrueConfChatOps:
         # 1. Sessão interativa pendente (Wizard passo a passo ou Solicitação de Senha)
         if user_id in self.user_sessions:
             return self._handle_wizard_step(user_id, self.user_sessions[user_id], text)
+
+        # 1.1 Controle Mestre / Agendamento exclusivo para Nicolas Silva
+        master_reply = self._handle_master_intent(user_id, text, norm_text)
+        if master_reply:
+            return master_reply
 
         # 2. Navegação rápida pelo Menu Numérico Principal
         menu_choices = {
@@ -1420,32 +1554,37 @@ class TrueConfChatOps:
             if len(self.user_conversations[user_id]) > 12:
                 self.user_conversations[user_id] = self.user_conversations[user_id][-12:]
 
+            is_master = self._is_master_user(user_id)
+            user_title = "Nicolas Silva (Tech Lead / Coordenador Master da Automação)" if is_master else f"Técnico ({user_id})"
+
             system_prompt = (
-                "Você é o ULTRON, Inteligência Artificial de Automação de Bancada e Suporte Técnico da Pense Rede.\n"
-                "Você conversa diretamente com os técnicos de TI do laboratório no TrueConf.\n\n"
-                "DIRETRIZES DE FORMATAÇÃO E COERÊNCIA:\n"
-                "1. Responda em Português do Brasil (pt-BR) de forma amigável, clara, técnica e objetiva.\n"
-                "2. NÃO use formatações com asteriscos duplos (**) ou crases brutas repetidas que possam poluir o chat.\n"
-                "3. Use tópicos limpos com bullet points (•) e títulos em MAIÚSCULAS para organizar a resposta.\n"
-                "4. Converse naturalmente tirando dúvidas sobre procedimentos de bancada, formatação, chamados Milvus, diagnósticos e suporte.\n"
-                "5. Mantenha o foco estritamente em computadores da bancada, suporte técnico, hardware, automação e TI.\n"
-                "6. Se o técnico pedir uma tarefa ou ação que você NÃO possui integrada, explique educadamente: 'Atualmente não possuo essa função integrada de forma automática', dê uma dica de como fazer manualmente e apresente as automações que você realiza (diagnósticos S.M.A.R.T, esteiras de clientes, ativação MAS, backup, avisos na tela e energia).\n"
-                "7. NUNCA repita cards genéricos de status da bancada se o usuário não pediu especificamente para listar a bancada."
+                "Você é o ULTRON, Inteligência Artificial de Automação de Bancada, Orquestração e Suporte Técnico da Pense Rede.\n"
+                f"Você está conversando diretamente no TrueConf com: {user_title}.\n\n"
+                "DIRETRIZES DE PERSONALIDADE E CONDUTA:\n"
+                "1. Responda em Português do Brasil (pt-BR) de forma inteligente, acolhedora, humana e altamente técnica.\n"
+                "2. NÃO use formatações com asteriscos duplos (**) excessivos ou cartões robóticos repetitivos.\n"
+                "3. Converse como um agente autônomo experiente: compreenda o contexto, responda a dúvida de forma consultiva e dinâmica.\n"
+                "4. Se o usuário for o Nicolas Silva (Master), ofereça suporte total a orquestração avançada, comandos do TrueConf, agendamento de recados e esteiras.\n"
+                "5. Se o usuário pedir uma tarefa técnica que ainda não foi automatizada, converse sobre o procedimento, explique como fazer e apresente soluções alternativas com as ferramentas disponíveis.\n"
+                "6. NUNCA repita cards ou templates fixos de status da bancada a cada mensagem."
             )
 
             prompt = (
                 f"CONTEXTO DO LABORATÓRIO:\n"
                 f"- Bancada: {bench_summary}\n"
-                f"- Clientes cadastrados: {client_summary}\n\n"
-                f"Mensagem do Técnico ({user_id}): \"{text}\"\n"
+                f"- Clientes cadastrados: {client_summary}\n"
+                f"- Usuário atual: {user_title}\n\n"
+                f"Mensagem recebida: \"{text}\"\n"
             )
 
             self._ensure_orchestrator()
             reply = self.orchestrator.analyzer.generate(prompt, system_prompt=system_prompt)
 
             if reply and not reply.startswith("⚠️"):
-                clean_reply = reply.replace("<br />", "\n").replace("<br/>", "\n").replace("<br>", "\n")
+                clean_reply = reply.replace("<br />", "\n").replace("<br/>", "\n").replace("<br>", "\n").strip()
                 self.user_conversations[user_id].append({"role": "assistant", "content": clean_reply})
+                if clean_reply.startswith("🤖") or clean_reply.startswith("Olá") or clean_reply.startswith("Fala"):
+                    return clean_reply
                 return f"🤖 Ultron:\n\n{clean_reply}"
             elif reply:
                 return reply
