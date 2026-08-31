@@ -226,6 +226,12 @@ class TrueConfBot:
 
                 logger.info(f"🔑 Conectando Ultron Bot em {self.server_host}...")
                 
+                if self._bot:
+                    try:
+                        await self._bot.shutdown()
+                    except Exception:
+                        pass
+
                 self._p2p_chats.clear()
                 self._bot = Bot.from_credentials(
                     server=self.server_host,
@@ -235,7 +241,8 @@ class TrueConfBot:
                     receive_unread_messages=True,
                     verify_ssl=False,
                     ws_max_retries=-1,
-                    ws_max_delay=5
+                    ws_max_delay=5,
+                    timeout=30.0
                 )
 
                 # Inicia o loop do bot sem capturar sinais do SO (pois roda em thread de fundo)
