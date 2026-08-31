@@ -16,7 +16,7 @@ namespace UltronAgent
 {
     class Program
     {
-        public static string ServerUrl = "http://192.168.57.48:7000";
+        public static string ServerUrl = "http://192.168.57.43:7000";
         public static string ClientId = "cliente_padrao";
         public static bool SilentMode = false;
         public static bool DaemonMode = false;

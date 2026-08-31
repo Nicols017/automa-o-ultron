@@ -14,7 +14,7 @@ network:
   milvus_demo_mode: true
   milvus_share: \\192.168.57.87\MilvusAgents
   software_share: \\192.168.57.87\Softwares
-  ultron_ip: 192.168.57.48
+  ultron_ip: 192.168.57.43
 server:
   env: production
   host: 0.0.0.0
