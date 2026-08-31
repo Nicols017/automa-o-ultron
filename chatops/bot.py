@@ -25,6 +25,18 @@ except ImportError:
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger("ultron_trueconf_bot")
 
+import html
+import re
+
+def _clean_chat_text(s: str) -> str:
+    """Higieniza tags HTML (<br>, <span>, etc.) e decodifica entidades HTML (&quot;, &#39;, &amp;) do TrueConf"""
+    if not s:
+        return ""
+    t = re.sub(r"<\s*br\s*/?\s*>", "\n", s, flags=re.IGNORECASE)
+    t = re.sub(r"<[^>]+>", "", t)
+    t = html.unescape(t)
+    return t.strip()
+
 def _split_message(text: str, max_chars: int = 3800) -> List[str]:
     """Divide mensagens longas em blocos seguros para o limite do TrueConf (4096 chars)."""
     if not text or len(text) <= max_chars:
@@ -164,9 +176,9 @@ class TrueConfBot:
                 @router.message()
                 async def handle_message(msg: Message):
                     try:
-                        text = msg.text or ""
+                        text = _clean_chat_text(msg.text or "")
                         if not text and hasattr(msg, "content") and hasattr(msg.content, "text"):
-                            text = msg.content.text or ""
+                            text = _clean_chat_text(msg.content.text or "")
                         if not text:
                             return
 

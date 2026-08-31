@@ -9,8 +9,9 @@ import logging
 import time
 import re
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import unicodedata
+import html
 
 logger = logging.getLogger("ultron_chatops")
 
@@ -27,11 +28,21 @@ from core.public_tools import (
     WindowsErrorLookupService,
 )
 
+def _clean_chat_text(s: str) -> str:
+    """Higieniza tags HTML (<br>, <span>, etc.) e decodifica entidades HTML (&quot;, &#39;, &amp;) do TrueConf"""
+    if not s:
+        return ""
+    t = re.sub(r"<\s*br\s*/?\s*>", "\n", s, flags=re.IGNORECASE)
+    t = re.sub(r"<[^>]+>", "", t)
+    t = html.unescape(t)
+    return t.strip()
+
 def _normalize_token(s: str) -> str:
     """Remove acentos e converte para minúsculas"""
     if not s:
         return ""
-    n = unicodedata.normalize('NFKD', s)
+    clean = _clean_chat_text(s)
+    n = unicodedata.normalize('NFKD', clean)
     return "".join(c for c in n if not unicodedata.combining(c)).lower()
 
 class TrueConfChatOps:
@@ -539,14 +550,21 @@ class TrueConfChatOps:
                 )
 
         # 6. ENVIO IMEDIATO E DIRETO PARA QUALQUER PESSOA NO TRUECONF (Zero Friction)
-        # Suporta: "manda mensagem pro arthur o servidor subiu", "avisa o joao que a maquina ta pronta", "fala pro daniel [texto]"
-        m_instant_colleague = re.search(
-            r"^(?:manda\s+(?:um\s+)?(?:recado|aviso)|recado|aviso|manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique)\s+(?:(?:uma\s+)?(?:mensagem|recado|aviso)\s+)?(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)?(?:usuario\s+|usuário\s+|colaborador\s+)?([a-zA-Z0-9._-]+)\s*(?:com\s+o\s+texto|dizendo|falando|que|de\s+que|:\s*|\s+-\s*|\s+)([\s\S]+)$",
+        # 6.1 Padrão com delimitadores: dizendo, falando, com o texto, que, :, -, ou aspas
+        m_delim = re.search(
+            r"^(?:manda\s+(?:um\s+)?(?:recado|aviso)|recado|aviso|manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique)\s+(?:(?:uma\s+)?(?:mensagem|recado|aviso)\s+)?(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)?(?:usuario\s+|usuário\s+|colaborador\s+)?([a-zA-Z0-9._\s-]+?)\s*(?::\s*|\s+-\s*|\s+(?:com\s+o\s+texto|dizendo|falando|de\s+que|que)\s*:?\s*|\s+[\"\'\“\‘])([\s\S]+)$",
             text, re.IGNORECASE
         )
-        if m_instant_colleague:
-            target_user = m_instant_colleague.group(1).strip().lstrip("@")
-            msg_content = m_instant_colleague.group(2).strip()
+        # 6.2 Padrão fallback simples por espaço
+        m_simple = re.search(
+            r"^(?:manda\s+(?:um\s+)?(?:recado|aviso)|recado|aviso|manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique)\s+(?:(?:uma\s+)?(?:mensagem|recado|aviso)\s+)?(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)?(?:usuario\s+|usuário\s+|colaborador\s+)?([a-zA-Z0-9._-]+)\s+([\s\S]+)$",
+            text, re.IGNORECASE
+        )
+        m_instant = m_delim or m_simple
+        if m_instant:
+            target_user = m_instant.group(1).strip().lstrip("@")
+            msg_content = m_instant.group(2).strip().strip("\"'“”‘’")
+            msg_content = _clean_chat_text(msg_content)
 
             forbidden_usernames = {"mesma", "mesmo", "outro", "outra", "todos", "alguem", "ninguem", "ele", "ela", "mensagem", "recado", "aviso", "ip", "pc", "maquina", "computador"}
             # Se não for um IP e não for palavra-chave reservada
@@ -569,7 +587,7 @@ class TrueConfChatOps:
         Recebe qualquer mensagem enviada ao bot no chat privado do TrueConf.
         Suporta linguagem natural livre, menus interativos, wizards passo a passo e autenticação dinâmica.
         """
-        text = (message or "").strip()
+        text = _clean_chat_text(message or "")
         if not text:
             return self._cmd_interactive_menu()
 
