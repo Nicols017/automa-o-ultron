@@ -97,106 +97,115 @@ class DiagnosticAnalyzer:
         m_bench = re.search(r'- Bancada:\s*([^\n]+)', prompt, re.IGNORECASE)
         bench_info = m_bench.group(1).strip() if m_bench else ""
 
-        # 1. Restrição de Assuntos Fora de Escopo
+        # 1. Restrição de Assuntos Fora de Escopo (Conversa não relacionada a TI)
         out_of_scope = ["receita", "futebol", "politica", "política", "filme", "fofoca", "jogo", "musica", "música", "novela", "piada", "namoro", "tempo amanha", "bolo"]
         if any(w in p_lower for w in out_of_scope):
             return (
-                "🤖 Assistente de Laboratório Ultron:\n\n"
-                "Meu foco é restrito ao suporte técnico, computadores da bancada, diagnóstico de hardware e procedimentos de infraestrutura da Pense Rede.\n\n"
-                "Em que posso te ajudar hoje na bancada?"
+                "🤖 Ultron — Suporte de Bancada:\n\n"
+                "Meu foco é restrito ao suporte técnico, computadores da bancada, diagnóstico de hardware e procedimentos de automação da Pense Rede.\n\n"
+                "Em que posso te ajudar com os equipamentos do laboratório?"
             )
 
-        # 2. Perguntas sobre Bancada / IPs Detectados / Status de Máquinas
-        bench_inquiry_kws = ["maquina", "máquina", "maquinas", "máquinas", "bancada", "bancda", "ip", "ips", "detectando", "detecta", "online", "ligada", "ligadas", "computador", "computadores", "procura", "procure", "busca", "buscar", "acha", "achar", "varre", "varrer"]
-        if any(w in p_lower for w in bench_inquiry_kws) and not any(w in p_lower for w in ["como preparar", "como formatar", "preparar", "formatar", "ativar"]):
-            if bench_info and "Nenhum" not in bench_info:
-                return (
-                    f"💻 BANCADA ULTRON — STATUS ATUAL\n\n"
-                    f"📍 {bench_info}\n\n"
-                    f"💡 Ações Rápidas:\n"
-                    f"• \"faz o diagnóstico no <IP>\"\n"
-                    f"• \"prepara o <IP> para o White Group\"\n"
-                    f"• \"ativa o Windows do <IP>\""
-                )
-            else:
-                return (
-                    "🔍 STATUS DA BANCADA\n\n"
-                    "No momento não detectei nenhuma máquina ativa com WinRM na subrede 192.168.57.0/24.\n\n"
-                    "💡 Dica: Se você ligou um computador na bancada, execute o UltronAgent.exe nele para liberar o WinRM e registrar o IP automaticamente."
-                )
-
-        # 3. Saudações e Apresentação
-        if re.search(r"\b(ola|olá|oi|bom dia|boa tarde|boa noite|quem e voce|quem é você|o que você faz|o que voce faz)\b", p_lower):
+        # 2. Saudações e Conversa Inicial
+        if re.search(r"^(ola|olá|oi|bom dia|boa tarde|boa noite|e ai|e aí|opa|fala ultron|tudo bem|como vai|quem e voce|quem é você|o que você faz|o que voce faz)\b", p_lower):
             return (
-                "Olá! Sou o Ultron, assistente inteligente de automação de bancada e suporte técnico da Pense Rede.\n\n"
-                "Posso te ajudar a automatizar a esteira de computadores, rodar diagnósticos de hardware (S.M.A.R.T, CPU, RAM), ativar Windows e Office via MAS, ingressar máquinas no domínio, consultar chamados no Milvus e gerar laudos técnicos em PDF.\n\n"
-                "Como posso te ajudar com os equipamentos da bancada hoje?"
+                "Olá! Sou o Ultron, assistente de automação de bancada e suporte técnico da Pense Rede.\n\n"
+                "Posso te ajudar a automatizar a preparação de computadores para clientes, rodar diagnósticos de hardware (S.M.A.R.T, CPU, RAM), ativar Windows e Office (MAS), fazer backup de usuários, enviar mensagens na tela e emitir laudos em PDF.\n\n"
+                "Como posso te ajudar hoje?"
             )
 
-        # 4. Diagnóstico de Hardware, SMART, Testes de Estresse
-        if any(w in p_lower for w in ["diag", "diagnostico", "diagnóstico", "smart", "disco", "hd", "ssd", "memoria", "memória", "saude", "saúde", "hardware", "estresse", "burnin", "burn-in", "testar", "verificar", "checar"]):
+        # 3. Consulta Explícita de Bancada / Dispositivos Conectados
+        explicit_bench = [
+            "quem esta na bancada", "quem está na bancada", "quais maquinas estao ligadas", "quais máquinas estão ligadas",
+            "quais pcs estao ligados", "quais pcs estão ligados", "ver bancada", "status da bancada", "lista de maquinas",
+            "lista de máquinas", "quem ta online", "quem tá online", "quem ta ligado", "quem tá ligado"
+        ]
+        if any(kw in p_lower for kw in explicit_bench) or p_lower in ["bancada", "bancda", "status bancada"]:
+            if bench_info and "Nenhum" not in bench_info:
+                return f"💻 BANCADA ULTRON — STATUS ATUAL\n\n📍 {bench_info}\n\n💡 Você pode me pedir diagnósticos, esteiras de preparação ou ativações indicando o IP da máquina."
+            else:
+                return "🔍 BANCADA ULTRON\n\nNo momento não detectei máquinas com WinRM ativo na subrede da bancada. Se você ligou um computador, execute o UltronAgent.exe nele para liberar o acesso automaticamente."
+
+        # 4. Diagnóstico de Hardware, SMART, Saúde
+        if any(w in p_lower for w in ["diag", "diagnostico", "diagnóstico", "smart", "saude", "saúde", "integridade", "disco", "hd", "ssd", "memoria", "memória", "estresse", "burnin", "burn-in"]):
             return (
                 "🩺 DIAGNÓSTICO DE HARDWARE & INTEGRIDADE\n\n"
-                "Consigo analisar profundamente a integridade física de qualquer máquina na bancada, inspecionando a saúde dos discos SSD/HD via S.M.A.R.T, estado das memórias RAM, processador e histórico de telas azuis (BSOD).\n\n"
-                "Basta me dizer qual computador ou IP você quer examinar (por exemplo: \"faz o diagnóstico no 57.48\" ou apenas o IP) e eu inicio a verificação imediatamente."
+                "Consigo inspecionar a saúde dos discos (S.M.A.R.T), estado de memória RAM, CPU e histórico de telas azuis (BSOD).\n\n"
+                "Para iniciar, basta me enviar: \"verifica a saúde do <IP>\" ou \"diagnóstico no <IP>\"."
             )
 
-        # 5. Perguntas sobre Milvus / Chamados / Ordens de Serviço
-        if any(w in p_lower for w in ["chamado", "chamados", "milvus", "ticket", "tickets", "ordem de serviço", "ordens de serviço", "meu nome", "apenas no meu", "puxa", "fila"]):
+        # 5. Perguntas sobre Chamados / Milvus
+        if any(w in p_lower for w in ["chamado", "chamados", "milvus", "ticket", "tickets", "ordem de serviço", "ordens de serviço", "minhas os"]):
             return (
                 "📋 CHAMADOS E FILA DO MILVUS\n\n"
-                "Consulto a fila de chamados em aberto na Dashboard do Milvus em tempo real. A lista exibe as ordens de serviço pendentes do laboratório, e ao concluir uma esteira para o cliente, o laudo técnico gerado fica registrado no histórico daquele equipamento.\n\n"
-                "Se quiser ver a lista completa agora, basta me pedir: \"quais os chamados abertos?\" ou \"chamados\"."
+                "Consulto a fila de ordens de serviço pendentes do laboratório na Dashboard do Milvus.\n\n"
+                "Para ver os chamados em aberto agora, basta me pedir: \"quais os chamados abertos?\" ou digitar a opção [ 11 ]."
             )
 
-        # 6. Perguntas sobre ações recentes em máquinas
-        if any(w in p_lower for w in ["mexeu em alguma", "esta fazendo", "está fazendo", "mexeu em maquina", "mexeu em máquina", "alguma maquina agora", "alguma máquina agora", "executando"]):
+        # 6. Procedimentos de Preparação / Formatação
+        if any(w in p_lower for w in ["como preparar", "como formatar", "preparacao", "preparação", "procedimento", "esteira", "passo a passo"]):
             return (
-                "🔍 STATUS OPERACIONAL DA BANCADA\n\n"
-                "Só executo ações nos computadores quando solicitado por você aqui no chat ou quando um computador conclui a instalação do MDT e envia notificação de chegada.\n\n"
-                "Se quiser verificar os equipamentos que estão ligados e acessíveis agora, basta me pedir: \"quais máquinas estão na bancada?\" ou \"bancada\"."
+                "🚀 PROCEDIMENTO DE ESTEIRA DO ULTRON\n\n"
+                "1. Conecte o PC na rede e aplique a imagem Windows via MDT/PXE.\n"
+                "2. O UltronAgent.exe libera o WinRM e registra o IP no servidor automaticamente.\n"
+                "3. No chat, me peça: \"prepara a máquina <IP> para o <Cliente>\".\n"
+                "4. Instalo os softwares do perfil, Agente Milvus, ativo Windows/Office, executo testes e te entrego o laudo PDF e ID do AnyDesk aqui."
             )
 
-        # 7. Procedimentos de Formatação & Preparação da Esteira
-        if any(w in p_lower for w in ["como preparar", "como formatar", "preparacao", "preparação", "procedimento", "esteira", "passo a passo", "deploy"]):
-            return (
-                "🚀 PROCEDIMENTO PADRÃO DE BANCADA DO ULTRON\n\n"
-                "1. MDT / PXE: Conecte o cabo de rede na bancada e inicialize via rede (PXE) para aplicar a imagem padrão do Windows.\n"
-                "2. Desbloqueio / Agente: O UltronAgent.exe libera o WinRM e registra o IP no servidor automaticamente.\n"
-                "3. Preparação: No chat, basta me pedir: \"prepara a máquina 57.48 para o White Group\".\n"
-                "4. Execução Automática: O Ultron instala os softwares do cliente, AnyDesk, Agente Milvus com token oficial, ativa o Windows/Office permanente (MAS), ingressa no domínio AD e roda o teste de estresse.\n"
-                "5. Conclusão: Envio o ID do AnyDesk e o Laudo Técnico em PDF assinado aqui no chat."
-            )
-
-        # 8. Ingressar em Domínio (AD)
-        if re.search(r"\b(dominio|domínio|active directory|ingressar no dominio|join domain|entrar no dominio|ad join)\b", p_lower) or (" ad" in p_lower and "dominio" in p_lower):
-            return (
-                "🛡️ INGRESSO NO DOMÍNIO (ACTIVE DIRECTORY)\n\n"
-                "Posso configurar o DNS e ingressar a máquina diretamente no domínio do cliente (ex: \"coloca a máquina 57.48 no domínio penserede.local\").\n\n"
-                "Quando necessário, vou te solicitar o usuário e senha de Administrador do domínio aqui no chat para realizar a autenticação com segurança."
-            )
-
-        # 9. Ativação Windows / Office (MAS)
-        if any(w in p_lower for w in ["ativar", "ativacao", "ativação", "licenca", "licença", "office", "windows", "mas", "massgrave"]):
+        # 7. Ativação Windows / Office (MAS)
+        if any(w in p_lower for w in ["ativar", "ativacao", "ativação", "licenca", "licença", "office", "windows", "mas"]):
             return (
                 "🔑 ATIVAÇÃO WINDOWS & OFFICE (MAS)\n\n"
-                "Utilizo o método permanente MAS (Microsoft Activation Scripts) para licenciar o Windows e Office sem necessidade de chaves manuais.\n\n"
-                "Você pode apenas me pedir: \"ativa o windows do pc 57.48\" ou \"ativa a máquina\" que eu aplico a licença remotamente."
+                "Aplico a ativação permanente digital via MAS remotamente em qualquer máquina liberada da bancada.\n\n"
+                "Basta me pedir: \"ativa o Windows do <IP>\"."
             )
 
-        # 10. Download do UltronAgent.exe
-        if any(w in p_lower for w in ["baixar", "download", "agente", "agent", "exe", "pendrive", "desbloquear", "desbloqueio", "instalador"]):
+        # 8. Mensagens na Tela / Pop-up
+        if any(w in p_lower for w in ["mensagem", "msg", "popup", "pop-up", "aviso na tela", "notificar"]):
             return (
-                "📥 ULTRON AGENT (.EXE) — CONEXÃO DE MÁQUINAS\n\n"
-                "Você pode baixar o executável diretamente pelo link:\n"
-                "👉 http://192.168.57.43:7000/download/UltronAgent.exe (ou pelo botão azul no Dashboard Web)\n\n"
-                "Ao rodar o .exe como Administrador na máquina alvo, ele libera o WinRM, abre o Firewall e conecta o computador ao laboratório automaticamente."
+                "📢 ENVIO DE MENSAGENS NA TELA\n\n"
+                "Posso exibir caixas de mensagem e avisos na tela do usuário remotamente.\n\n"
+                "Basta me enviar: \"manda uma mensagem para o IP <IP> <seu texto>\"."
             )
 
-        # 11. Resposta técnica cordial padrão (fluida e acolhedora)
+        # 9. Download do Executável do Agente
+        if any(w in p_lower for w in ["baixar", "download", "agente", "agent", "exe", "executavel"]):
+            return (
+                "📥 ULTRON AGENT (.EXE)\n\n"
+                "Você pode baixar o executável diretamente aqui no chat ou pelo link:\n"
+                "👉 http://192.168.57.43:7000/download/UltronAgent.exe\n\n"
+                "Execute como Administrador na máquina alvo para liberar o acesso com Zero-Prompt."
+            )
+
+        # 10. Resposta inteligente quando o usuário pede algo não suportado ou conversa técnica
+        # Extrai se o usuário citou algum IP na frase não suportada
+        m_ip = re.search(r"\b((?:192\.168\.\d{1,3}\.\d{1,3}|57\.\d{1,3}|\d{1,3}\.\d{1,3}))\b", user_msg)
+        if m_ip:
+            ip_str = m_ip.group(1)
+            return (
+                f"🤖 Ultron — Suporte de Bancada:\n\n"
+                f"Entendi que você se referiu à máquina {ip_str}, porém **atualmente eu não possuo essa funcionalidade automatizada** de forma integrada.\n\n"
+                f"💡 Se precisar operar essa máquina, você pode acessar via AnyDesk/RDP ou executar manualmente.\n\n"
+                f"As automações que posso executar nela agora são:\n"
+                f"• \"verifica a saúde do {ip_str}\" (Diagnóstico S.M.A.R.T e Hardware)\n"
+                f"• \"prepara o {ip_str} para <cliente>\" (Esteira de Softwares e Configuração)\n"
+                f"• \"ativa o Windows do {ip_str}\" (Licenciamento MAS)\n"
+                f"• \"manda uma mensagem para o {ip_str} <texto>\" (Aviso na tela)\n"
+                f"• \"reinicia o {ip_str}\" (Controle de energia)\n\n"
+                f"Como prefere prosseguir?"
+            )
+
         return (
             "🤖 Ultron — Suporte de Bancada:\n\n"
-            "Entendi! Como posso te ajudar com os computadores da bancada hoje? Se quiser rodar diagnósticos de hardware, preparar máquinas para clientes, ativar licenças ou consultar chamados, pode me pedir livremente da forma que preferir."
+            "Entendi o que você disse! Porém, **atualmente não possuo uma função automática para essa solicitação específica**.\n\n"
+            "Minhas principais automações ativas no laboratório são:\n"
+            "• Diagnóstico de Hardware & Saúde de Discos (S.M.A.R.T)\n"
+            "• Preparação de Esteira Completa para Clientes da Pense Rede\n"
+            "• Ativação Permanente de Windows & Office (MAS)\n"
+            "• Backup de Perfil de Usuário para o Storage\n"
+            "• Envio de Avisos/Pop-ups na Tela\n"
+            "• Reiniciar ou Desligar Máquinas Remotamente\n\n"
+            "Como posso te ajudar com os computadores da bancada agora?"
         )
 
     # ------------------------------------------------------------------
