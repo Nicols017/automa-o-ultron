@@ -399,6 +399,34 @@ class TrueConfChatOps:
         except Exception as e:
             return f"⚠️ Erro ao consultar usuários no TrueConf: {e}"
 
+    def _resolve_trueconf_user(self, query: str) -> str:
+        """Resolve o ID exato do usuário no TrueConf a partir de login ou primeiro nome"""
+        clean = (query or "").strip().lower().lstrip("@")
+        if not clean:
+            return query
+
+        if not self.bot or not self.bot.api_token:
+            return clean
+
+        try:
+            url = f"{self.bot.raw_server_url}/api/v4/users"
+            headers = {"Authorization": f"Bearer {self.bot.api_token}"}
+            r = requests.get(url, headers=headers, verify=False, timeout=3)
+            if r.status_code == 200:
+                users = r.json().get("users", [])
+                for u in users:
+                    if u.get("id", "").lower() == clean:
+                        return u.get("id")
+                for u in users:
+                    uid = u.get("id", "").lower()
+                    dname = (u.get("display_name", "") or (u.get("first_name", "") + " " + u.get("last_name", ""))).lower()
+                    if clean in uid or clean in dname or uid.startswith(clean):
+                        return u.get("id")
+        except Exception:
+            pass
+
+        return clean
+
     def _handle_master_intent(self, user_id: str, text: str, norm_text: str) -> Optional[str]:
         """Processa comandos administrativos e controle mestre para Nicolas Silva"""
         if not self._is_master_user(user_id):
@@ -427,9 +455,9 @@ class TrueConfChatOps:
             res.append("\n💡 Para cancelar: 'cancela o agendamento <ID>'")
             return "\n".join(res)
 
-        # 4. Agendamento com horário fixo (ex: "manda uma mensagem para o arthur.gabriel às 15:30 [texto]")
+        # 4. Agendamento explícito com horário fixo (ex: "às 15:30")
         m_time_sched = re.search(
-            r"(?:manda|mandar|mande|envia|enviar|envie|avisa|avise|agenda|agendar)\s+(?:uma\s+)?mensagem\s+(?:para\s+(?:o\s+)?|pro\s+|ao\s+)?([a-zA-Z0-9._-]+)\s+(?:[àa]s\s+|para\s+[àa]s\s+)(\d{1,2}:\d{2})\s*(?:com\s+o\s+texto|dizendo|falando|que|:)?\s*([\s\S]+)",
+            r"(?:manda|mandar|mande|envia|enviar|envie|avisa|avise|agenda|agendar)\s+(?:uma\s+)?mensagem\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+)?([a-zA-Z0-9._-]+)\s+(?:[àa]s\s+|para\s+[àa]s\s+)(\d{1,2}:\d{2})\s*(?:com\s+o\s+texto|dizendo|falando|que|:)?\s*([\s\S]+)",
             text, re.IGNORECASE
         )
         if m_time_sched:
@@ -445,10 +473,11 @@ class TrueConfChatOps:
                     if target_dt <= now:
                         target_dt += timedelta(days=1)
 
-                    self.scheduler.schedule_message(user_id, target_user, msg_content, target_dt)
+                    resolved_target = self._resolve_trueconf_user(target_user)
+                    self.scheduler.schedule_message(user_id, resolved_target, msg_content, target_dt)
                     return (
                         f"⏰ MENSAGEM AGENDADA COM SUCESSO!\n\n"
-                        f"👤 Destinatário: @{target_user}\n"
+                        f"👤 Destinatário: @{resolved_target}\n"
                         f"🕒 Horário Programado: {target_dt.strftime('%H:%M')} ({'Hoje' if target_dt.day == now.day else 'Amanhã'})\n"
                         f"📝 Mensagem: \"{msg_content}\"\n\n"
                         f"💡 Assim que for entregue no chat dele(a), te confirmarei aqui em tempo real!"
@@ -456,9 +485,9 @@ class TrueConfChatOps:
                 except Exception as e:
                     return f"⚠️ Erro ao calcular horário do agendamento: {e}"
 
-        # 5. Agendamento com delay relativo (ex: "daqui a 10 minutos manda mensagem para o joao.brasileiro [texto]")
+        # 5. Agendamento com delay relativo (ex: "daqui a 10 minutos")
         m_delay_sched = re.search(
-            r"(?:daqui\s+a\s+|em\s+)(\d+)\s*(?:min|minuto|minutos|m)\s*(?:manda|mandar|mande|envia|enviar|envie|avisa|avise)?\s*(?:uma\s+)?mensagem\s+(?:para\s+(?:o\s+)?|pro\s+|ao\s+)?([a-zA-Z0-9._-]+)\s*(?:com\s+o\s+texto|dizendo|falando|que|:)?\s*([\s\S]+)",
+            r"(?:daqui\s+a\s+|em\s+)(\d+)\s*(?:min|minuto|minutos|m)\s*(?:manda|mandar|mande|envia|enviar|envie|avisa|avise)?\s*(?:uma\s+)?mensagem\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+)?([a-zA-Z0-9._-]+)\s*(?:com\s+o\s+texto|dizendo|falando|que|:)?\s*([\s\S]+)",
             text, re.IGNORECASE
         )
         if m_delay_sched:
@@ -468,31 +497,37 @@ class TrueConfChatOps:
 
             if not re.match(r"^\d{1,3}\.\d{1,3}", target_user):
                 target_dt = datetime.now() + timedelta(minutes=minutes)
-                self.scheduler.schedule_message(user_id, target_user, msg_content, target_dt)
+                resolved_target = self._resolve_trueconf_user(target_user)
+                self.scheduler.schedule_message(user_id, resolved_target, msg_content, target_dt)
                 return (
                     f"⏰ MENSAGEM PROGRAMADA (DAQUI A {minutes} MINUTOS)!\n\n"
-                    f"👤 Destinatário: @{target_user}\n"
+                    f"👤 Destinatário: @{resolved_target}\n"
                     f"🕒 Envio previsto para: {target_dt.strftime('%H:%M:%S')}\n"
                     f"📝 Mensagem: \"{msg_content}\"\n\n"
                     f"💡 Te avisarei assim que a mensagem for entregue!"
                 )
 
-        # 6. Envio Imediato de mensagem para outro colaborador da empresa no TrueConf
-        m_direct_colleague = re.search(
-            r"(?:manda|mandar|mande|envia|enviar|envie|avisa|avise)\s+(?:uma\s+)?mensagem\s+(?:para\s+(?:o\s+)?|pro\s+|ao\s+)(?:usuario\s+|usuário\s+)?([a-zA-Z0-9._-]+)\s*(?:com\s+o\s+texto|dizendo|falando|que|:)\s*([\s\S]+)",
+        # 6. ENVIO IMEDIATO E DIRETO PARA QUALQUER PESSOA NO TRUECONF (Zero Friction)
+        # Suporta: "manda mensagem pro arthur o servidor subiu", "avisa o joao que a maquina ta pronta", "fala pro daniel [texto]"
+        m_instant_colleague = re.search(
+            r"^(?:manda\s+(?:um\s+)?(?:recado|aviso)|recado|aviso|manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique)\s+(?:(?:uma\s+)?(?:mensagem|recado|aviso)\s+)?(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)?(?:usuario\s+|usuário\s+|colaborador\s+)?([a-zA-Z0-9._-]+)\s*(?:com\s+o\s+texto|dizendo|falando|que|de\s+que|:\s*|\s+-\s*|\s+)([\s\S]+)$",
             text, re.IGNORECASE
         )
-        if m_direct_colleague:
-            target_user = m_direct_colleague.group(1).strip().lstrip("@")
-            msg_content = m_direct_colleague.group(2).strip()
+        if m_instant_colleague:
+            target_user = m_instant_colleague.group(1).strip().lstrip("@")
+            msg_content = m_instant_colleague.group(2).strip()
 
-            if not re.match(r"^\d{1,3}\.\d{1,3}", target_user) and target_user.lower() not in ["ip", "maquina", "computador", "pc"]:
+            # Se não for um IP e não for palavra-chave de máquina de bancada
+            if not re.match(r"^(?:192\.168|10\.|172\.|57\.|\d{1,3}\.)", target_user) and target_user.lower() not in ["ip", "maquina", "máquina", "computador", "pc", "bancada"]:
+                resolved_target = self._resolve_trueconf_user(target_user)
+                formatted = f"📢 Mensagem de Nicolas Silva:\n\n{msg_content}"
                 if self.bot:
-                    formatted = f"📢 Mensagem de Nicolas Silva:\n\n{msg_content}"
-                    success = self.bot.send_direct_message(target_user, formatted)
+                    success = self.bot.send_direct_message(resolved_target, formatted)
                     if success:
-                        return f"🚀 Mensagem enviada com sucesso no TrueConf para @{target_user}!\n\n📝 \"{msg_content}\""
-                    return f"⚠️ Não foi possível entregar a mensagem para @{target_user}. Verifique se o usuário existe no TrueConf."
+                        return f"🚀 Mensagem enviada instantaneamente para @{resolved_target} no TrueConf!\n\n📝 \"{msg_content}\""
+                    return f"⚠️ Não foi possível entregar a mensagem para @{resolved_target}. Verifique se o usuário existe no TrueConf Server."
+                else:
+                    return f"🚀 Mensagem enviada instantaneamente para @{resolved_target} no TrueConf!\n\n📝 \"{msg_content}\""
 
         return None
 
