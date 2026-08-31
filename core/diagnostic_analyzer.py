@@ -189,7 +189,7 @@ class DiagnosticAnalyzer:
             return (
                 "📥 ULTRON AGENT (.EXE) — CONEXÃO DE MÁQUINAS\n\n"
                 "Você pode baixar o executável diretamente pelo link:\n"
-                "👉 http://192.168.57.48:7000/download/UltronAgent.exe (ou pelo botão azul no Dashboard Web)\n\n"
+                "👉 http://192.168.57.43:7000/download/UltronAgent.exe (ou pelo botão azul no Dashboard Web)\n\n"
                 "Ao rodar o .exe como Administrador na máquina alvo, ele libera o WinRM, abre o Firewall e conecta o computador ao laboratório automaticamente."
             )
 

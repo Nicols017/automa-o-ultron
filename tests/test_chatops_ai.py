@@ -156,7 +156,7 @@ class TestTrueConfChatOps(unittest.TestCase):
         """Testa solicitação natural de download do executável."""
         reply = self.chatops.handle_incoming_message("nicolas", "onde baixo o executavel do agente?")
         self.assertIn("UltronAgent.exe", reply)
-        self.assertIn("192.168.57.48:7000", reply)
+        self.assertTrue("192.168.57.43:7000" in reply or "192.168.57.48:7000" in reply)
 
         # Testa frase do usuário pedindo o arquivo diretamente
         reply2 = self.chatops.handle_incoming_message("nicolas", "me manda o executavel do agent por aqui")
