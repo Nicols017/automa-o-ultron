@@ -173,12 +173,18 @@ class TrueConfChatOps:
             "o arquivo de download", "disponivel o download", "mandar o executavel", "mandar o exe",
             "manda o arquivo", "me manda o arquivo", "passa o arquivo", "me passa o arquivo"
         ]
-        if any(kw in norm_text for kw in agent_dl_kws):
+        if any(kw in norm_text for kw in agent_dl_kws) and not any(w in norm_text for w in ["mensagem", "msg", "popup", "texto", "aviso"]):
             return self._cmd_download_agent(user_id)
 
-        # 2. Diagnóstico de Hardware / S.M.A.R.T / Teste
-        diag_kws = ["diag", "diagnostico", "diagnóstico", "diagnosticar", "smart", "saude do disco", "saúde do disco", "testar hardware", "teste de estresse", "verificar maquina", "verificar máquina", "checar maquina", "checar máquina", "olha a maquina", "olha o pc", "analisar maquina", "analisa a maquina", "analisar computador", "integridade"]
-        if any(kw in norm_text for kw in diag_kws):
+        # 2. Diagnóstico de Hardware / S.M.A.R.T / Saúde / Teste
+        diag_kws = [
+            "diag", "diagnostico", "diagnóstico", "diagnosticar", "smart", "saude", "saúde",
+            "saude do disco", "saúde do disco", "testar hardware", "teste de estresse", "teste",
+            "testar", "verificar", "verifica", "verifique", "checar", "checa", "cheque",
+            "olhar", "olha", "olhe", "analisar", "analisa", "analise", "integridade",
+            "status do pc", "status da maquina", "status da máquina", "saude da maquina", "saude do pc"
+        ]
+        if any(kw in norm_text for kw in diag_kws) and not any(w in norm_text for w in ["como fazer", "o que e", "o que é", "explica", "ajuda"]):
             ip = self._extract_target_ip(text)
             if not ip:
                 cached = self._get_cached_devices()
@@ -197,6 +203,32 @@ class TrueConfChatOps:
                         "[ 0 ] Cancelar"
                     )
             return self._cmd_diagnostico(user_id, [ip])
+
+        # 2.1 Enviar Mensagem / Pop-up na tela
+        msg_kws = ["mensagem", "msg", "popup", "pop-up", "avisa", "avise", "notifica", "notifique", "alerta", "alertar", "manda uma mensagem", "mandar mensagem", "enviar mensagem", "mande uma mensagem"]
+        if any(kw in norm_text for kw in msg_kws):
+            ip = self._extract_target_ip(text)
+            if ip:
+                clean_msg = text
+                for kw in [
+                    "manda uma mensagem para o ip", "manda uma mensagem pro ip", "manda mensagem para o ip",
+                    "manda mensagem pro ip", "enviar mensagem para o ip", "enviar mensagem pro ip",
+                    "mensagem para o ip", "mensagem pro ip", "mensagem para", "mensagem pro", "avisa o ip",
+                    "avise o ip", "notifica o ip", "notifique o ip", "manda uma mensagem", "manda mensagem",
+                    "enviar mensagem", "mensagem", "avise", "avisa", "mande"
+                ]:
+                    clean_msg = re.sub(re.escape(kw), "", clean_msg, flags=re.IGNORECASE)
+                clean_msg = re.sub(r"\b" + re.escape(ip) + r"\b", "", clean_msg).strip()
+                clean_msg = re.sub(r"\b(?:192\.168\.\d{1,3}\.\d{1,3}|57\.\d{1,3}|\d{1,3})\b", "", clean_msg).strip()
+                clean_msg = clean_msg.strip(" :-=,\"'\t\n")
+
+                if clean_msg:
+                    return self._cmd_message(user_id, [ip] + clean_msg.split())
+                else:
+                    self.user_sessions[user_id] = {"type": "wizard_msg_text", "ip": ip}
+                    return f"📢 ENVIAR MENSAGEM — MÁQUINA {ip}\n\nQual mensagem você deseja exibir na tela do usuário?\n\n[ 0 ] Cancelar"
+            else:
+                return self._start_wizard_msg(user_id)
 
         # 3. Preparar / Formatar / Esteira
         prep_kws = ["preparar", "prepara", "formatar", "formata", "esteira", "deploy", "iniciar esteira", "inicia a esteira", "rodar esteira", "roda a esteira", "aplicar perfil", "montar pc", "configurar maquina"]
@@ -1155,7 +1187,7 @@ class TrueConfChatOps:
         act = "reiniciada" if action == "restart" else "desligada"
 
         def _worker():
-            res = self.winrm.run_command(ip, cmd)
+            res = self.winrm.run_powershell_code(ip, cmd)
             if res.get("auth_failed"):
                 srv_url = self._get_server_url()
                 reply = (
