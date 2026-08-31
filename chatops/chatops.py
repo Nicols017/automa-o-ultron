@@ -220,10 +220,10 @@ class TrueConfChatOps:
                     )
             return self._cmd_diagnostico(user_id, [ip])
 
-        # 2.1 Enviar Mensagem / Pop-up na tela
-        msg_kws = ["mensagem", "msg", "popup", "pop-up", "avisa", "avise", "notifica", "notifique", "alerta", "alertar", "manda uma mensagem", "mandar mensagem", "enviar mensagem", "mande uma mensagem"]
-        if any(kw in norm_text for kw in msg_kws):
-            ip = self._extract_target_ip(text)
+        # 2.1 Enviar Mensagem / Pop-up na tela física de um PC de Bancada (requer IP ou termo 'na tela'/'popup')
+        screen_popup_kws = ["popup", "pop-up", "mensagem na tela", "aviso na tela", "msg na tela", "alerta na tela", "janela na tela", "/msg"]
+        ip = self._extract_target_ip(text)
+        if any(kw in norm_text for kw in screen_popup_kws) or (ip and any(kw in norm_text for kw in ["mensagem", "msg", "popup", "pop-up", "alerta"])):
             if ip:
                 clean_msg = text
                 for kw in [
@@ -231,7 +231,7 @@ class TrueConfChatOps:
                     "manda mensagem pro ip", "enviar mensagem para o ip", "enviar mensagem pro ip",
                     "mensagem para o ip", "mensagem pro ip", "mensagem para", "mensagem pro", "avisa o ip",
                     "avise o ip", "notifica o ip", "notifique o ip", "manda uma mensagem", "manda mensagem",
-                    "enviar mensagem", "mensagem", "avise", "avisa", "mande"
+                    "enviar mensagem", "mensagem", "avise", "avisa", "mande", "popup", "pop-up", "na tela"
                 ]:
                     clean_msg = re.sub(re.escape(kw), "", clean_msg, flags=re.IGNORECASE)
                 clean_msg = re.sub(r"\b" + re.escape(ip) + r"\b", "", clean_msg).strip()
@@ -550,22 +550,34 @@ class TrueConfChatOps:
                 )
 
         # 6. ENVIO IMEDIATO E DIRETO PARA QUALQUER PESSOA NO TRUECONF (Zero Friction)
-        # 6.1 Padrão com delimitadores: dizendo, falando, com o texto, que, :, -, ou aspas
-        m_delim = re.search(
-            r"^(?:manda\s+(?:um\s+)?(?:recado|aviso)|recado|aviso|manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique)\s+(?:(?:uma\s+)?(?:mensagem|recado|aviso)\s+)?(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)?(?:usuario\s+|usuário\s+|colaborador\s+)?([a-zA-Z0-9._\s-]+?)\s*(?::\s*|\s+-\s*|\s+(?:com\s+o\s+texto|dizendo|falando|de\s+que|que)\s*:?\s*|\s+[\"\'\“\‘])([\s\S]+)$",
+        # 6.1 Estrutura com MENSAGEM PRIMEIRO e DESTINATÁRIO NO FIM (ex: manda a mensagem "..." para Arthur Gabriel)
+        m_text_first = re.search(
+            r"^(?:manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique)\s+(?:(?:uma|a)\s+)?(?:mensagem|recado|aviso|texto)?\s*[:\s]*[\"\'\“\‘]([\s\S]+?)[\"\'\”\’]\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)(?:usuario\s+|usuário\s+|colaborador\s+)?([a-zA-Z0-9._\s-]+)$",
             text, re.IGNORECASE
         )
-        # 6.2 Padrão fallback simples por espaço
-        m_simple = re.search(
-            r"^(?:manda\s+(?:um\s+)?(?:recado|aviso)|recado|aviso|manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique)\s+(?:(?:uma\s+)?(?:mensagem|recado|aviso)\s+)?(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)?(?:usuario\s+|usuário\s+|colaborador\s+)?([a-zA-Z0-9._-]+)\s+([\s\S]+)$",
-            text, re.IGNORECASE
-        )
-        m_instant = m_delim or m_simple
-        if m_instant:
-            target_user = m_instant.group(1).strip().lstrip("@")
-            msg_content = m_instant.group(2).strip().strip("\"'“”‘’")
-            msg_content = _clean_chat_text(msg_content)
+        target_user = None
+        msg_content = None
+        if m_text_first:
+            msg_content = m_text_first.group(1).strip().strip("\"'“”‘’")
+            target_user = m_text_first.group(2).strip().lstrip("@")
+        else:
+            # 6.2 Padrão com delimitadores: dizendo, falando, com o texto, que, :, -, ou aspas
+            m_delim = re.search(
+                r"^(?:manda\s+(?:um\s+)?(?:recado|aviso)|recado|aviso|manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique)\s+(?:(?:uma\s+)?(?:mensagem|recado|aviso)\s+)?(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)?(?:usuario\s+|usuário\s+|colaborador\s+)?([a-zA-Z0-9._\s-]+?)\s*(?::\s*|\s+-\s*|\s+(?:com\s+o\s+texto|dizendo|falando|de\s+que|que)\s*:?\s*|\s+[\"\'\“\‘])([\s\S]+)$",
+                text, re.IGNORECASE
+            )
+            # 6.3 Padrão fallback simples por espaço
+            m_simple = re.search(
+                r"^(?:manda\s+(?:um\s+)?(?:recado|aviso)|recado|aviso|manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique)\s+(?:(?:uma\s+)?(?:mensagem|recado|aviso)\s+)?(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)?(?:usuario\s+|usuário\s+|colaborador\s+)?([a-zA-Z0-9._-]+)\s+([\s\S]+)$",
+                text, re.IGNORECASE
+            )
+            m_res = m_delim or m_simple
+            if m_res:
+                target_user = m_res.group(1).strip().lstrip("@")
+                msg_content = m_res.group(2).strip().strip("\"'“”‘’")
 
+        if target_user and msg_content:
+            msg_content = _clean_chat_text(msg_content)
             forbidden_usernames = {"mesma", "mesmo", "outro", "outra", "todos", "alguem", "ninguem", "ele", "ela", "mensagem", "recado", "aviso", "ip", "pc", "maquina", "computador"}
             # Se não for um IP e não for palavra-chave reservada
             if target_user.lower() not in forbidden_usernames and not re.match(r"^(?:192\.168|10\.|172\.|57\.|\d{1,3}\.)", target_user):
