@@ -58,7 +58,19 @@ class TrueConfChatOps:
         self._last_scan_time: float = 0
 
     def _get_server_url(self) -> str:
-        """Resolve dinamicamente o IP do servidor na rede local para qualquer máquina/técnico acessar"""
+        """Resolve o IP oficial do servidor configurado em settings.yaml ou detecta da rede local"""
+        try:
+            import yaml
+            cfg_path = os.path.join(os.path.dirname(__file__), "..", "config", "settings.yaml")
+            if os.path.exists(cfg_path):
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f)
+                    cfg_ip = cfg.get("network", {}).get("ultron_ip")
+                    if cfg_ip and cfg_ip != "localhost" and not cfg_ip.startswith("127."):
+                        return f"http://{cfg_ip}:7000"
+        except Exception:
+            pass
+
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.settimeout(0.5)
@@ -70,14 +82,7 @@ class TrueConfChatOps:
         except Exception:
             pass
 
-        try:
-            ip = socket.gethostbyname(socket.gethostname())
-            if ip and not ip.startswith("127."):
-                return f"http://{ip}:7000"
-        except Exception:
-            pass
-
-        return "http://localhost:7000"
+        return "http://192.168.57.43:7000"
 
     def _extract_target_ip(self, text: str) -> Optional[str]:
         """Extrai um endereço IP alvo a partir de texto livre (formatos completos, abreviados ou numéricos)."""
