@@ -56,6 +56,7 @@ class TrueConfChatOps:
         # Sessões interativas e credenciais por técnico
         self.user_sessions: Dict[str, Dict[str, Any]] = {}
         self.user_conversations: Dict[str, List[Dict[str, str]]] = {}
+        self._last_dispatched_message: Dict[str, str] = {}
 
         # Cache de varredura de bancada para resposta instantânea
         self._cached_devices: List[Dict[str, Any]] = []
@@ -400,13 +401,16 @@ class TrueConfChatOps:
             return f"⚠️ Erro ao consultar usuários no TrueConf: {e}"
 
     def _resolve_trueconf_user(self, query: str) -> str:
-        """Resolve o ID exato do usuário no TrueConf a partir de login ou primeiro nome"""
+        """Resolve o ID exato do usuário no TrueConf a partir de login, primeiro nome ou nome completo"""
         clean = (query or "").strip().lower().lstrip("@")
         if not clean:
             return query
 
+        dotted = clean.replace(" ", ".")
+        underscored = clean.replace(" ", "_")
+
         if not self.bot or not self.bot.api_token:
-            return clean
+            return dotted
 
         try:
             url = f"{self.bot.raw_server_url}/api/v4/users"
@@ -414,23 +418,48 @@ class TrueConfChatOps:
             r = requests.get(url, headers=headers, verify=False, timeout=3)
             if r.status_code == 200:
                 users = r.json().get("users", [])
+                # 1. Match exato de ID
                 for u in users:
-                    if u.get("id", "").lower() == clean:
+                    uid = u.get("id", "").lower()
+                    if uid in [clean, dotted, underscored]:
                         return u.get("id")
+                # 2. Match por Display Name completo ou primeiro/segundo nome
                 for u in users:
                     uid = u.get("id", "").lower()
                     dname = (u.get("display_name", "") or (u.get("first_name", "") + " " + u.get("last_name", ""))).lower()
-                    if clean in uid or clean in dname or uid.startswith(clean):
+                    if clean in dname or dname in clean or clean in uid or uid.startswith(clean.split()[0]):
                         return u.get("id")
         except Exception:
             pass
 
-        return clean
+        return dotted
 
     def _handle_master_intent(self, user_id: str, text: str, norm_text: str) -> Optional[str]:
         """Processa comandos administrativos e controle mestre para Nicolas Silva"""
         if not self._is_master_user(user_id):
             return None
+
+        # 0. Envio da MESMA MENSAGEM / Repetição contextual (Ex: "manda a mesma mensagem para arthur gabriel")
+        if any(kw in norm_text for kw in ["mesma mensagem", "mesmo recado", "mesmo texto", "mesma msg"]):
+            m_same = re.search(
+                r"(?:manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique|repete|repetir)\s+(?:a\s+)?(?:mesma\s+mensagem|mesmo\s+recado|mesmo\s+texto|mesma\s+msg)\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)?([a-zA-Z0-9._\s-]+)",
+                text, re.IGNORECASE
+            )
+            if m_same:
+                target_user = m_same.group(1).strip().lstrip("@")
+                last_msg = self._last_dispatched_message.get(user_id)
+                if not last_msg:
+                    return "⚠️ Nenhuma mensagem anterior encontrada no histórico recente para repetir."
+
+                resolved_target = self._resolve_trueconf_user(target_user)
+                formatted = f"📢 Mensagem de Nicolas Silva:\n\n{last_msg}"
+                if self.bot:
+                    success = self.bot.send_direct_message(resolved_target, formatted)
+                    if success:
+                        return f"🚀 Mesma mensagem enviada instantaneamente para @{resolved_target} no TrueConf!\n\n📝 \"{last_msg}\""
+                    return f"⚠️ Não foi possível entregar a mensagem para @{resolved_target}. Verifique se o usuário existe no TrueConf Server."
+                else:
+                    return f"🚀 Mesma mensagem enviada instantaneamente para @{resolved_target} no TrueConf!\n\n📝 \"{last_msg}\""
 
         # 1. Consulta de usuários do TrueConf
         if any(kw in norm_text for kw in ["usuarios do trueconf", "usuarios da empresa", "lista usuarios", "usuarios trueconf", "quem esta no trueconf", "colaboradores"]):
@@ -457,7 +486,7 @@ class TrueConfChatOps:
 
         # 4. Agendamento explícito com horário fixo (ex: "às 15:30")
         m_time_sched = re.search(
-            r"(?:manda|mandar|mande|envia|enviar|envie|avisa|avise|agenda|agendar)\s+(?:uma\s+)?mensagem\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+)?([a-zA-Z0-9._-]+)\s+(?:[àa]s\s+|para\s+[àa]s\s+)(\d{1,2}:\d{2})\s*(?:com\s+o\s+texto|dizendo|falando|que|:)?\s*([\s\S]+)",
+            r"(?:manda|mandar|mande|envia|enviar|envie|avisa|avise|agenda|agendar)\s+(?:uma\s+)?mensagem\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+)?([a-zA-Z0-9._\s-]+)\s+(?:[àa]s\s+|para\s+[àa]s\s+)(\d{1,2}:\d{2})\s*(?:com\s+o\s+texto|dizendo|falando|que|:)?\s*([\s\S]+)",
             text, re.IGNORECASE
         )
         if m_time_sched:
@@ -474,6 +503,7 @@ class TrueConfChatOps:
                         target_dt += timedelta(days=1)
 
                     resolved_target = self._resolve_trueconf_user(target_user)
+                    self._last_dispatched_message[user_id] = msg_content
                     self.scheduler.schedule_message(user_id, resolved_target, msg_content, target_dt)
                     return (
                         f"⏰ MENSAGEM AGENDADA COM SUCESSO!\n\n"
@@ -487,7 +517,7 @@ class TrueConfChatOps:
 
         # 5. Agendamento com delay relativo (ex: "daqui a 10 minutos")
         m_delay_sched = re.search(
-            r"(?:daqui\s+a\s+|em\s+)(\d+)\s*(?:min|minuto|minutos|m)\s*(?:manda|mandar|mande|envia|enviar|envie|avisa|avise)?\s*(?:uma\s+)?mensagem\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+)?([a-zA-Z0-9._-]+)\s*(?:com\s+o\s+texto|dizendo|falando|que|:)?\s*([\s\S]+)",
+            r"(?:daqui\s+a\s+|em\s+)(\d+)\s*(?:min|minuto|minutos|m)\s*(?:manda|mandar|mande|envia|enviar|envie|avisa|avise)?\s*(?:uma\s+)?mensagem\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+)?([a-zA-Z0-9._\s-]+)\s*(?:com\s+o\s+texto|dizendo|falando|que|:)?\s*([\s\S]+)",
             text, re.IGNORECASE
         )
         if m_delay_sched:
@@ -498,6 +528,7 @@ class TrueConfChatOps:
             if not re.match(r"^\d{1,3}\.\d{1,3}", target_user):
                 target_dt = datetime.now() + timedelta(minutes=minutes)
                 resolved_target = self._resolve_trueconf_user(target_user)
+                self._last_dispatched_message[user_id] = msg_content
                 self.scheduler.schedule_message(user_id, resolved_target, msg_content, target_dt)
                 return (
                     f"⏰ MENSAGEM PROGRAMADA (DAQUI A {minutes} MINUTOS)!\n\n"
@@ -517,9 +548,11 @@ class TrueConfChatOps:
             target_user = m_instant_colleague.group(1).strip().lstrip("@")
             msg_content = m_instant_colleague.group(2).strip()
 
-            # Se não for um IP e não for palavra-chave de máquina de bancada
-            if not re.match(r"^(?:192\.168|10\.|172\.|57\.|\d{1,3}\.)", target_user) and target_user.lower() not in ["ip", "maquina", "máquina", "computador", "pc", "bancada"]:
+            forbidden_usernames = {"mesma", "mesmo", "outro", "outra", "todos", "alguem", "ninguem", "ele", "ela", "mensagem", "recado", "aviso", "ip", "pc", "maquina", "computador"}
+            # Se não for um IP e não for palavra-chave reservada
+            if target_user.lower() not in forbidden_usernames and not re.match(r"^(?:192\.168|10\.|172\.|57\.|\d{1,3}\.)", target_user):
                 resolved_target = self._resolve_trueconf_user(target_user)
+                self._last_dispatched_message[user_id] = msg_content
                 formatted = f"📢 Mensagem de Nicolas Silva:\n\n{msg_content}"
                 if self.bot:
                     success = self.bot.send_direct_message(resolved_target, formatted)
