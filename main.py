@@ -8,6 +8,8 @@ import sys
 import time
 import glob
 import socket
+import threading
+import uuid
 import requests
 from typing import Optional, Dict, Any, List
 
@@ -27,6 +29,7 @@ import uvicorn
 from core.profile_manager import ProfileManager
 from core.network_scanner import NetworkScanner
 from core.orchestrator import LabOrchestrator
+from core.package_manager import UnifiedPackageManager
 from chatops.bot import TrueConfBot
 from core.public_tools import (
     MacVendorResolver,
@@ -41,6 +44,7 @@ from core.public_tools import (
     GitHubToolsVersionService,
     TechWisdomService
 )
+from core.agent_builder import agent_builder
 
 app = FastAPI(
     title="Ultron Lab Automation Server",
@@ -98,7 +102,53 @@ manager = ConnectionManager()
 profile_mgr = ProfileManager()
 network_scanner = NetworkScanner()
 orchestrator = LabOrchestrator()
+package_mgr = UnifiedPackageManager(winrm_executor=orchestrator.winrm)
 settings = profile_mgr.get_settings()
+
+# Inicializa Gerenciador de Tarefas Reversas do UltronAgent
+class AgentTaskManager:
+    def __init__(self):
+        self._queues: Dict[str, List[Dict[str, Any]]] = {}
+        self._results: Dict[str, Dict[str, Any]] = {}
+        self._lock = threading.Lock()
+
+    def enqueue_task(self, target_identifier: str, command: str, task_type: str = "powershell", task_id: Optional[str] = None) -> str:
+        if not task_id:
+            task_id = f"task_{uuid.uuid4().hex[:8]}"
+        task = {
+            "task_id": task_id,
+            "command": command,
+            "type": task_type,
+            "created_at": time.time(),
+            "target": target_identifier
+        }
+        with self._lock:
+            key = target_identifier.strip().lower()
+            if key not in self._queues:
+                self._queues[key] = []
+            self._queues[key].append(task)
+        return task_id
+
+    def get_pending_task(self, target_identifier: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            for k in [target_identifier.strip().lower(), target_identifier.strip()]:
+                if k in self._queues and self._queues[k]:
+                    return self._queues[k].pop(0)
+        return None
+
+    def store_result(self, task_id: str, result: Dict[str, Any]):
+        with self._lock:
+            self._results[task_id] = {
+                **result,
+                "completed_at": time.time()
+            }
+
+    def get_result(self, task_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            return self._results.get(task_id)
+
+agent_task_mgr = AgentTaskManager()
+
 tc_cfg = settings.get("trueconf", {})
 bot = TrueConfBot(
     server_url=tc_cfg.get("server_url", "https://trueconf.penserede.com.br"),
@@ -110,6 +160,12 @@ bot = TrueConfBot(
 
 @app.on_event("startup")
 async def startup_event():
+    # Garante que o UltronAgent.exe esteja sempre sincronizado com o código C#
+    try:
+        agent_builder.compile()
+    except Exception as e:
+        print(f"⚠️ Aviso na compilação do UltronAgent: {e}")
+
     manager.set_loop(asyncio.get_running_loop())
     if bot.bot_password or bot.api_token:
         bot.start_polling(interval_sec=3)
@@ -172,9 +228,25 @@ class RenameComputerRequest(BaseModel):
 class ActivationRequest(BaseModel):
     ip: str = Field(..., description="Endereço IP da máquina alvo")
 
+class PackageInstallRequest(BaseModel):
+    ip: str = Field(..., description="IP da máquina alvo")
+    packages: List[str] = Field(..., description="Lista de IDs ou nomes de softwares a instalar")
+    interactive: bool = Field(True, description="Se True, exibe aviso e tenta modo visível com termos aceitos")
+
+class PackageUpgradeRequest(BaseModel):
+    ip: str = Field(..., description="IP da máquina alvo")
+
+class PackageBackupRequest(BaseModel):
+    ip: str = Field(..., description="IP da máquina alvo")
+    identifier: Optional[str] = Field(None, description="Identificador amigável ou serial")
+
+class PackageRestoreRequest(BaseModel):
+    ip: str = Field(..., description="IP da máquina alvo")
+    bundle_name: Optional[str] = Field(None, description="Nome do arquivo .json do bundle ou latest")
+
 class InstallSoftwareRequest(BaseModel):
     ip: str = Field(..., description="Endereço IP da máquina alvo")
-    packages: List[str] = Field(..., description="Lista de IDs de pacotes Winget para instalar")
+    packages: List[str] = Field(..., description="Lista de IDs de pacotes do Winget a instalar")
 
 class MilvusConfigRequest(BaseModel):
     dashboard_url: str = Field(..., description="URL base da Dashboard Milvus (ex: http://192.168.57.7)")
@@ -213,27 +285,96 @@ class AgentRegistration(BaseModel):
     mac: Optional[str] = Field("", description="MAC Address")
     client_id: Optional[str] = Field("cliente_padrao", description="ID do cliente")
     disks: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Lista de discos físicos")
+    anydesk_id: Optional[str] = Field("", description="AnyDesk ID detectado")
+    logged_in_user: Optional[str] = Field("", description="Usuário logado/ativo na máquina no momento")
     status: Optional[str] = Field("READY_FOR_PIPELINE", description="Status do Agente")
     winrm_ready: Optional[bool] = Field(True, description="Se WinRM foi desbloqueado")
-    agent_version: Optional[str] = Field("1.5.0", description="Versão do UltronAgent.exe")
+    agent_version: Optional[str] = Field("2.0.0", description="Versão do UltronAgent.exe")
     auth_user: Optional[str] = Field("UltronAdmin", description="Usuário de automação local provisionado")
     auth_pass: Optional[str] = Field("Ultron@AutoBench2026!", description="Senha da conta de automação local")
 
 class AgentHeartbeat(BaseModel):
     ip: str = Field(..., description="Endereço IP da máquina")
     hostname: Optional[str] = Field("", description="Nome da máquina")
+    serial: Optional[str] = Field("", description="Serial da máquina")
+    anydesk_id: Optional[str] = Field("", description="AnyDesk ID")
+    logged_in_user: Optional[str] = Field("", description="Usuário logado na máquina")
+    agent_version: Optional[str] = Field("2.0.0", description="Versão do agente")
     status: Optional[str] = Field("IDLE", description="Status atual")
+
+class AgentTaskResult(BaseModel):
+    task_id: str = Field(..., description="ID da tarefa executada")
+    exit_code: int = Field(0, description="Código de saída do processo")
+    stdout: Optional[str] = Field("", description="Saída padrão")
+    stderr: Optional[str] = Field("", description="Saída de erro")
+    status: Optional[str] = Field("SUCCESS", description="Status da execução")
+
+class AgentAlert(BaseModel):
+    type: str = Field(..., description="Tipo de alerta: BSOD, DISK_ALERT, TEMPERATURE")
+    ip: str = Field(..., description="Endereço IP")
+    serial: Optional[str] = Field("", description="Serial number")
+    hostname: Optional[str] = Field("", description="Hostname")
+    details: str = Field(..., description="Detalhes técnicos do alerta")
+
+# --- Gerenciador de Fila de Tarefas Reversas (Reverse Task Queue) ---
+class AgentTaskManager:
+    def __init__(self):
+        self._queues: Dict[str, List[Dict[str, Any]]] = {}
+        self._results: Dict[str, Dict[str, Any]] = {}
+        self._lock = threading.Lock()
+
+    def enqueue_task(self, target_identifier: str, command: str, task_type: str = "powershell", task_id: Optional[str] = None) -> str:
+        if not task_id:
+            task_id = f"task_{uuid.uuid4().hex[:8]}"
+        task = {
+            "task_id": task_id,
+            "command": command,
+            "type": task_type,
+            "created_at": time.time(),
+            "target": target_identifier
+        }
+        with self._lock:
+            key = target_identifier.strip().lower()
+            if key not in self._queues:
+                self._queues[key] = []
+            self._queues[key].append(task)
+        return task_id
+
+    def get_pending_task(self, target_identifier: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            for k in [target_identifier.strip().lower(), target_identifier.strip()]:
+                if k in self._queues and self._queues[k]:
+                    return self._queues[k].pop(0)
+        return None
+
+    def store_result(self, task_id: str, result: Dict[str, Any]):
+        with self._lock:
+            self._results[task_id] = {
+                **result,
+                "completed_at": time.time()
+            }
+
+    def get_result(self, task_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            return self._results.get(task_id)
+
+agent_task_mgr = AgentTaskManager()
 
 # --- Rotas da Interface Web & Downloads ---
 
 @app.get("/", response_class=HTMLResponse)
 @app.get("/dashboard", response_class=HTMLResponse)
 def get_dashboard():
-    """Entrega a interface web visual do Ultron Lab Dashboard"""
+    """Entrega a interface web visual do Ultron Lab Dashboard com proteção anti-cache"""
     template_path = os.path.join(TEMPLATES_DIR, "index.html")
     if os.path.exists(template_path):
         with open(template_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+            content = f.read()
+        resp = HTMLResponse(content=content)
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
     return HTMLResponse(content="<h2>Ultron Lab Automation Server Online</h2>")
 
 @app.get("/download/UltronAgent.exe")
@@ -244,16 +385,20 @@ def get_dashboard():
 @app.get("/UltronAgent.exe")
 @app.get("/UltronUnlocker.exe")
 def download_ultron_agent():
-    """Entrega o executável nativo do Agente Ultron para execução direta na máquina alvo ou pendrive"""
-    exe_path = os.path.join(STATIC_DIR, "downloads", "UltronAgent.exe")
-    if not os.path.exists(exe_path):
-        exe_path = os.path.join(BASE_DIR, "agent", "UltronAgent.exe")
+    """Entrega o executável nativo do Agente Ultron garantindo que esteja sempre na compilação mais recente"""
+    bin_info = agent_builder.get_latest_agent_binary()
+    exe_path = bin_info["file_path"]
+    filename = bin_info["filename"]
     if os.path.exists(exe_path):
-        return FileResponse(
+        resp = FileResponse(
             exe_path,
             media_type="application/octet-stream",
-            filename="UltronAgent.exe"
+            filename=filename
         )
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
     raise HTTPException(status_code=404, detail="Executável UltronAgent.exe não encontrado")
 
 @app.get("/bootstrap.ps1", response_class=PlainTextResponse)
@@ -264,6 +409,57 @@ def get_bootstrap_script():
         with open(script_path, "r", encoding="utf-8") as f:
             return PlainTextResponse(content=f.read(), media_type="text/plain; charset=utf-8")
     raise HTTPException(status_code=404, detail="Script Bootstrap-Ultron.ps1 não encontrado")
+
+@app.get("/api/v1/agent/version")
+def get_agent_version():
+    """Informa a versão atual do UltronAgent para o auto-updater OTA"""
+    ver = agent_builder.get_source_version()
+    return {
+        "version": ver,
+        "download_url": "/download/UltronAgent.exe",
+        "release_notes": f"UltronAgent {ver}: Auto-Updater OTA silencioso, Reconhecimento de Usuário Logado, Detecção de AnyDesk ID, Auto-Instalação como Serviço Windows e Suporte a Bundles UniGetUI."
+    }
+
+@app.get("/api/v1/agent/tasks/{target_id}")
+def get_agent_pending_tasks(target_id: str):
+    """Permite ao UltronAgent consultar tarefas pendentes via canal reverso HTTP"""
+    task = agent_task_mgr.get_pending_task(target_id)
+    if task:
+        return task
+    return {"status": "no_tasks"}
+
+@app.post("/api/v1/agent/tasks/{task_id}/result")
+def submit_agent_task_result(task_id: str, result: AgentTaskResult):
+    """Recebe o resultado da execução da tarefa enviada pelo UltronAgent"""
+    agent_task_mgr.store_result(task_id, result.model_dump())
+    return {"success": True, "message": f"Resultado da tarefa {task_id} armazenado com sucesso"}
+
+@app.post("/api/v1/agent/alert")
+def receive_agent_alert(alert: AgentAlert):
+    """Recebe alertas críticos de hardware (BSOD, S.M.A.R.T, Superaquecimento) e notifica o TrueConf"""
+    tc_user = settings.get("trueconf", {}).get("default_tech_user_id", "nicolas.silva")
+    
+    icon = "🚨" if alert.type == "BSOD" else "🔥"
+    msg = (
+        f"{icon} **ALERTA PROATIVO DE HARDWARE — ULTRON AGENT**\n\n"
+        f"📍 **Máquina:** {alert.hostname} ({alert.ip})\n"
+        f"🏷️ **Serial:** {alert.serial}\n"
+        f"⚠️ **Tipo de Ocorrência:** {alert.type}\n"
+        f"📋 **Detalhes:** {alert.details}\n\n"
+        f"💡 Sugestão: Inspecione os discos e a memória RAM com *'diagnóstico no {alert.ip}'*."
+    )
+    bot.send_direct_message(tc_user, msg)
+    return {"success": True, "message": "Alerta processado e notificado com sucesso"}
+
+@app.post("/api/v1/agent/cleanup/{target_id}")
+def enqueue_agent_cleanup(target_id: str):
+    """Enfileira comando de auto-limpeza e desinstalação para uma máquina entregue"""
+    task_id = agent_task_mgr.enqueue_task(target_id, "CLEANUP_SYSTEM", task_type="cleanup")
+    return {
+        "success": True,
+        "task_id": task_id,
+        "message": f"Ordem de auto-limpeza e desinstalação enfileirada para {target_id}."
+    }
 
 @app.post("/api/v1/agent/register")
 def agent_register(data: AgentRegistration, background_tasks: BackgroundTasks):
@@ -281,7 +477,10 @@ def agent_register(data: AgentRegistration, background_tasks: BackgroundTasks):
             "ip": data.ip,
             "hostname": data.computer_name,
             "mac": data.mac,
+            "serial": data.serial,
             "vendor": f"{data.manufacturer} {data.model}".strip(),
+            "anydesk_id": data.anydesk_id or "",
+            "logged_in_user": data.logged_in_user or "",
             "winrm_ready": True,
             "bench_name": "Bancada Ultron",
             "last_seen": time.time()
@@ -292,19 +491,31 @@ def agent_register(data: AgentRegistration, background_tasks: BackgroundTasks):
         bot.chatops._cached_devices = updated_cache
         bot.chatops._last_scan_time = time.time()
 
+    # Formata Usuário Logado se presente
+    user_badge = ""
+    if bot and bot.chatops and data.logged_in_user:
+        user_badge = bot.chatops._format_user_badge(data.logged_in_user)
+    user_str = f"{user_badge}\n" if user_badge else (f"👤 Usuário: `{data.logged_in_user}`\n" if data.logged_in_user else "")
+
+    # Formata AnyDesk se presente
+    anydesk_str = f"🔑 AnyDesk ID: **{data.anydesk_id}** ([Abrir AnyDesk](anydesk:{data.anydesk_id}))\n" if data.anydesk_id else ""
+
     # Notifica o técnico no TrueConf com formatação limpa
+    user_header = f" — MÁQUINA DE {data.logged_in_user.upper()}" if data.logged_in_user else ""
     msg = (
-        f"💻 ULTRON AGENT CONECTADO — MÁQUINA PRONTA\n\n"
-        f"📍 IP: {data.ip}\n"
-        f"🏷️ Serial: {data.serial}\n"
-        f"🏷️ Host: {data.computer_name} ({data.manufacturer} {data.model})\n"
-        f"🧠 Processador: {data.cpu}\n"
-        f"💾 Memória RAM: {data.ram_gb} GB\n"
-        f"🛡️ Acesso e WinRM: 100% Liberados (Zero-Prompt Ativo)\n\n"
+        f"💻 **ULTRON AGENT CONECTADO{user_header}**\n\n"
+        f"📍 IP: **{data.ip}**\n"
+        f"{user_str}"
+        f"🏷️ Serial: `{data.serial}`\n"
+        f"💻 Host: **{data.computer_name}** ({data.manufacturer} {data.model})\n"
+        f"🧠 CPU: {data.cpu}\n"
+        f"💾 RAM: {data.ram_gb} GB\n"
+        f"{anydesk_str}"
+        f"🛡️ Serviço: **UltronService (SYSTEM)** Ativo & Autônomo\n\n"
         f"💡 Ações Rápidas:\n"
-        f"• \"faz o diagnóstico no {data.ip}\"\n"
-        f"• \"prepara o {data.ip} para o White Group\"\n"
-        f"• \"ativa o Windows do {data.ip}\""
+        f"• *\"diagnóstico no {data.ip}\"*\n"
+        f"• *\"preparar {data.ip} para <cliente>\"*\n"
+        f"• *\"ativar {data.ip}\"*"
     )
     tc_user = settings.get("trueconf", {}).get("default_tech_user_id", "nicolas.silva")
     bot.send_direct_message(tc_user, msg)
@@ -319,7 +530,17 @@ def agent_register(data: AgentRegistration, background_tasks: BackgroundTasks):
 @app.post("/api/v1/agent/heartbeat")
 def agent_heartbeat(data: AgentHeartbeat):
     """Heartbeat periódico do UltronAgent.exe em segundo plano"""
-    import time
+    # Atualiza cache do ChatOps se serial ou IP vier no heartbeat
+    if bot and bot.chatops and data.ip:
+        for dev in bot.chatops._cached_devices:
+            if dev.get("ip") == data.ip:
+                dev["last_seen"] = time.time()
+                if data.anydesk_id:
+                    dev["anydesk_id"] = data.anydesk_id
+                if data.logged_in_user:
+                    dev["logged_in_user"] = data.logged_in_user
+                break
+
     return {"status": "ok", "server_time": time.time(), "ip": data.ip}
 
 
@@ -375,43 +596,61 @@ def check_tcp_port(ip: str, port: int, timeout: float = 0.5) -> bool:
 
 @app.get("/api/v1/infra/status")
 def get_infra_status():
-    """Retorna o status de conectividade com os servidores da infraestrutura do laboratório"""
-    net_cfg = settings.get("network", {})
+    """Retorna o status de conectividade com os servidores da infraestrutura do laboratório (Paralelizado)"""
+    current_settings = profile_mgr.get_settings()
+    net_cfg = current_settings.get("network", {})
     mdt_ip = net_cfg.get("mdt_server_ip", "192.168.57.87")
     backup_ip = net_cfg.get("backup_server_ip", "192.168.57.112")
     milvus_ip = net_cfg.get("milvus_dashboard_ip", "192.168.57.7")
-    llm_cfg = settings.get("llm", {})
-    ollama_url = llm_cfg.get("base_url", "http://localhost:11434")
+    llm_cfg = current_settings.get("llm", {})
+    llm_url = llm_cfg.get("base_url", "http://192.168.57.31:8080/v1")
+    tc_server = current_settings.get("trueconf", {}).get("server_url", "https://trueconf.penserede.com.br")
 
-    # Checa Ollama
-    ollama_online = False
-    try:
-        r = requests.get(f"{ollama_url.rstrip('/')}/api/tags", timeout=0.8)
-        ollama_online = (r.status_code == 200)
-    except Exception:
-        ollama_online = False
+    def _check_llm() -> bool:
+        base_clean = llm_url.replace("/v1", "").rstrip("/")
+        for probe in ["/health", "/v1/models", "/api/tags"]:
+            try:
+                r = requests.get(f"{base_clean}{probe}", timeout=0.6)
+                if r.status_code == 200:
+                    return True
+            except Exception:
+                continue
+        return False
 
-    # Checa MDT / PXE Server (Portas SMB 445 / HTTP 80)
-    mdt_online = check_tcp_port(mdt_ip, 445) or check_tcp_port(mdt_ip, 80)
+    def _check_mdt() -> bool:
+        return check_tcp_port(mdt_ip, 445, timeout=0.35) or check_tcp_port(mdt_ip, 80, timeout=0.35)
 
-    # Checa Servidor de Backup Macrium (SMB 445 / 139)
-    backup_online = check_tcp_port(backup_ip, 445) or check_tcp_port(backup_ip, 139)
+    def _check_backup() -> bool:
+        return check_tcp_port(backup_ip, 445, timeout=0.35) or check_tcp_port(backup_ip, 139, timeout=0.35)
 
-    # Checa Dashboard Milvus (192.168.57.7)
-    milvus_online = profile_mgr.milvus.is_online(timeout=0.8)
+    def _check_milvus() -> bool:
+        return profile_mgr.milvus.is_online(timeout=0.5)
 
-    # Checa TrueConf Server
-    tc_server = tc_cfg.get("server_url", "http://trueconf.penserede.local")
-    trueconf_online = False
-    try:
-        r_tc = requests.get(f"{tc_server.rstrip('/')}", timeout=0.8)
-        trueconf_online = r_tc.status_code < 500
-    except Exception:
-        trueconf_online = False
+    def _check_trueconf() -> bool:
+        try:
+            r_tc = requests.get(f"{tc_server.rstrip('/')}", timeout=0.5)
+            return r_tc.status_code < 500
+        except Exception:
+            return False
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        f_llm = executor.submit(_check_llm)
+        f_mdt = executor.submit(_check_mdt)
+        f_backup = executor.submit(_check_backup)
+        f_milvus = executor.submit(_check_milvus)
+        f_tc = executor.submit(_check_trueconf)
+
+        llm_online = f_llm.result()
+        mdt_online = f_mdt.result()
+        backup_online = f_backup.result()
+        milvus_online = f_milvus.result()
+        trueconf_online = f_tc.result()
 
     return {
         "ultron": True,
-        "ollama": ollama_online,
+        "llm": llm_online,
+        "ollama": llm_online,
         "mdt_server": mdt_online,
         "backup_storage": backup_online,
         "milvus_dashboard": milvus_online,
@@ -419,7 +658,8 @@ def get_infra_status():
         "ips": {
             "mdt_ip": mdt_ip,
             "backup_ip": backup_ip,
-            "milvus_ip": milvus_ip
+            "milvus_ip": milvus_ip,
+            "llm_ip": "192.168.57.31"
         }
     }
 
@@ -804,27 +1044,153 @@ def execute_activation_action(req: ActivationRequest):
         "stderr": result.get("stderr", "")
     }
 
+CURATED_SOFTWARE_CATALOG = [
+    {
+        "category": "Navegadores & Web",
+        "icon": "globe",
+        "packages": [
+            {"id": "Google.Chrome", "name": "Google Chrome", "desc": "Navegador padrão corporativo rápido e seguro", "tag": "Popular"},
+            {"id": "Mozilla.Firefox", "name": "Mozilla Firefox", "desc": "Navegador livre com foco em privacidade e extensões", "tag": "Essencial"},
+            {"id": "Brave.Brave", "name": "Brave Browser", "desc": "Navegador com bloqueio nativo de rastreadores e anúncios", "tag": "Privacidade"},
+            {"id": "Microsoft.Edge", "name": "Microsoft Edge", "desc": "Navegador nativo otimizado para o ecossistema Windows", "tag": "Nativo"}
+        ]
+    },
+    {
+        "category": "Produtividade & Escritório",
+        "icon": "briefcase",
+        "packages": [
+            {"id": "Adobe.Acrobat.Reader.64-bit", "name": "Adobe Acrobat Reader", "desc": "Leitor padrão oficial de documentos PDF", "tag": "Padrão"},
+            {"id": "Microsoft.Office", "name": "Microsoft 365 (Office)", "desc": "Word, Excel, PowerPoint, Outlook e Teams", "tag": "Enterprise"},
+            {"id": "Notepad++.Notepad++", "name": "Notepad++", "desc": "Editor de texto e scripts leve e potente", "tag": "Leve"},
+            {"id": "Obsidian.Obsidian", "name": "Obsidian", "desc": "Base de conhecimento e anotações em Markdown", "tag": "Produtividade"}
+        ]
+    },
+    {
+        "category": "Comunicação & Reuniões",
+        "icon": "message-square",
+        "packages": [
+            {"id": "Microsoft.Teams", "name": "Microsoft Teams", "desc": "Chat corporativo e chamadas de vídeo", "tag": "Trabalho"},
+            {"id": "Zoom.Zoom", "name": "Zoom Meetings", "desc": "Plataforma de videoconferências e reuniões", "tag": "Vídeo"},
+            {"id": "Discord.Discord", "name": "Discord", "desc": "Comunicação por voz, vídeo e canais de texto", "tag": "Comunidade"},
+            {"id": "SlackTechnologies.Slack", "name": "Slack", "desc": "Comunicação e colaboração para equipes de TI", "tag": "Equipe"}
+        ]
+    },
+    {
+        "category": "Suporte & Acesso Remoto",
+        "icon": "shield-check",
+        "packages": [
+            {"id": "AnyDeskSoftwareGmbH.AnyDesk", "name": "AnyDesk", "desc": "Software de acesso remoto de alta velocidade", "tag": "TI Lab"},
+            {"id": "PuTTY.PuTTY", "name": "PuTTY SSH Client", "desc": "Terminal SSH e Telnet para servidores e switches", "tag": "Redes"},
+            {"id": "TimKosse.FileZilla.Client", "name": "FileZilla FTP", "desc": "Cliente FTP e SFTP para envio de arquivos", "tag": "Redes"},
+            {"id": "WiresharkFoundation.Wireshark", "name": "Wireshark", "desc": "Analisador profissional de pacotes e tráfego de rede", "tag": "Segurança"}
+        ]
+    },
+    {
+        "category": "Desenvolvimento & TI",
+        "icon": "code-2",
+        "packages": [
+            {"id": "Microsoft.VisualStudioCode", "name": "Visual Studio Code", "desc": "Editor de código fonte e IDE moderna", "tag": "Top Dev"},
+            {"id": "Git.Git", "name": "Git SCM", "desc": "Sistema de controle de versão distribuído", "tag": "Dev"},
+            {"id": "Python.Python.3.11", "name": "Python 3.11", "desc": "Linguagem de automação e scripts de backend", "tag": "Dev"},
+            {"id": "OpenJS.NodeJS", "name": "Node.js (LTS)", "desc": "Ambiente de execução JavaScript no servidor", "tag": "Web"},
+            {"id": "dbeaver.dbeaver", "name": "DBeaver Community", "desc": "Gerenciador universal de Bancos de Dados SQL", "tag": "DB"}
+        ]
+    },
+    {
+        "category": "Utilitários & Mídia",
+        "icon": "wrench",
+        "packages": [
+            {"id": "7zip.7zip", "name": "7-Zip (64-bit)", "desc": "Descompactador e compactador ultra veloz", "tag": "Essencial"},
+            {"id": "RARLab.WinRAR", "name": "WinRAR", "desc": "Utilitário clássico de descompactação RAR/ZIP", "tag": "Popular"},
+            {"id": "VideoLAN.VLC", "name": "VLC Media Player", "desc": "Reprodutor de vídeo com suporte a todos os formatos", "tag": "Mídia"},
+            {"id": "Spotify.Spotify", "name": "Spotify", "desc": "Streaming de música e podcasts", "tag": "Áudio"},
+            {"id": "OBSProject.OBSStudio", "name": "OBS Studio", "desc": "Gravação de tela e transmissão ao vivo", "tag": "Vídeo"},
+            {"id": "Rufus.Rufus", "name": "Rufus", "desc": "Criação de pendrives inicializáveis para formatação", "tag": "TI Lab"}
+        ]
+    },
+    {
+        "category": "Jogos & Criação 3D",
+        "icon": "gamepad-2",
+        "packages": [
+            {"id": "Valve.Steam", "name": "Steam", "desc": "Plataforma de jogos e distribuição digital", "tag": "Games"},
+            {"id": "BlenderFoundation.Blender", "name": "Blender 3D", "desc": "Criação, modelagem e renderização 3D", "tag": "Design"},
+            {"id": "GIMP.GIMP", "name": "GIMP", "desc": "Manipulação e edição de imagens profissional", "tag": "Design"}
+        ]
+    }
+]
+
+@app.get("/api/v1/packages/catalog")
+def get_packages_catalog():
+    """Retorna o catálogo curado de softwares para exibição no painel visual"""
+    return {
+        "success": True,
+        "categories": CURATED_SOFTWARE_CATALOG
+    }
+
+@app.get("/api/v1/packages/bundles")
+def list_package_bundles():
+    """Retorna os backups e bundles UniGetUI salvos no laboratório"""
+    bundles = package_mgr.list_saved_bundles()
+    return {
+        "success": True,
+        "bundles": bundles
+    }
+
+@app.post("/api/v1/packages/install")
+def install_packages_api(req: PackageInstallRequest):
+    """Instala uma lista de pacotes via instalador unificado UniGetUI/Winget"""
+    if not req.packages:
+        raise HTTPException(status_code=400, detail="Nenhum pacote selecionado para instalação.")
+    res = orchestrator.winrm.run_script_file(
+        req.ip,
+        "Install-UnifiedPackages.ps1",
+        params={
+            "Packages": req.packages,
+            "Interactive": req.interactive
+        }
+    )
+    return {
+        "success": res.get("success", False),
+        "ip": req.ip,
+        "packages": req.packages,
+        "stdout": res.get("stdout", ""),
+        "stderr": res.get("stderr", "")
+    }
+
+@app.post("/api/v1/packages/upgrade_all")
+def upgrade_all_packages_api(req: PackageUpgradeRequest):
+    """Atualiza em massa todos os programas instalados na máquina alvo via Winget"""
+    res = package_mgr.upgrade_all_packages(req.ip)
+    return res
+
+@app.post("/api/v1/packages/backup")
+def backup_packages_api(req: PackageBackupRequest):
+    """Varre e exporta todos os programas instalados em um bundle UniGetUI (.json)"""
+    res = package_mgr.export_machine_packages(req.ip, identifier=req.identifier)
+    return res
+
+@app.post("/api/v1/packages/restore")
+def restore_packages_api(req: PackageRestoreRequest):
+    """Restaura um bundle UniGetUI (.json) previamente salvo na máquina alvo"""
+    res = package_mgr.restore_machine_packages(req.ip, bundle_name_or_id=req.bundle_name)
+    return res
+
 @app.post("/api/v1/bench/action/install-software")
 def execute_install_software_action(req: InstallSoftwareRequest):
-    """Instala uma lista de pacotes via Winget na máquina alvo"""
+    """Instala uma lista de pacotes via instalador unificado na máquina alvo"""
     if not req.packages:
         raise HTTPException(status_code=400, detail="Nenhum pacote selecionado")
-
-    installed = []
-    errors = []
-    for pkg in req.packages:
-        cmd = f"winget install --id {pkg} --exact --silent --accept-package-agreements --accept-source-agreements"
-        res = orchestrator.winrm.run_powershell_code(req.ip, cmd)
-        if res["success"]:
-            installed.append(pkg)
-        else:
-            errors.append({"package": pkg, "error": res.get("stderr", "")})
-
+    res = orchestrator.winrm.run_script_file(
+        req.ip,
+        "Install-UnifiedPackages.ps1",
+        params={"Packages": req.packages, "Interactive": True}
+    )
     return {
-        "success": len(errors) == 0,
+        "success": res.get("success", False),
         "ip": req.ip,
-        "installed": installed,
-        "errors": errors
+        "installed": req.packages if res.get("success") else [],
+        "stdout": res.get("stdout", ""),
+        "stderr": res.get("stderr", "")
     }
 
 @app.post("/api/v1/bench/action/domain-join")

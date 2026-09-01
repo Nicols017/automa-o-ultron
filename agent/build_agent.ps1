@@ -37,6 +37,9 @@ $compileArgs = @(
     "/r:System.Management.dll",
     "/r:System.dll",
     "/r:System.Core.dll",
+    "/r:System.ServiceProcess.dll",
+    "/r:System.Drawing.dll",
+    "/r:System.Windows.Forms.dll",
     "/out:$outputExe"
 )
 

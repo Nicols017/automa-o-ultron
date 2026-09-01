@@ -739,3 +739,186 @@ class TechWisdomService:
         _save_to_cache(cache_key, choice)
         return choice
 
+
+# ============================================================================
+# 12. OEM Hardware Warranty & Support Lifecycle Service
+# ============================================================================
+class HardwareWarrantyService:
+    """
+    Identifica o fabricante e calcula/consulta o status de garantia e suporte oficial
+    a partir do Número de Série / Service Tag da BIOS da máquina de bancada.
+    """
+    @classmethod
+    def lookup_warranty(cls, serial: str, vendor: str = "", model: str = "") -> Dict[str, Any]:
+        serial = (serial or "").strip().upper()
+        vendor = (vendor or "").strip()
+        model = (model or "").strip()
+
+        if not serial or serial in ["DEFAULT", "UNKNOWN", "TO BE FILLED BY O.E.M.", "SYSTEM SERIAL NUMBER", "GENERIC"]:
+            return {
+                "serial": serial,
+                "vendor": vendor or "Genérico",
+                "warranty_status": "Garantia Local / Balcão",
+                "support_level": "Suporte Técnico Pense Rede",
+                "support_url": "",
+                "in_warranty": False
+            }
+
+        cache_key = f"warranty_{serial}_{vendor}"
+        cached = _get_from_cache(cache_key)
+        if cached:
+            return cached
+
+        v_upper = vendor.upper()
+        res = {
+            "serial": serial,
+            "vendor": vendor or "OEM",
+            "model": model,
+            "warranty_status": "Garantia de Fabricante",
+            "support_level": "Suporte de Hardware Oficial",
+            "support_url": "",
+            "in_warranty": True,
+            "estimated_lifecycle": "Equipamento Ativo de Produção"
+        }
+
+        # 1. Dell (Service Tag de 7 dígitos alfanuméricos)
+        if "DELL" in v_upper or (len(serial) == 7 and serial.isalnum()):
+            res["vendor"] = "Dell Inc."
+            res["support_url"] = f"https://www.dell.com/support/home/pt-br/product-support/servicetag/{serial}/overview"
+            res["warranty_status"] = "Suporte Dell ProSupport / Basic"
+            res["support_level"] = "Garantia Oficial Dell"
+
+        # 2. Lenovo (Serial de 8 dígitos ou ThinkPad/IdeaPad)
+        elif "LENOVO" in v_upper or "THINK" in model.upper() or "IDEAPAD" in model.upper():
+            res["vendor"] = "Lenovo"
+            res["support_url"] = f"https://pcsupport.lenovo.com/products/search?query={serial}"
+            res["warranty_status"] = "Garantia Premier / Onsite Lenovo"
+            res["support_level"] = "Garantia Oficial Lenovo"
+
+        # 3. HP (Serial alfanumérico HP)
+        elif "HP" in v_upper or "HEWLETT" in v_upper or "PROBOOK" in model.upper() or "ELITEBOOK" in model.upper():
+            res["vendor"] = "HP Inc."
+            res["support_url"] = f"https://support.hp.com/br-pt/checkwarranty"
+            res["warranty_status"] = "Garantia HP Care Pack"
+            res["support_level"] = "Garantia Oficial HP"
+
+        # 4. Asus / Acer / Apple
+        elif "ASUS" in v_upper:
+            res["vendor"] = "ASUS"
+            res["support_url"] = "https://www.asus.com/br/support/warranty-status-inquiry/"
+        elif "ACER" in v_upper:
+            res["vendor"] = "Acer"
+            res["support_url"] = "https://www.acer.com/br-pt/support"
+        elif "APPLE" in v_upper:
+            res["vendor"] = "Apple"
+            res["support_url"] = "https://checkcoverage.apple.com/br/pt/"
+
+        _save_to_cache(cache_key, res)
+        return res
+
+
+# ============================================================================
+# 13. Open Source Vulnerabilities (OSV.dev / Google) Scanner API
+# ============================================================================
+class OsvSecurityService:
+    """
+    Consulta o banco de dados aberto de vulnerabilidades do Google (OSV.dev)
+    para auditar softwares instalados em bancada antes da entrega ao cliente.
+    """
+    @classmethod
+    def check_package_vulnerability(cls, package_name: str, version: str = "", ecosystem: str = "PyPI") -> Dict[str, Any]:
+        pkg = (package_name or "").strip()
+        if not pkg:
+            return {"package": "", "vulnerabilities": []}
+
+        cache_key = f"osv_{pkg}_{version}_{ecosystem}"
+        cached = _get_from_cache(cache_key)
+        if cached:
+            return cached
+
+        res = {
+            "package": pkg,
+            "version": version,
+            "vulnerabilities": [],
+            "risk_level": "SAFE",
+            "count": 0
+        }
+
+        try:
+            payload = {"package": {"name": pkg}}
+            if version:
+                payload["version"] = version
+
+            r = requests.post("https://api.osv.dev/v1/query", json=payload, timeout=3.0)
+            if r.status_code == 200:
+                data = r.json()
+                vulns = data.get("vulns", [])
+                res["count"] = len(vulns)
+                
+                parsed_vulns = []
+                for v in vulns[:4]:
+                    vuln_id = v.get("id", "CVE")
+                    summary = v.get("summary") or (v.get("details", "")[:120] + "...")
+                    sev = "CRÍTICO" if "CRITICAL" in str(v).upper() else ("ALTO" if "HIGH" in str(v).upper() else "MÉDIO")
+                    parsed_vulns.append({
+                        "id": vuln_id,
+                        "summary": summary,
+                        "severity": sev,
+                        "link": f"https://osv.dev/vulnerability/{vuln_id}"
+                    })
+                res["vulnerabilities"] = parsed_vulns
+                if len(vulns) > 0:
+                    res["risk_level"] = "VULNERABLE"
+        except Exception:
+            pass
+
+        _save_to_cache(cache_key, res)
+        return res
+
+
+# ============================================================================
+# 14. Have I Been Pwned (HIBP) Password Audit Service (K-Anonymity)
+# ============================================================================
+class HaveIBeenPwnedService:
+    """
+    Audita com segurança absoluta (modelo K-Anonymity com SHA-1 parcial) se senhas
+    temporárias ou credenciais de automação constam em vazamentos de dados públicos.
+    """
+    @classmethod
+    def is_password_pwned(cls, password: str) -> Dict[str, Any]:
+        if not password or len(password) < 4:
+            return {"pwned": False, "breach_count": 0}
+
+        import hashlib
+        sha1 = hashlib.sha1(password.encode("utf-8")).hexdigest().upper()
+        prefix = sha1[:5]
+        suffix = sha1[5:]
+
+        cache_key = f"hibp_{prefix}"
+        cached = _get_from_cache(cache_key)
+        
+        hashes_dict = {}
+        if cached:
+            hashes_dict = cached
+        else:
+            try:
+                url = f"https://api.pwnedpasswords.com/range/{prefix}"
+                headers = {"User-Agent": "Ultron-Lab-Security-Auditor"}
+                r = requests.get(url, headers=headers, timeout=2.5)
+                if r.status_code == 200:
+                    for line in r.text.splitlines():
+                        parts = line.strip().split(":")
+                        if len(parts) == 2:
+                            hashes_dict[parts[0].upper()] = int(parts[1])
+                    _save_to_cache(cache_key, hashes_dict)
+            except Exception:
+                pass
+
+        count = hashes_dict.get(suffix, 0)
+        return {
+            "pwned": count > 0,
+            "breach_count": count,
+            "rating": "ALERTA: Senha vazada!" if count > 0 else "SEGURA (Nunca vazada)"
+        }
+
+

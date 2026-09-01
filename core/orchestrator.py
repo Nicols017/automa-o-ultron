@@ -24,11 +24,14 @@ class LabOrchestrator:
         # Inicializa o analisador LLM
         llm_cfg = self.settings.get("llm", {})
         self.analyzer = DiagnosticAnalyzer(
-            base_url=llm_cfg.get("base_url", "http://localhost:11434"),
-            model=llm_cfg.get("model", "custom_model"),
-            provider=llm_cfg.get("provider", "ollama"),
-            api_key=llm_cfg.get("api_key"),
-            temperature=llm_cfg.get("temperature", 0.2)
+            base_url=llm_cfg.get("base_url", "http://192.168.57.31:8080/v1"),
+            model=llm_cfg.get("model", "local"),
+            provider=llm_cfg.get("provider", "llama.cpp"),
+            api_key=llm_cfg.get("api_key", "local-dev"),
+            temperature=float(llm_cfg.get("temperature", 0.0)),
+            max_tokens=int(llm_cfg.get("max_tokens", 1800)),
+            timeout_seconds=float(llm_cfg.get("timeout_seconds", 1200)),
+            chat_url=llm_cfg.get("chat_url")
         )
         
         # Inicializa o gerador de laudos
@@ -168,7 +171,7 @@ class LabOrchestrator:
 
         # 3. Diagnóstico Inteligente com IA
         log(
-            "🧠 [ULTRON] Processando diagnóstico com IA na RTX 5060 Ti (Ollama)...",
+            "🧠 [ULTRON] Processando diagnóstico com IA Jarvis (Qwen 3.5 / llama.cpp)...",
             level="info",
             stage=3,
             stage_name="Diagnóstico Inteligente IA"

@@ -1,9 +1,12 @@
 llm:
-  api_key: ''
-  base_url: http://localhost:11434
-  model: qwen2.5:7b
-  provider: ollama
-  temperature: 0.2
+  api_key: local-dev
+  base_url: http://192.168.57.31:8080/v1
+  chat_url: http://192.168.57.31:8080/v1/chat/completions
+  max_tokens: 1800
+  model: local
+  provider: llama.cpp
+  temperature: 0.0
+  timeout_seconds: 1200.0
 network:
   backup_server_ip: 192.168.57.112
   backup_share: \\192.168.57.112\Backups

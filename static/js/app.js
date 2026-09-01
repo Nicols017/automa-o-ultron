@@ -79,6 +79,9 @@ function switchTab(tabId) {
         loadReports();
     } else if (tabId === 'tools') {
         refreshAllTools();
+    } else if (tabId === 'packages') {
+        loadSoftwareCatalog();
+        populatePackageTargetSelector();
     }
     refreshIcons();
 }
@@ -587,46 +590,11 @@ async function submitActivationAction(ip) {
 
 // 4. Install Standalone Packages
 function openSoftwareModal(ip) {
-    const popularPackages = [
-        { id: 'AnyDeskSoftwareGmbH.AnyDesk', name: 'AnyDesk' },
-        { id: 'Google.Chrome', name: 'Google Chrome' },
-        { id: 'Mozilla.Firefox', name: 'Mozilla Firefox' },
-        { id: 'Microsoft.Office', name: 'Microsoft Office 365' },
-        { id: 'Microsoft.VisualStudioCode', name: 'Visual Studio Code' },
-        { id: '7zip.7zip', name: '7-Zip' },
-        { id: 'Notepad++.Notepad++', name: 'Notepad++' },
-        { id: 'Adobe.Acrobat.Reader.64-bit', name: 'Adobe Acrobat Reader' }
-    ];
-
-    const packageItemsHtml = popularPackages.map(p => `
-        <label class="package-choice-card">
-            <input type="checkbox" name="pkg-checkbox" value="${p.id}">
-            <div>
-                <div class="package-choice-title">${p.name}</div>
-                <div class="package-choice-id">${p.id}</div>
-            </div>
-        </label>
-    `).join('');
-
-    const content = `
-        <form onsubmit="submitInstallSoftwareAction(event, '${ip}')" class="form-stack">
-            <p style="color: var(--text-muted); font-size: 0.8rem;">
-                Selecione os pacotes para instalação silenciosa via Winget em <b>${ip}</b>:
-            </p>
-            <div class="package-selection-grid">
-                ${packageItemsHtml}
-            </div>
-            <div class="form-field">
-                <label>Outro ID de Pacote Winget (Opcional)</label>
-                <input type="text" id="custom-pkg-id" class="form-input" placeholder="Ex: Git.Git">
-            </div>
-            <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1.25rem;">
-                <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-                <button type="submit" id="btn-submit-software" class="btn btn-primary">Instalar Selecionados</button>
-            </div>
-        </form>
-    `;
-    showModal(`Instalação de Pacotes: ${ip}`, content);
+    switchTab('packages');
+    const select = document.getElementById('pkg-target-select');
+    const manualInput = document.getElementById('pkg-manual-ip');
+    if (manualInput) manualInput.value = ip;
+    if (select) select.value = ip;
 }
 
 async function submitInstallSoftwareAction(e, ip) {
@@ -1977,4 +1945,445 @@ function refreshAllTools() {
     checkToolVersions(true);
     loadCisaKevFeed(true);
 }
+
+// ==========================================================================
+// Software App Store & UniGetUI Package Manager Controller
+// ==========================================================================
+
+state.selectedPackages = new Set();
+state.packageCatalog = [];
+state.activeSoftwareCategory = 'all';
+
+async function loadSoftwareCatalog() {
+    const grid = document.getElementById('pkg-catalog-grid');
+    if (!grid) return;
+
+    if (state.packageCatalog && state.packageCatalog.length > 0) {
+        renderSoftwareCatalog();
+        return;
+    }
+
+    grid.innerHTML = `
+        <div class="empty-state-box" style="grid-column: 1 / -1;">
+            <i data-lucide="loader-2" class="spin-icon"></i>
+            <p>Carregando catálogo de softwares...</p>
+        </div>
+    `;
+    refreshIcons();
+
+    try {
+        const res = await fetch('/api/v1/packages/catalog');
+        const data = await res.json();
+        if (data.success && data.categories) {
+            state.packageCatalog = data.categories;
+            renderSoftwareCatalog();
+        }
+    } catch (e) {
+        grid.innerHTML = `<div class="empty-state-box" style="grid-column: 1 / -1; color: var(--status-err);"><p>Erro ao carregar catálogo: ${e.message}</p></div>`;
+    }
+}
+
+function renderSoftwareCatalog() {
+    const grid = document.getElementById('pkg-catalog-grid');
+    if (!grid || !state.packageCatalog) return;
+
+    const searchTerm = (document.getElementById('pkg-search-input')?.value || '').trim().toLowerCase();
+    const activeCat = state.activeSoftwareCategory;
+
+    let html = '';
+    let totalRendered = 0;
+
+    state.packageCatalog.forEach(cat => {
+        if (activeCat !== 'all' && cat.category !== activeCat) return;
+
+        cat.packages.forEach(pkg => {
+            const matchesSearch = !searchTerm || 
+                pkg.name.toLowerCase().includes(searchTerm) || 
+                pkg.id.toLowerCase().includes(searchTerm) || 
+                pkg.desc.toLowerCase().includes(searchTerm) ||
+                cat.category.toLowerCase().includes(searchTerm);
+
+            if (!matchesSearch) return;
+
+            const isSelected = state.selectedPackages.has(pkg.id);
+            const iconName = cat.icon || 'box';
+
+            html += `
+                <div class="software-card ${isSelected ? 'selected' : ''}" onclick="toggleSoftwareSelection('${pkg.id}')">
+                    <div class="software-card-top">
+                        <div class="software-icon-box">
+                            <i data-lucide="${iconName}"></i>
+                        </div>
+                        <div class="software-meta">
+                            <div class="software-title-row">
+                                <span class="software-name" title="${pkg.name}">${pkg.name}</span>
+                                <span class="software-tag">${pkg.tag || 'Winget'}</span>
+                            </div>
+                            <div class="software-id-mono" title="${pkg.id}">${pkg.id}</div>
+                        </div>
+                    </div>
+                    <div class="software-desc">${pkg.desc}</div>
+                    <div class="software-card-bottom">
+                        <span class="category-badge" style="font-size: 11px; color: var(--text-muted);">${cat.category}</span>
+                        <div class="software-check-indicator">
+                            <i data-lucide="${isSelected ? 'check-circle-2' : 'circle'}" style="width: 16px; height: 16px;"></i>
+                            <span>${isSelected ? 'Selecionado' : 'Instalar'}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            totalRendered++;
+        });
+    });
+
+    if (totalRendered === 0) {
+        html = `
+            <div class="empty-state-box" style="grid-column: 1 / -1;">
+                <i data-lucide="package-search"></i>
+                <p>Nenhum aplicativo encontrado para "${searchTerm}".</p>
+                <button class="btn btn-secondary btn-sm mt-2" onclick="addCustomSoftwareToSelection('${searchTerm}')">
+                    <i data-lucide="plus"></i> Adicionar "${searchTerm}" como pacote personalizado
+                </button>
+            </div>
+        `;
+    }
+
+    grid.innerHTML = html;
+    refreshIcons();
+    updateSoftwareSelectionUI();
+}
+
+function toggleSoftwareSelection(pkgId) {
+    if (!pkgId) return;
+    if (state.selectedPackages.has(pkgId)) {
+        state.selectedPackages.delete(pkgId);
+    } else {
+        state.selectedPackages.add(pkgId);
+    }
+    renderSoftwareCatalog();
+}
+
+function filterSoftwareCategory(catName) {
+    state.activeSoftwareCategory = catName;
+    const chips = document.querySelectorAll('#pkg-category-filters .category-chip');
+    chips.forEach(c => {
+        if (catName === 'all' && c.textContent.trim() === 'Todos') {
+            c.classList.add('active');
+        } else if (c.textContent.trim() === catName || (catName === 'all' && c.getAttribute('onclick').includes("'all'"))) {
+            c.classList.add('active');
+        } else if (c.getAttribute('onclick').includes(`'${catName}'`)) {
+            c.classList.add('active');
+        } else {
+            c.classList.remove('active');
+        }
+    });
+    renderSoftwareCatalog();
+}
+
+function onSearchSoftwareCatalog() {
+    renderSoftwareCatalog();
+}
+
+function selectAllSoftware(selectAll = true) {
+    if (!selectAll) {
+        state.selectedPackages.clear();
+    } else {
+        state.packageCatalog.forEach(cat => {
+            if (state.activeSoftwareCategory === 'all' || cat.category === state.activeSoftwareCategory) {
+                cat.packages.forEach(pkg => state.selectedPackages.add(pkg.id));
+            }
+        });
+    }
+    renderSoftwareCatalog();
+}
+
+function addCustomSoftwareToSelection(defaultVal = '') {
+    const input = document.getElementById('custom-pkg-input');
+    const val = (defaultVal || input?.value || '').trim();
+    if (!val) return;
+
+    state.selectedPackages.add(val);
+    if (input) input.value = '';
+    renderSoftwareCatalog();
+}
+
+function updateSoftwareSelectionUI() {
+    const count = state.selectedPackages.size;
+    const floatingBar = document.getElementById('pkg-floating-bar');
+    const countBadge = document.getElementById('pkg-selected-count-badge');
+    const summaryText = document.getElementById('pkg-selected-summary-text');
+    const installBtn = document.getElementById('btn-install-selected-pkgs');
+
+    if (!floatingBar) return;
+
+    if (count > 0) {
+        floatingBar.classList.remove('hidden');
+        if (countBadge) countBadge.textContent = `${count} selecionado${count > 1 ? 's' : ''}`;
+        if (summaryText) {
+            const list = Array.from(state.selectedPackages);
+            summaryText.textContent = list.slice(0, 3).join(', ') + (list.length > 3 ? ` + ${list.length - 3} mais` : '');
+        }
+        if (installBtn) {
+            installBtn.innerHTML = `<i data-lucide="download-cloud"></i><span>Instalar no Computador (${count})</span>`;
+            refreshIcons();
+        }
+    } else {
+        floatingBar.classList.add('hidden');
+    }
+}
+
+function populatePackageTargetSelector() {
+    const select = document.getElementById('pkg-target-select');
+    if (!select) return;
+
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">-- Selecione uma máquina na bancada --</option>';
+
+    if (state.discoveredDevices && state.discoveredDevices.length > 0) {
+        state.discoveredDevices.forEach(d => {
+            const isReady = d.winrm_ready;
+            const label = `${d.ip} — ${d.hostname || 'PC'} (${d.vendor || 'Bancada'})${isReady ? ' [Pronto]' : ''}`;
+            const opt = document.createElement('option');
+            opt.value = d.ip;
+            opt.textContent = label;
+            if (d.ip === currentVal) opt.selected = true;
+            select.appendChild(opt);
+        });
+    }
+}
+
+function onPkgTargetChanged() {
+    const select = document.getElementById('pkg-target-select');
+    const manualInput = document.getElementById('pkg-manual-ip');
+    if (select && manualInput && select.value) {
+        manualInput.value = select.value;
+    }
+}
+
+function getSelectedPackageTargetIp() {
+    const select = document.getElementById('pkg-target-select');
+    const manualInput = document.getElementById('pkg-manual-ip');
+    return (manualInput?.value || select?.value || '').trim();
+}
+
+async function installSelectedPackages() {
+    const ip = getSelectedPackageTargetIp();
+    if (!ip) {
+        alert('⚠️ Por favor, selecione ou digite o IP da máquina alvo antes de iniciar a instalação.');
+        return;
+    }
+
+    const packages = Array.from(state.selectedPackages);
+    if (packages.length === 0) {
+        alert('⚠️ Selecione ao menos um aplicativo para instalar.');
+        return;
+    }
+
+    const isInteractive = document.getElementById('pkg-interactive-check')?.checked ?? true;
+    const consoleCard = document.getElementById('pkg-console-card');
+    const consoleOutput = document.getElementById('pkg-console-output');
+    const installBtn = document.getElementById('btn-install-selected-pkgs');
+
+    if (consoleCard) consoleCard.classList.remove('hidden');
+    if (consoleOutput) {
+        consoleOutput.textContent = `[*] Iniciando instalação de ${packages.length} aplicativo(s) em ${ip}...\n[*] Pacotes: ${packages.join(', ')}\n[*] Modo Interativo/Visível: ${isInteractive ? 'ATIVADO' : 'DESATIVADO'}\n\nConectando via WinRM/UltronEngine...\n`;
+    }
+
+    if (installBtn) {
+        installBtn.disabled = true;
+        installBtn.innerHTML = `<i data-lucide="loader-2" class="spin-icon"></i><span>Instalando...</span>`;
+        refreshIcons();
+    }
+
+    try {
+        const res = await fetch('/api/v1/packages/install', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ip: ip,
+                packages: packages,
+                interactive: isInteractive
+            })
+        });
+
+        const data = await res.json();
+        if (consoleOutput) {
+            if (data.success) {
+                consoleOutput.textContent += `\n✅ [SUCESSO] Instalação concluída com sucesso em ${ip}!\n\n${data.stdout || ''}`;
+            } else {
+                consoleOutput.textContent += `\n⚠️ [AVISO / DETALHES] Resposta da máquina ${ip}:\n\n${data.stdout || ''}\n${data.stderr || ''}`;
+            }
+        }
+    } catch (e) {
+        if (consoleOutput) {
+            consoleOutput.textContent += `\n❌ [ERRO] Falha ao comunicar com o servidor: ${e.message}`;
+        }
+    } finally {
+        if (installBtn) {
+            installBtn.disabled = false;
+            updateSoftwareSelectionUI();
+        }
+    }
+}
+
+async function upgradeAllPackagesOnTarget() {
+    const ip = getSelectedPackageTargetIp();
+    if (!ip) {
+        alert('⚠️ Por favor, selecione ou digite o IP da máquina alvo para atualizar todos os programas.');
+        return;
+    }
+
+    if (!confirm(`Deseja atualizar TODOS os programas instalados na máquina ${ip} para a versão mais recente?`)) {
+        return;
+    }
+
+    const consoleCard = document.getElementById('pkg-console-card');
+    const consoleOutput = document.getElementById('pkg-console-output');
+
+    if (consoleCard) consoleCard.classList.remove('hidden');
+    if (consoleOutput) {
+        consoleOutput.textContent = `[*] Executando 'winget upgrade --all' silencioso em ${ip}...\nAguarde a sincronização dos catálogos...\n`;
+    }
+
+    try {
+        const res = await fetch('/api/v1/packages/upgrade_all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip: ip })
+        });
+        const data = await res.json();
+        if (consoleOutput) {
+            consoleOutput.textContent += `\n${data.output || data.error || 'Processo de atualização concluído.'}`;
+        }
+    } catch (e) {
+        if (consoleOutput) consoleOutput.textContent += `\n❌ Erro: ${e.message}`;
+    }
+}
+
+async function backupPackagesOnTarget() {
+    const ip = getSelectedPackageTargetIp();
+    if (!ip) {
+        alert('⚠️ Selecione ou digite o IP da máquina alvo para exportar o backup de softwares.');
+        return;
+    }
+
+    const consoleCard = document.getElementById('pkg-console-card');
+    const consoleOutput = document.getElementById('pkg-console-output');
+
+    if (consoleCard) consoleCard.classList.remove('hidden');
+    if (consoleOutput) {
+        consoleOutput.textContent = `[*] Varrendo softwares instalados em ${ip} e gerando bundle UniGetUI (.json)...\n`;
+    }
+
+    try {
+        const res = await fetch('/api/v1/packages/backup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip: ip })
+        });
+        const data = await res.json();
+        if (data.success) {
+            if (consoleOutput) {
+                consoleOutput.textContent += `\n✅ [BACKUP CRIADO COM SUCESSO!]\n📁 Arquivo: ${data.filename}\n📦 Total de Softwares: ${data.packages_count}\n\nO bundle foi salvo no servidor e pode ser restaurado a qualquer momento em qualquer máquina.`;
+            }
+        } else {
+            if (consoleOutput) consoleOutput.textContent += `\n⚠️ Falha ao gerar backup: ${data.error || 'Erro desconhecido'}`;
+        }
+    } catch (e) {
+        if (consoleOutput) consoleOutput.textContent += `\n❌ Erro: ${e.message}`;
+    }
+}
+
+async function openBundlesModal() {
+    const modal = document.getElementById('main-modal');
+    const title = document.getElementById('modal-title');
+    const body = document.getElementById('modal-body');
+    if (!modal || !body) return;
+
+    if (title) title.textContent = '📦 Bundles & Backups de Softwares UniGetUI';
+    body.innerHTML = `
+        <div class="empty-state-box">
+            <i data-lucide="loader-2" class="spin-icon"></i>
+            <p>Carregando backups do servidor...</p>
+        </div>
+    `;
+    modal.classList.add('active');
+    refreshIcons();
+
+    try {
+        const res = await fetch('/api/v1/packages/bundles');
+        const data = await res.json();
+        const bundles = data.bundles || [];
+
+        if (bundles.length === 0) {
+            body.innerHTML = `
+                <div class="empty-state-box">
+                    <i data-lucide="folder-x"></i>
+                    <p>Nenhum bundle de backup salvo no laboratório ainda.</p>
+                    <p class="text-xs text-muted mt-1">Clique em "Fazer Backup de Apps (.json)" na aba de Softwares para exportar os programas de qualquer computador.</p>
+                </div>
+            `;
+        } else {
+            let html = `
+                <div class="form-stack">
+                    <p class="text-xs text-secondary mb-3">Selecione um bundle de softwares exportado anteriormente para restaurar na máquina atual:</p>
+                    <div style="display: flex; flex-direction: column; gap: 8px; max-height: 380px; overflow-y: auto;">
+            `;
+            bundles.forEach(b => {
+                html += `
+                    <div class="surface-card" style="padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--bg-surface-2); border-radius: var(--radius-md);">
+                        <div>
+                            <div style="font-weight: 600; font-size: 13px; color: var(--text-primary);">${b.filename}</div>
+                            <div class="text-xs text-muted mt-1">Computador: <b class="text-secondary">${b.hostname}</b> | Total: <span class="text-accent">${b.packages_count} softwares</span></div>
+                        </div>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="restoreBundleOnTarget('${b.filename}')">
+                            <i data-lucide="download"></i> Restaurar Neste PC
+                        </button>
+                    </div>
+                `;
+            });
+            html += `</div></div>`;
+            body.innerHTML = html;
+        }
+    } catch (e) {
+        body.innerHTML = `<p class="text-danger">Erro ao carregar backups: ${e.message}</p>`;
+    }
+    refreshIcons();
+}
+
+async function restoreBundleOnTarget(bundleName) {
+    const ip = getSelectedPackageTargetIp();
+    if (!ip) {
+        alert('⚠️ Por favor, selecione ou digite o IP da máquina alvo na aba de Softwares antes de restaurar.');
+        return;
+    }
+
+    if (!confirm(`Deseja restaurar o bundle "${bundleName}" no computador ${ip}?`)) {
+        return;
+    }
+
+    closeModal();
+    const consoleCard = document.getElementById('pkg-console-card');
+    const consoleOutput = document.getElementById('pkg-console-output');
+
+    if (consoleCard) consoleCard.classList.remove('hidden');
+    if (consoleOutput) {
+        consoleOutput.textContent = `[*] Restaurando bundle "${bundleName}" em ${ip}...\nInstalando softwares via ecossistema Winget/UniGetUI...\n`;
+    }
+
+    try {
+        const res = await fetch('/api/v1/packages/restore', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip: ip, bundle_name: bundleName })
+        });
+        const data = await res.json();
+        if (consoleOutput) {
+            consoleOutput.textContent += `\n${data.output || data.error || (data.success ? 'Restauração concluída com sucesso!' : 'Falha na restauração')}`;
+        }
+    } catch (e) {
+        if (consoleOutput) consoleOutput.textContent += `\n❌ Erro: ${e.message}`;
+    }
+}
+
 

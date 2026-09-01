@@ -139,6 +139,16 @@ class WinRMExecutor:
 
         return candidates
 
+    def _clean_script(self, script_code: str) -> str:
+        """Minifica o script removendo comentários e linhas em branco para reduzir o payload"""
+        lines = []
+        for line in script_code.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            lines.append(line)
+        return "\n".join(lines)
+
     def run_powershell_code(
         self,
         ip: str,
@@ -147,7 +157,8 @@ class WinRMExecutor:
         password: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Executa um código arbitrário em PowerShell na máquina remota com fallback de credenciais.
+        Executa um código arbitrário em PowerShell na máquina remota com fallback de credenciais
+        e proteção contra estouro de limite de linha de comando do Windows (8191 caracteres).
         """
         if not self.test_connection(ip):
             return {
@@ -159,6 +170,8 @@ class WinRMExecutor:
                 "ip": ip
             }
 
+        minified = self._clean_script(script_code)
+
         last_error = ""
         is_auth_error = False
         candidates = self._get_credential_candidates(ip, username, password)
@@ -166,13 +179,39 @@ class WinRMExecutor:
         for user, pwd in candidates:
             try:
                 session = self.get_session(ip, user, pwd)
-                response = session.run_ps(script_code)
                 
+                # Se o script minificado for pequeno (< 1800 chars), executa direto via run_ps
+                if len(minified) < 1800:
+                    response = session.run_ps(minified)
+                else:
+                    # Para scripts maiores, transfere via chunks de 1000 caracteres para contornar o limite do cmd.exe
+                    import base64
+                    b64_script = base64.b64encode(minified.encode("utf-8")).decode("ascii")
+                    chunk_sz = 1000
+                    chunks = [b64_script[i:i+chunk_sz] for i in range(0, len(b64_script), chunk_sz)]
+
+                    # Limpa arquivos temporários anteriores
+                    session.run_cmd("cmd.exe /c del /q %TEMP%\\ultron_task.b64 %TEMP%\\ultron_task.ps1 2>nul")
+
+                    # Envia chunks em base64
+                    for c in chunks:
+                        session.run_cmd(f'cmd.exe /c echo|set /p="{c}">>%TEMP%\\ultron_task.b64')
+
+                    # Decodifica e executa o script remotamente
+                    decode_exec = (
+                        "$p=[System.IO.Path]::Combine($env:TEMP,'ultron_task.ps1');"
+                        "$b=[System.IO.Path]::Combine($env:TEMP,'ultron_task.b64');"
+                        "$t=[System.IO.File]::ReadAllText($b);"
+                        "[System.IO.File]::WriteAllText($p,[System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($t)),[System.Text.Encoding]::UTF8);"
+                        "& $p"
+                    )
+                    response = session.run_ps(decode_exec)
+
                 stdout_str = response.std_out.decode("utf-8", errors="replace").strip() if response.std_out else ""
                 stderr_str = response.std_err.decode("utf-8", errors="replace").strip() if response.std_err else ""
-                
+
                 # Se autenticou com sucesso (mesmo que o script retorne erro de execução)
-                if response.status_code == 0 or ("credentials were rejected" not in stderr_str.lower() and "401" not in stderr_str and "access is denied" not in stderr_str.lower()):
+                if response.status_code == 0 or ("credentials were rejected" not in stderr_str.lower() and "401" not in stderr_str and "access is denied" not in stderr_str.lower() and "acesso negado" not in stderr_str.lower()):
                     # Salva no cache como credencial funcional
                     self.set_host_credentials(ip, user, pwd)
                     return {
@@ -189,7 +228,7 @@ class WinRMExecutor:
             except Exception as e:
                 last_error = str(e)
                 err_lower = str(e).lower()
-                if "credentials were rejected" in err_lower or "401" in err_lower or "unauthorized" in err_lower or "access is denied" in err_lower:
+                if "credentials were rejected" in err_lower or "401" in err_lower or "unauthorized" in err_lower or "access is denied" in err_lower or "acesso negado" in err_lower:
                     is_auth_error = True
                 else:
                     break
@@ -246,6 +285,12 @@ class WinRMExecutor:
                 elif isinstance(v, str):
                     clean_v = v.replace('"', '`"')
                     parts.append(f"-{k} \"{clean_v}\"")
+                elif isinstance(v, (list, tuple)):
+                    formatted_items = []
+                    for item in v:
+                        clean_item = str(item).replace('"', '`"')
+                        formatted_items.append(f'"{clean_item}"')
+                    parts.append(f"-{k} @({','.join(formatted_items)})")
             param_str = " ".join(parts)
 
         invoker = f"""

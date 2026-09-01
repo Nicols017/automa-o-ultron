@@ -94,6 +94,7 @@ class TrueConfBot:
         self._bot: Optional[Any] = None
         self._is_running = False
         self._p2p_chats: Dict[str, str] = {}  # user_id -> chat_id cache
+        self._processed_msg_ids: Dict[str, float] = {}
 
     @property
     def server_url(self) -> str:
@@ -197,32 +198,19 @@ class TrueConfBot:
                             self._p2p_chats[user_id] = str(chat_id)
                             self._p2p_chats[str(raw_author)] = str(chat_id)
 
+                        # Deduplicação de eventos repetidos do WebSocket
+                        msg_id = getattr(msg, "id", None) or f"{user_id}_{text}_{int(time.time() // 3)}"
+                        now = time.time()
+                        if msg_id in self._processed_msg_ids and (now - self._processed_msg_ids[msg_id]) < 4:
+                            logger.debug(f"Mensagem duplicada ignorada: {msg_id}")
+                            return
+                        self._processed_msg_ids[msg_id] = now
+                        if len(self._processed_msg_ids) > 200:
+                            self._processed_msg_ids = {k: v for k, v in self._processed_msg_ids.items() if now - v < 60}
+
                         logger.info(f"📩 Mensagem recebida de {user_id} (chat_id: {chat_id}): {text}")
 
-                        # 1. Se for pedido de download do agente, envia o arquivo .exe diretamente na conversa
-                        norm_text = _normalize_token(text)
-                        agent_kws = ["download", "baixar", "agente", "agent", "executavel", "exe", "arquivo"]
-                        is_download = any(k in norm_text for k in agent_kws) or text.strip() in ["13", "/download", "/agent", "/agente", "/exe", "/baixar"]
-
-                        if is_download:
-                            exe_paths = [
-                                os.path.join("static", "downloads", "UltronAgent.exe"),
-                                os.path.join("agent", "UltronAgent.exe")
-                            ]
-                            found_exe = next((p for p in exe_paths if os.path.exists(p)), None)
-                            if found_exe:
-                                try:
-                                    logger.info(f"📤 Enviando UltronAgent.exe diretamente para {user_id}...")
-                                    input_file = FSInputFile(path=found_exe, filename="UltronAgent.exe")
-                                    await msg.answer_document(
-                                        file=input_file,
-                                        caption="📎 UltronAgent.exe — Agente de Automação de Bancada (Pense Rede)"
-                                    )
-                                    logger.info(f"✅ UltronAgent.exe enviado com sucesso para {user_id}")
-                                except Exception as doc_err:
-                                    logger.error(f"Erro ao anexar documento via msg.answer_document: {doc_err}")
-
-                        # 2. Executa o ChatOps e responde com a instrução/menu
+                        # Executa o ChatOps e responde com a instrução/menu
                         reply = await asyncio.to_thread(self.chatops.handle_incoming_message, user_id, text)
                         if reply:
                             chunks = _split_message(reply)

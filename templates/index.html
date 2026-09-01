@@ -35,7 +35,7 @@
       }
     </style>
     <!-- Stylesheet -->
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.2.0">
 </head>
 <body>
     <!-- Top Navigation Header -->
@@ -107,6 +107,10 @@
             <button class="tab-item" data-tab="pipeline">
                 <i data-lucide="play-circle"></i>
                 <span>Esteira</span>
+            </button>
+            <button class="tab-item" data-tab="packages">
+                <i data-lucide="package"></i>
+                <span>Softwares & Apps</span>
             </button>
             <button class="tab-item" data-tab="reports">
                 <i data-lucide="file-text"></i>
@@ -695,6 +699,123 @@
 
             </div>
         </section>
+
+        <!-- SECTION 5: Gerenciador de Softwares & Apps (UniGetUI / Winget) -->
+        <section id="section-packages" class="view-section">
+            <div class="view-toolbar">
+                <div>
+                    <h1 class="view-heading">Gerenciador de Softwares & UniGetUI</h1>
+                    <p class="view-subheading">
+                        Catálogo universal de aplicativos, instalação multi-gerenciador, atualização em lote e bundles de backup.
+                    </p>
+                </div>
+                <div class="toolbar-actions">
+                    <button class="btn btn-secondary" onclick="openBundlesModal()">
+                        <i data-lucide="folder-archive"></i>
+                        <span>Bundles & Backups</span>
+                    </button>
+                    <button class="btn btn-primary" onclick="upgradeAllPackagesOnTarget()">
+                        <i data-lucide="arrow-up-circle"></i>
+                        <span>Atualizar Todos no PC</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Target Machine Selector & Quick Actions Strip -->
+            <div class="surface-card mb-4" style="padding: 14px 20px; background: rgba(16, 16, 20, 0.7); border: 1px solid var(--border-medium); border-radius: var(--radius-lg);">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px;">
+                    <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 280px;">
+                        <i data-lucide="monitor" style="color: var(--accent-cyan); width: 20px; height: 20px;"></i>
+                        <label for="pkg-target-select" style="font-weight: 600; font-size: 13.5px; white-space: nowrap;">Máquina Alvo:</label>
+                        <select id="pkg-target-select" class="form-select" style="max-width: 340px; padding: 6px 12px; font-size: 13px;" onchange="onPkgTargetChanged()">
+                            <option value="">-- Selecione uma máquina na bancada --</option>
+                        </select>
+                        <input type="text" id="pkg-manual-ip" class="form-input mono" placeholder="Ou digite o IP (ex: 192.168.57.166)" style="max-width: 260px; padding: 6px 12px; font-size: 13px;">
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="backupPackagesOnTarget()" title="Varre e salva bundle .json com todos os programas deste computador">
+                            <i data-lucide="save"></i> Fazer Backup de Apps (.json)
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Search, Custom ID & Category Filter Strip -->
+            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px;">
+                <div class="category-filter-chips" style="display: flex; flex-wrap: wrap; gap: 6px;" id="pkg-category-filters">
+                    <button class="category-chip active" onclick="filterSoftwareCategory('all')">Todos</button>
+                    <button class="category-chip" onclick="filterSoftwareCategory('Navegadores & Web')">Navegadores</button>
+                    <button class="category-chip" onclick="filterSoftwareCategory('Produtividade & Escritório')">Produtividade</button>
+                    <button class="category-chip" onclick="filterSoftwareCategory('Suporte & Acesso Remoto')">TI & Suporte</button>
+                    <button class="category-chip" onclick="filterSoftwareCategory('Desenvolvimento & TI')">Dev & DB</button>
+                    <button class="category-chip" onclick="filterSoftwareCategory('Comunicação & Reuniões')">Comunicação</button>
+                    <button class="category-chip" onclick="filterSoftwareCategory('Utilitários & Mídia')">Utilitários</button>
+                    <button class="category-chip" onclick="filterSoftwareCategory('Jogos & Criação 3D')">Games & 3D</button>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="position: relative;">
+                        <input type="text" id="pkg-search-input" class="form-input" placeholder="🔍 Buscar no catálogo..." style="padding-left: 32px; width: 240px; font-size: 13px;" oninput="onSearchSoftwareCatalog()">
+                        <i data-lucide="search" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--text-muted);"></i>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="selectAllSoftware(true)" title="Selecionar todos exibidos">Selecionar Todos</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="selectAllSoftware(false)" title="Limpar seleção">Limpar</button>
+                </div>
+            </div>
+
+            <!-- Custom Package Quick Input Form -->
+            <div class="surface-card mb-4" style="padding: 10px 16px; background: rgba(255,255,255,0.02); border: 1px dashed var(--border-medium); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+                    <i data-lucide="plus-circle" style="color: var(--accent-blue); width: 16px; height: 16px;"></i>
+                    <span style="font-size: 12.5px; color: var(--text-secondary);">Adicionar pacote personalizado por ID ou Nome:</span>
+                    <input type="text" id="custom-pkg-input" class="form-input mono" placeholder="Ex: Wireshark, Postman.Postman, Spotify.Spotify" style="flex: 1; padding: 4px 10px; font-size: 12.5px;">
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="addCustomSoftwareToSelection()">
+                    <i data-lucide="plus"></i> Incluir na Lista
+                </button>
+            </div>
+
+            <!-- Software App Store Grid -->
+            <div id="pkg-catalog-grid" class="software-catalog-grid">
+                <!-- Dynamically generated app cards -->
+            </div>
+
+            <!-- Floating Action Bar when Apps are Selected -->
+            <div id="pkg-floating-bar" class="pkg-floating-action-bar hidden">
+                <div class="floating-inner">
+                    <div class="floating-left">
+                        <span id="pkg-selected-count-badge" class="badge-status-ok" style="font-size: 13px; font-weight: 600; padding: 4px 12px;">0 selecionados</span>
+                        <span id="pkg-selected-summary-text" class="floating-summary-text">Nenhum software selecionado</span>
+                    </div>
+                    <div class="floating-right" style="display: flex; align-items: center; gap: 12px;">
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-secondary); cursor: pointer;">
+                            <input type="checkbox" id="pkg-interactive-check" checked style="accent-color: var(--accent-cyan);">
+                            Exibir no monitor (Termos auto-aceitos)
+                        </label>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="selectAllSoftware(false)">Desmarcar</button>
+                        <button type="button" id="btn-install-selected-pkgs" class="btn btn-primary" onclick="installSelectedPackages()">
+                            <i data-lucide="download-cloud"></i>
+                            <span>Instalar no Computador</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live Install Log & Output Console -->
+            <div id="pkg-console-card" class="surface-card mt-4 hidden">
+                <div class="card-header-clean">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <i data-lucide="terminal" class="text-accent"></i>
+                        <h2>Progresso da Instalação</h2>
+                    </div>
+                    <button class="btn-text-action" onclick="document.getElementById('pkg-console-card').classList.add('hidden')">
+                        <i data-lucide="x"></i> Fechar Console
+                    </button>
+                </div>
+                <div class="card-body">
+                    <pre id="pkg-console-output" class="terminal-box" style="max-height: 280px; overflow-y: auto; font-family: var(--font-mono); font-size: 12px; background: #000; padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); color: #38bdf8;"></pre>
+                </div>
+            </div>
+        </section>
     </div>
 
     <!-- Generic Modal Dialog -->
@@ -837,7 +958,7 @@
     <div id="toast-container" class="toast-stack"></div>
 
     <!-- Application Script -->
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v=2.2.0"></script>
     <script>
         // Initialize Lucide Icons
         document.addEventListener('DOMContentLoaded', () => {

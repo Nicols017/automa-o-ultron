@@ -1,17 +1,24 @@
-# Script de Coleta e Diagnóstico Profundo de Logs de Erro do Windows
 param (
     [int]$Days = 7
 )
 
-Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host " 🔍 ULTRON - COLETANDO TELEMETRIA E LOGS DE ERRO" -ForegroundColor Cyan
-Write-Host "==================================================" -ForegroundColor Cyan
+$loggedUser = ""
+try {
+    $loggedUser = (Get-CimInstance Win32_ComputerSystem).UserName
+    if (-not $loggedUser) {
+        $loggedUser = (Get-Process -IncludeUserName -Name explorer -ErrorAction SilentlyContinue | Select-Object -ExpandProperty UserName -Unique | Select-Object -First 1)
+    }
+} catch {}
 
+$cs = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
 $diagReport = @{
     computer_name = $env:COMPUTERNAME
     serial_number = (Get-CimInstance Win32_BIOS).SerialNumber
+    manufacturer = if ($cs.Manufacturer) { $cs.Manufacturer } else { "Generic" }
+    model = if ($cs.Model) { $cs.Model } else { "Generic Model" }
     cpu = (Get-CimInstance Win32_Processor).Name
     ram_gb = [math]::Round(((Get-CimInstance Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum).Sum / 1GB), 1)
+    logged_in_user = if ($loggedUser) { $loggedUser } else { "" }
     disks = @()
     bsod_dumps = @()
     critical_events = @()

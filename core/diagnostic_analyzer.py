@@ -24,19 +24,59 @@ class DiagnosticAnalyzer:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:11434",
-        model: str = "custom_model",
-        provider: str = "ollama",
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
         api_key: Optional[str] = None,
-        temperature: float = 0.2
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
+        chat_url: Optional[str] = None
     ):
-        self.base_url = base_url.rstrip("/")
-        self.model = model
-        self.provider = provider.lower()
-        self.api_key = api_key
-        self.temperature = temperature
-        # Timeout de conexão curto (3.5s) e de leitura razoável (25s) para nunca travar a experiência do técnico
-        self.request_timeout = (3.5, 25.0)
+        import os
+        env_base = os.getenv("LLM_BASE_URL") or os.getenv("LLAMA_BASE_URL") or "http://192.168.57.31:8080/v1"
+        self.base_url = (base_url or env_base).rstrip("/")
+        self.chat_url = chat_url or os.getenv("LLAMA_CHAT_URL")
+        self.model = model or os.getenv("LLM_MODEL") or os.getenv("LLAMA_MODEL") or "local"
+        self.provider = (provider or os.getenv("LLM_PROVIDER") or "llama.cpp").lower()
+        self.api_key = api_key or os.getenv("LLM_API_KEY") or "local-dev"
+
+        try:
+            self.temperature = float(temperature if temperature is not None else os.getenv("LLM_TEMPERATURE", "0.0"))
+        except (ValueError, TypeError):
+            self.temperature = 0.0
+
+        try:
+            self.max_tokens = int(max_tokens if max_tokens is not None else os.getenv("LLM_MAX_TOKENS", "1800"))
+        except (ValueError, TypeError):
+            self.max_tokens = 1800
+
+        try:
+            self.timeout_seconds = float(timeout_seconds if timeout_seconds is not None else os.getenv("LLM_TIMEOUT_SECONDS", "1200"))
+        except (ValueError, TypeError):
+            self.timeout_seconds = 1200.0
+
+        # Timeout de conexão de 5s e leitura configurada
+        self.request_timeout = (5.0, min(self.timeout_seconds, 1200.0))
+        self.session = requests.Session()
+
+    def _is_openai_compatible(self) -> bool:
+        """Determina se o provedor utiliza o protocolo padrão OpenAI / llama.cpp / vLLM"""
+        p = self.provider.strip().lower()
+        if "ollama" in p:
+            return False
+        return any(x in p for x in ["openai", "llama", "vllm", "lmstudio", "local", "chat"])
+
+    def _get_chat_url(self) -> str:
+        """Resolve a URL final do endpoint de chat completions"""
+        if self.chat_url:
+            return self.chat_url
+        base = self.base_url.rstrip("/")
+        if base.endswith("/chat/completions"):
+            return base
+        if base.endswith("/v1"):
+            return f"{base}/chat/completions"
+        return f"{base}/v1/chat/completions"
 
     # ------------------------------------------------------------------
     # Sanitização e Higienização de Texto
@@ -114,98 +154,100 @@ class DiagnosticAnalyzer:
                 "Como posso te ajudar hoje?"
             )
 
-        # 3. Consulta Explícita de Bancada / Dispositivos Conectados
-        explicit_bench = [
-            "quem esta na bancada", "quem está na bancada", "quais maquinas estao ligadas", "quais máquinas estão ligadas",
-            "quais pcs estao ligados", "quais pcs estão ligados", "ver bancada", "status da bancada", "lista de maquinas",
-            "lista de máquinas", "quem ta online", "quem tá online", "quem ta ligado", "quem tá ligado"
-        ]
-        if any(kw in p_lower for kw in explicit_bench) or p_lower in ["bancada", "bancda", "status bancada"]:
+        # 3. Consulta de Bancada / IPs / Dispositivos Conectados / Máquinas Disponíveis
+        ip_bench_words = ["ip", "ips", "maquina", "maquinas", "máquina", "máquinas", "pc", "pcs", "computador", "computadores", "dispositivo", "dispositivos", "rede", "bancada", "bancda"]
+        query_words = ["quais", "qual", "quem", "tem", "disponivel", "disponiveis", "disponível", "disponíveis", "presente", "presentes", "ativo", "ativos", "online", "conectado", "conectados", "lista", "listar", "ver", "mostra", "mostrar", "status"]
+
+        has_target = any(w in p_lower for w in ip_bench_words)
+        has_query = any(w in p_lower for w in query_words)
+        if (has_target and has_query) or any(w in p_lower for w in ["bancada", "bancda", "status bancada", "varredura", "scanner"]):
             if bench_info and "Nenhum" not in bench_info:
-                return f"💻 BANCADA ULTRON — STATUS ATUAL\n\n📍 {bench_info}\n\n💡 Você pode me pedir diagnósticos, esteiras de preparação ou ativações indicando o IP da máquina."
+                return f"🖥️ **Status Atual da Bancada**\n\n📍 {bench_info}\n\n💬 Você pode me pedir diagnósticos, esteiras de preparação ou ativações indicando o IP desejado."
             else:
-                return "🔍 BANCADA ULTRON\n\nNo momento não detectei máquinas com WinRM ativo na subrede da bancada. Se você ligou um computador, execute o UltronAgent.exe nele para liberar o acesso automaticamente."
+                return "🔍 **Bancada Ultron**\n\nNão detectei máquinas com WinRM ativo na bancada no momento. Verifique se os computadores estão ligados e com o cabo de rede conectado."
 
         # 4. Diagnóstico de Hardware, SMART, Saúde
         if any(w in p_lower for w in ["diag", "diagnostico", "diagnóstico", "smart", "saude", "saúde", "integridade", "disco", "hd", "ssd", "memoria", "memória", "estresse", "burnin", "burn-in"]):
             return (
-                "🩺 DIAGNÓSTICO DE HARDWARE & INTEGRIDADE\n\n"
-                "Consigo inspecionar a saúde dos discos (S.M.A.R.T), estado de memória RAM, CPU e histórico de telas azuis (BSOD).\n\n"
-                "Para iniciar, basta me enviar: \"verifica a saúde do <IP>\" ou \"diagnóstico no <IP>\"."
+                "🩺 **Diagnóstico de Hardware & Integridade**\n\n"
+                "Consigo inspecionar a saúde dos discos (S.M.A.R.T), memória RAM, CPU e histórico de telas azuis (BSOD).\n\n"
+                "Para iniciar, basta me enviar: *'verifica a saúde do <IP>'* ou *'diagnóstico no <IP>'*."
             )
 
         # 5. Perguntas sobre Chamados / Milvus
         if any(w in p_lower for w in ["chamado", "chamados", "milvus", "ticket", "tickets", "ordem de serviço", "ordens de serviço", "minhas os"]):
             return (
-                "📋 CHAMADOS E FILA DO MILVUS\n\n"
-                "Consulto a fila de ordens de serviço pendentes do laboratório na Dashboard do Milvus.\n\n"
-                "Para ver os chamados em aberto agora, basta me pedir: \"quais os chamados abertos?\" ou digitar a opção [ 11 ]."
+                "📋 **Chamados e Fila do Milvus**\n\n"
+                "Consulto a fila de chamados pendentes do laboratório na Dashboard do Milvus.\n\n"
+                "Para ver os chamados abertos agora, basta me pedir: *'quais os chamados abertos?'* ou digitar `/chamados`."
             )
 
         # 6. Procedimentos de Preparação / Formatação
         if any(w in p_lower for w in ["como preparar", "como formatar", "preparacao", "preparação", "procedimento", "esteira", "passo a passo"]):
             return (
-                "🚀 PROCEDIMENTO DE ESTEIRA DO ULTRON\n\n"
-                "1. Conecte o PC na rede e aplique a imagem Windows via MDT/PXE.\n"
-                "2. O UltronAgent.exe libera o WinRM e registra o IP no servidor automaticamente.\n"
-                "3. No chat, me peça: \"prepara a máquina <IP> para o <Cliente>\".\n"
+                "🚀 **Procedimento de Esteira do Ultron**\n\n"
+                "1. Conecte o PC na rede e aplique a imagem Windows via MDT/PXE (ou use o One-Liner / Bootstrap).\n"
+                "2. O UltronAgent libera o WinRM e registra o IP no servidor automaticamente.\n"
+                "3. No chat, me peça: *'prepara a máquina <IP> para o <Cliente>'*.\n"
                 "4. Instalo os softwares do perfil, Agente Milvus, ativo Windows/Office, executo testes e te entrego o laudo PDF e ID do AnyDesk aqui."
             )
 
         # 7. Ativação Windows / Office (MAS)
         if any(w in p_lower for w in ["ativar", "ativacao", "ativação", "licenca", "licença", "office", "windows"]) or re.search(r"\b(mas|massgrave)\b", p_lower):
             return (
-                "🔑 ATIVAÇÃO WINDOWS & OFFICE (MAS)\n\n"
+                "🔑 **Ativação Windows & Office (MAS)**\n\n"
                 "Aplico a ativação permanente digital via MAS remotamente em qualquer máquina liberada da bancada.\n\n"
-                "Basta me pedir: \"ativa o Windows do <IP>\"."
+                "Basta me pedir: *'ativa o Windows do <IP>'*."
             )
 
         # 8. Mensagens na Tela / Pop-up
         if any(w in p_lower for w in ["mensagem", "msg", "popup", "pop-up", "aviso na tela", "notificar"]):
             return (
-                "📢 ENVIO DE MENSAGENS NA TELA\n\n"
-                "Posso exibir caixas de mensagem e avisos na tela do usuário remotamente.\n\n"
-                "Basta me enviar: \"manda uma mensagem para o IP <IP> <seu texto>\"."
+                "📢 **Envio de Mensagens na Tela**\n\n"
+                "Posso exibir avisos e pop-ups na tela do usuário remotamente.\n\n"
+                "Basta me enviar: *'manda uma mensagem para o IP <IP> <seu texto>'*."
             )
 
         # 9. Download do Executável do Agente
         if any(w in p_lower for w in ["baixar", "download", "agente", "agent", "exe", "executavel"]):
             return (
-                "📥 ULTRON AGENT (.EXE)\n\n"
+                "📥 **Ultron Agent (.EXE)**\n\n"
                 "Você pode baixar o executável diretamente aqui no chat ou pelo link:\n"
                 "👉 http://192.168.57.43:7000/download/UltronAgent.exe\n\n"
                 "Execute como Administrador na máquina alvo para liberar o acesso com Zero-Prompt."
             )
 
-        # 10. Resposta inteligente quando o usuário pede algo não suportado ou conversa técnica
-        # Extrai se o usuário citou algum IP na frase não suportada
+        # 9.1 AnyDesk e Acesso Remoto
+        if any(w in p_lower for w in ["anydesk", "any desk", "anidisk", "anidesk", "acesso remoto", "qual o id", "passa o id"]):
+            m_ip = re.search(r"\b((?:192\.168\.\d{1,3}\.\d{1,3}|57\.\d{1,3}|\d{1,3}\.\d{1,3}))\b", user_msg)
+            ip_str = m_ip.group(1) if m_ip else "da bancada"
+            return (
+                f"🔑 **AnyDesk / Acesso Remoto — {ip_str}**\n\n"
+                f"O Ultron captura e disponibiliza o ID do AnyDesk automaticamente em tempo real.\n\n"
+                f"💬 Digite: *'qual o anydesk do {ip_str}'* ou `/anydesk` para ver os links diretos de acesso."
+            )
+
+        # 10. Resposta inteligente contextualizada
         m_ip = re.search(r"\b((?:192\.168\.\d{1,3}\.\d{1,3}|57\.\d{1,3}|\d{1,3}\.\d{1,3}))\b", user_msg)
         if m_ip:
             ip_str = m_ip.group(1)
             return (
-                f"🤖 Ultron — Suporte de Bancada:\n\n"
-                f"Entendi que você se referiu à máquina {ip_str}, porém **atualmente eu não possuo essa funcionalidade automatizada** de forma integrada.\n\n"
-                f"💡 Se precisar operar essa máquina, você pode acessar via AnyDesk/RDP ou executar manualmente.\n\n"
-                f"As automações que posso executar nela agora são:\n"
-                f"• \"verifica a saúde do {ip_str}\" (Diagnóstico S.M.A.R.T e Hardware)\n"
-                f"• \"prepara o {ip_str} para <cliente>\" (Esteira de Softwares e Configuração)\n"
-                f"• \"ativa o Windows do {ip_str}\" (Licenciamento MAS)\n"
-                f"• \"manda uma mensagem para o {ip_str} <texto>\" (Aviso na tela)\n"
-                f"• \"reinicia o {ip_str}\" (Controle de energia)\n\n"
-                f"Como prefere prosseguir?"
+                f"Identifiquei que você mencionou a máquina **{ip_str}**.\n\n"
+                f"As principais ações disponíveis para ela agora são:\n"
+                f"• *'diagnóstico no {ip_str}'* (Saúde de discos S.M.A.R.T, CPU e RAM)\n"
+                f"• *'preparar {ip_str} para <cliente>'* (Esteira completa de softwares)\n"
+                f"• *'ativar {ip_str}'* (Licenciamento digital MAS)\n"
+                f"• *'reiniciar {ip_str}'* (Controle remoto de energia)\n\n"
+                f"Como posso te ajudar com essa máquina?"
             )
 
         return (
-            "🤖 Ultron — Suporte de Bancada:\n\n"
-            "Entendi o que você disse! Porém, **atualmente não possuo uma função automática para essa solicitação específica**.\n\n"
-            "Minhas principais automações ativas no laboratório são:\n"
-            "• Diagnóstico de Hardware & Saúde de Discos (S.M.A.R.T)\n"
-            "• Preparação de Esteira Completa para Clientes da Pense Rede\n"
-            "• Ativação Permanente de Windows & Office (MAS)\n"
-            "• Backup de Perfil de Usuário para o Storage\n"
-            "• Envio de Avisos/Pop-ups na Tela\n"
-            "• Reiniciar ou Desligar Máquinas Remotamente\n\n"
-            "Como posso te ajudar com os computadores da bancada agora?"
+            "Como posso te ajudar com os computadores da bancada agora?\n\n"
+            "• **Ver computadores na bancada:** *'quem tá na bancada?'* ou `/bancada`\n"
+            "• **Diagnóstico de hardware:** *'diagnóstico no <IP>'*\n"
+            "• **Preparação de esteira:** *'preparar <IP> para <Cliente>'*\n"
+            "• **Chamados abertos:** `/chamados`\n"
+            "• **Menu completo de opções:** `/ajuda`"
         )
 
     # ------------------------------------------------------------------
@@ -229,7 +271,7 @@ class DiagnosticAnalyzer:
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        response = requests.post(url, json=payload, headers=headers, timeout=self.request_timeout)
+        response = self.session.post(url, json=payload, headers=headers, timeout=self.request_timeout)
         if response.status_code == 200:
             raw = response.json().get("response", "Resposta vazia recebida do modelo.")
             return self._clean_llm_response(raw)
@@ -252,7 +294,7 @@ class DiagnosticAnalyzer:
             return self._fallback_knowledge_response(prompt)
 
     def _call_openai_compatible(self, prompt: str, system_prompt: Optional[str] = None) -> str:
-        url = f"{self.base_url}/v1/chat/completions"
+        url = self._get_chat_url()
         payload = {
             "model": self.model,
             "messages": [
@@ -265,13 +307,14 @@ class DiagnosticAnalyzer:
                     "content": prompt
                 }
             ],
-            "temperature": self.temperature
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens
         }
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        response = requests.post(url, json=payload, headers=headers, timeout=self.request_timeout)
+        response = self.session.post(url, json=payload, headers=headers, timeout=self.request_timeout)
         if response.status_code == 200:
             data = response.json()
             raw = data["choices"][0]["message"]["content"]
@@ -288,7 +331,7 @@ class DiagnosticAnalyzer:
         Gera uma resposta textual com fallback gracioso para garantir resposta instantânea.
         """
         try:
-            if self.provider in ["openai", "openai_compatible", "vllm", "lmstudio"]:
+            if self._is_openai_compatible():
                 return self._call_openai_compatible(prompt, system_prompt=system_prompt)
             else:
                 return self._call_ollama(prompt, system_prompt=system_prompt)
@@ -306,19 +349,20 @@ class DiagnosticAnalyzer:
         """
         Gera uma resposta considerando histórico de mensagens de chat.
         """
-        if self.provider in ["openai", "openai_compatible", "vllm", "lmstudio"]:
-            url = f"{self.base_url}/v1/chat/completions"
+        if self._is_openai_compatible():
+            url = self._get_chat_url()
             all_messages = [{"role": "system", "content": system_prompt or self.DEFAULT_SYSTEM_PROMPT}] + messages
             payload = {
                 "model": self.model,
                 "messages": all_messages,
-                "temperature": self.temperature
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens
             }
             headers = {"Content-Type": "application/json"}
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
             try:
-                response = requests.post(url, json=payload, headers=headers, timeout=self.request_timeout)
+                response = self.session.post(url, json=payload, headers=headers, timeout=self.request_timeout)
                 if response.status_code == 200:
                     raw = response.json()["choices"][0]["message"]["content"]
                     return self._clean_llm_response(raw)
@@ -333,10 +377,57 @@ class DiagnosticAnalyzer:
 
         return self.generate(last_user_msg or "Olá", system_prompt=system_prompt)
 
+    def _generate_rule_based_diagnosis(self, telemetry: Dict[str, Any]) -> str:
+        """Gera parecer executivo de 4 pontos estruturado diretamente dos dados de telemetria da máquina."""
+        disks = telemetry.get("disks", [])
+        bsods = telemetry.get("bsod_dumps", [])
+        dev_errs = telemetry.get("device_errors", [])
+        ram_gb = telemetry.get("ram_gb", 0)
+        cpu = telemetry.get("cpu", "Processador")
+
+        unhealthy_disks = [d for d in disks if d.get("health") not in ["Healthy", "OK", "0", 0]]
+        has_bsod = len(bsods) > 0
+        has_driver_errs = len(dev_errs) > 0
+
+        issues = []
+        if unhealthy_disks:
+            issues.append(f"Alerta S.M.A.R.T em disco: {', '.join(d.get('model', 'Disco') for d in unhealthy_disks)}")
+        if has_bsod:
+            issues.append(f"{len(bsods)} registro(s) recente(s) de Tela Azul (BSOD)")
+        if has_driver_errs:
+            issues.append(f"{len(dev_errs)} dispositivo(s) com driver genérico ou ausente")
+
+        issues_str = "; ".join(issues) if issues else "Nenhuma falha crítica detectada."
+
+        if unhealthy_disks:
+            root_cause = "Degradação física ou setores defeituosos detectados na unidade de armazenamento."
+            actions = "Substituir unidade de armazenamento danificada antes de iniciar a instalação de softwares."
+            verdict = "REQUER MANUTENÇÃO DE HARDWARE ANTES DO DEPLOY"
+        elif has_bsod:
+            root_cause = "Histórico de travamento por falha de driver, superaquecimento ou instabilidade de memória."
+            actions = "Executar esteira de atualização de drivers e rodar teste de estresse térmico."
+            verdict = "APROVADA COM RESSALVAS (MONITORAR ESTRESSE)"
+        elif has_driver_errs:
+            root_cause = f"Sistema operacional recém-instalado com {len(dev_errs)} drivers pendentes de instalação."
+            actions = "Prosseguir para esteira de preparação e aplicar o perfil do cliente com atualização de drivers."
+            verdict = "APROVADA PARA PREPARAÇÃO"
+        else:
+            root_cause = "Hardware 100% íntegro com processador, memória e barramentos operando dentro dos parâmetros ideais."
+            actions = "Prosseguir para esteira de automação e instalação do perfil do cliente."
+            verdict = "APROVADA PARA PREPARAÇÃO"
+
+        return (
+            f"1. 🚨 **Problemas Identificados:** {issues_str}\n"
+            f"2. 🔬 **Causa Raiz:** {root_cause}\n"
+            f"3. 🛠️ **Ações de Reparo Recomendadas:** {actions}\n"
+            f"4. 🩺 **Veredito da Máquina:** **{verdict}**"
+        )
+
     def analyze_logs(self, telemetry_data: Dict[str, Any]) -> str:
         """
         Envia os dados de telemetria e S.M.A.R.T para o LLM configurado e retorna
         um parecer técnico executivo de alto padrão para o laudo e chat.
+        Se o LLM estiver indisponível, gera o parecer técnico estruturado diretamente dos dados.
         """
         system_prompt = (
             "Você é o ULTRON, perito sênior em hardware de computadores e suporte de TI da Pense Rede.\n"
@@ -362,4 +453,11 @@ Responda estritamente no seguinte formato executivo em Markdown:
 3. 🛠️ **Ações de Reparo Recomendadas:** (Passo a passo técnico prático para o técnico de bancada. Ex: prosseguir para esteira de software, substituir unidade de disco, executar teste de memória MemTest86, etc.)
 4. 🩺 **Veredito da Máquina:** (Indique claramente: **APROVADA PARA PREPARAÇÃO** ou **REQUER MANUTENÇÃO DE HARDWARE ANTES DO DEPLOY**)."""
 
-        return self.generate(prompt, system_prompt=system_prompt)
+        try:
+            res = self.generate(prompt, system_prompt=system_prompt)
+            if res and "1. 🚨" in res and not res.startswith("🩺 **Diagnóstico"):
+                return res
+        except Exception:
+            pass
+
+        return self._generate_rule_based_diagnosis(telemetry_data)

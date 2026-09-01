@@ -23,15 +23,69 @@ class ProfileManager:
         demo_mode = settings.get("network", {}).get("milvus_demo_mode", False)
         self.milvus = MilvusSyncService(base_url=milvus_url, api_token=milvus_token, demo_mode=demo_mode)
 
+    def _load_dotenv(self):
+        """Carrega variáveis do arquivo .env caso existam"""
+        env_file = os.path.join(self.base_dir, ".env")
+        if os.path.exists(env_file):
+            try:
+                with open(env_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k = k.strip()
+                            v = v.strip().strip("'\"")
+                            if k and k not in os.environ:
+                                os.environ[k] = v
+            except Exception:
+                pass
+
     def get_settings(self) -> Dict[str, Any]:
         """Retorna as configurações globais do servidor Ultron"""
+        self._load_dotenv()
+        cfg = {}
         if os.path.exists(self.settings_file):
             try:
                 with open(self.settings_file, "r", encoding="utf-8") as f:
-                    return yaml.safe_load(f) or {}
+                    cfg = yaml.safe_load(f) or {}
             except Exception as e:
                 print(f"⚠️ Erro ao ler {self.settings_file}: {e}")
-        return {}
+
+        # Suporte a variáveis de ambiente (.env)
+        if "llm" not in cfg:
+            cfg["llm"] = {}
+        if os.getenv("LLM_BASE_URL"):
+            cfg["llm"]["base_url"] = os.getenv("LLM_BASE_URL")
+        elif os.getenv("LLAMA_BASE_URL") and not cfg["llm"].get("base_url"):
+            cfg["llm"]["base_url"] = os.getenv("LLAMA_BASE_URL")
+        if os.getenv("LLAMA_CHAT_URL"):
+            cfg["llm"]["chat_url"] = os.getenv("LLAMA_CHAT_URL")
+        if os.getenv("LLM_API_KEY"):
+            cfg["llm"]["api_key"] = os.getenv("LLM_API_KEY")
+        if os.getenv("LLM_MODEL"):
+            cfg["llm"]["model"] = os.getenv("LLM_MODEL")
+        if os.getenv("LLM_TEMPERATURE"):
+            try:
+                cfg["llm"]["temperature"] = float(os.getenv("LLM_TEMPERATURE"))
+            except ValueError:
+                pass
+        if os.getenv("LLM_MAX_TOKENS"):
+            try:
+                cfg["llm"]["max_tokens"] = int(os.getenv("LLM_MAX_TOKENS"))
+            except ValueError:
+                pass
+        if os.getenv("LLM_TIMEOUT_SECONDS"):
+            try:
+                cfg["llm"]["timeout_seconds"] = float(os.getenv("LLM_TIMEOUT_SECONDS"))
+            except ValueError:
+                pass
+
+        if "network" not in cfg:
+            cfg["network"] = {}
+        if os.getenv("ULTRON_SERVER_IP"):
+            cfg["network"]["ultron_ip"] = os.getenv("ULTRON_SERVER_IP")
+
+        return cfg
 
     def get_milvus_config(self) -> Dict[str, Any]:
         """Retorna as configurações atuais da Dashboard Milvus"""

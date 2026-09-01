@@ -42,7 +42,15 @@ def test_bootstrap_endpoint():
     print(f"✅ Download UltronAgent.exe OK ({len(res_exe.content)} bytes)")
 
 def test_agent_endpoints():
-    print("\n--- Testando POST /api/v1/agent/register e /api/v1/agent/heartbeat ---")
+    print("\n--- Testando Endpoints do UltronAgent 2.0 (Register, Heartbeat, OTA, Reverse Tasks, Alertas, Cleanup) ---")
+    
+    # 1. Versão OTA
+    res_ver = client.get("/api/v1/agent/version")
+    assert res_ver.status_code == 200
+    assert res_ver.json()["version"] == "2.0.0"
+    print("✅ UltronAgent OTA Version OK: 2.0.0")
+
+    # 2. Registro com AnyDesk ID
     payload = {
         "serial": "AGENT-SERIAL-12345",
         "ip": "192.168.57.150",
@@ -53,6 +61,8 @@ def test_agent_endpoints():
         "ram_gb": 16.0,
         "mac": "00:14:22:AA:BB:CC",
         "client_id": "cliente_padrao",
+        "anydesk_id": "999888777",
+        "agent_version": "2.0.0",
         "disks": [{"model": "NVMe SSD 512GB", "health": "Healthy", "size_gb": 512, "type": "SSD"}]
     }
     res_reg = client.post("/api/v1/agent/register", json=payload)
@@ -60,10 +70,54 @@ def test_agent_endpoints():
     assert res_reg.json()["success"] is True
     print(f"✅ UltronAgent Registration OK: {res_reg.json()}")
 
-    res_hb = client.post("/api/v1/agent/heartbeat", json={"ip": "192.168.57.150", "hostname": "PC-BENCH-150"})
+    # 3. Heartbeat
+    res_hb = client.post("/api/v1/agent/heartbeat", json={
+        "ip": "192.168.57.150",
+        "hostname": "PC-BENCH-150",
+        "serial": "AGENT-SERIAL-12345",
+        "anydesk_id": "999888777",
+        "agent_version": "2.0.0",
+        "status": "IDLE"
+    })
     assert res_hb.status_code == 200
     assert res_hb.json()["status"] == "ok"
     print("✅ UltronAgent Heartbeat OK")
+
+    # 4. Alerta Proativo de Hardware (BSOD)
+    res_alert = client.post("/api/v1/agent/alert", json={
+        "type": "BSOD",
+        "ip": "192.168.57.150",
+        "serial": "AGENT-SERIAL-12345",
+        "hostname": "PC-BENCH-150",
+        "details": "Dump recente: 090126-12345-01.dmp (WHEA_UNCORRECTABLE_ERROR)"
+    })
+    assert res_alert.status_code == 200
+    assert res_alert.json()["success"] is True
+    print("✅ UltronAgent BSOD Alert OK")
+
+    # 5. Reverse Task Queue (Enqueue via Cleanup -> Poll -> Submit Result)
+    res_clean = client.post("/api/v1/agent/cleanup/AGENT-SERIAL-12345")
+    assert res_clean.status_code == 200
+    task_id = res_clean.json()["task_id"]
+    print(f"✅ UltronAgent Cleanup Enqueued: {task_id}")
+
+    res_poll = client.get("/api/v1/agent/tasks/AGENT-SERIAL-12345")
+    assert res_poll.status_code == 200
+    task_data = res_poll.json()
+    assert task_data.get("task_id") == task_id
+    assert task_data.get("type") == "cleanup"
+    print(f"✅ UltronAgent Reverse Task Polled OK: {task_data}")
+
+    res_result = client.post(f"/api/v1/agent/tasks/{task_id}/result", json={
+        "task_id": task_id,
+        "exit_code": 0,
+        "stdout": "Limpeza concluída com sucesso.",
+        "stderr": "",
+        "status": "SUCCESS"
+    })
+    assert res_result.status_code == 200
+    assert res_result.json()["success"] is True
+    print(f"✅ UltronAgent Task Result Submitted OK")
 
 def test_info_and_infra_endpoints():
     print("\n--- [2/6] Testando GET /api/v1/info e GET /api/v1/infra/status ---")
@@ -233,7 +287,7 @@ def test_trueconf_endpoint():
     })
     assert res_help.status_code == 200
     reply_help = res_help.json()["reply"]
-    assert "CENTRAL DE AUTOMAÇÃO ULTRON" in reply_help or "ULTRON" in reply_help
+    assert "central de automação ultron" in reply_help.lower() or "ultron" in reply_help.lower()
     print("✅ ChatOps /ajuda OK: Menu de comandos retornado com sucesso")
 
     # 3. ChatOps: Comando /bancada

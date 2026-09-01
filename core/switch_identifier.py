@@ -32,8 +32,11 @@ class SwitchIdentifier:
             print(f"⚠️ Erro ao carregar configurações de switch em {config_path}: {e}")
         return {}
 
-    def normalize_mac(self, mac: str) -> str:
-        """Normaliza qualquer formato de MAC para XX:XX:XX:XX:XX:XX em maiúsculo"""
+    _arp_cache: Dict[str, str] = {}
+    _arp_cache_time: float = 0.0
+
+    @staticmethod
+    def normalize_mac_static(mac: str) -> str:
         if not mac:
             return ""
         clean = re.sub(r'[^a-fA-F0-9]', '', mac).upper()
@@ -41,17 +44,43 @@ class SwitchIdentifier:
             return ":".join(clean[i:i+2] for i in range(0, 12, 2))
         return mac.upper()
 
-    def get_mac_from_arp(self, ip: str) -> Optional[str]:
-        """Tenta descobrir o MAC de um IP a partir da tabela ARP do sistema operacional"""
+    def normalize_mac(self, mac: str) -> str:
+        """Normaliza qualquer formato de MAC para XX:XX:XX:XX:XX:XX em maiúsculo"""
+        return self.normalize_mac_static(mac)
+
+    @classmethod
+    def _refresh_arp_cache(cls) -> Dict[str, str]:
+        import time
+        now = time.time()
+        if cls._arp_cache and (now - cls._arp_cache_time < 5.0):
+            return cls._arp_cache
+        table = {}
         try:
-            # No Windows: arp -a <ip> | No Linux: arp -n <ip> ou ip neigh show <ip>
+            cmd = ["arp", "-a"] if os.name == "nt" else ["ip", "neigh"]
+            output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=1.0).decode("utf-8", errors="ignore")
+            for line in output.splitlines():
+                m = re.search(r'(\d{1,3}(?:\.\d{1,3}){3})\s+.*?(?:([0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}))', line)
+                if m:
+                    table[m.group(1)] = cls.normalize_mac_static(m.group(2))
+            cls._arp_cache = table
+            cls._arp_cache_time = now
+        except Exception:
+            pass
+        return cls._arp_cache
+
+    def get_mac_from_arp(self, ip: str) -> Optional[str]:
+        """Tenta descobrir o MAC de um IP a partir da tabela ARP do sistema operacional (O(1) cached)"""
+        table = self._refresh_arp_cache()
+        if ip in table:
+            return table[ip]
+        try:
             cmd = ["arp", "-a", ip] if os.name == "nt" else ["ip", "neigh", "show", ip]
-            output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=2).decode("utf-8", errors="ignore")
-            
-            # Procura padrão de MAC
+            output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=0.8).decode("utf-8", errors="ignore")
             mac_match = re.search(r'([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]{2})', output)
             if mac_match:
-                return self.normalize_mac(mac_match.group(0))
+                mac_norm = self.normalize_mac(mac_match.group(0))
+                self._arp_cache[ip] = mac_norm
+                return mac_norm
         except Exception:
             pass
         return None
