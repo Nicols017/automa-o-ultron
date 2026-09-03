@@ -2233,13 +2233,13 @@ class TrueConfChatOps:
 
         srv_url = self._get_server_url()
         return (
-            f"📥 **ULTRON AGENT v{version} (.EXE) — PRONTO PARA USO**\n\n"
-            f"📎 O arquivo `{versioned_filename}` foi enviado como anexo diretamente aqui no seu chat!\n\n"
-            f"💡 **Novidades desta versão (v{version}):**\n"
+            f"📥 ULTRON AGENT v{version} (.EXE) — PRONTO PARA USO\n\n"
+            f"📎 O arquivo {versioned_filename} foi enviado como anexo diretamente aqui no seu chat!\n\n"
+            f"💡 Novidades desta versão (v{version}):\n"
             "• Auto-Atualização Silenciosa OTA (Over-The-Air)\n"
             "• Detecção em tempo real do Usuário Logado na máquina\n"
             "• Captura automática de ID do AnyDesk\n"
-            "• Auto-instalação como Serviço Windows SYSTEM (`UltronService`)\n"
+            "• Auto-instalação como Serviço Windows SYSTEM (UltronService)\n"
             "• Suporte a instalações e bundles universais do UniGetUI\n\n"
             "🌐 Link para download direto no navegador:\n"
             f"{srv_url}/download/UltronAgent.exe"

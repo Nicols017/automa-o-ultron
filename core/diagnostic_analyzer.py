@@ -232,7 +232,7 @@ class DiagnosticAnalyzer:
         if m_ip:
             ip_str = m_ip.group(1)
             return (
-                f"Encontrei a máquina **{ip_str}**, mas não entendi exatamente o que fazer com ela.\n\n"
+                f"Encontrei a máquina {ip_str}, mas não entendi exatamente o que fazer com ela.\n\n"
                 f"Se quiser, posso rodar as seguintes automações rápidas nela:\n"
                 f"▶️ `/diagnostico {ip_str}` para checar a saúde geral (Discos, RAM, BSOD).\n"
                 f"▶️ `/preparar {ip_str} <cliente>` para iniciar a esteira de formatação.\n"
