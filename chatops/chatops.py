@@ -783,6 +783,7 @@ class TrueConfChatOps:
             target = self._pending_message_target.pop(user_id)
             msg_content = _clean_chat_text(text)
             resolved_target = self._resolve_trueconf_user(target)
+            self._last_dispatched_message[user_id] = msg_content
             formatted = f"📢 Mensagem de Nicolas Silva:\n\n{msg_content}"
             if self.bot:
                 success = self.bot.send_direct_message(resolved_target, formatted)
