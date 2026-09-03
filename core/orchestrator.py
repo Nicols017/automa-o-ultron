@@ -90,11 +90,27 @@ class LabOrchestrator:
         log(f"🧠 [ULTRON] Processando diagnóstico com IA na RTX 5060 Ti...")
         ai_verdict = self.analyzer.analyze_logs(telemetry_data)
 
+        # Consulta Memória Permanente (Obsidian) pelo MAC Address
+        obsidian_history = ""
+        try:
+            mac_address = bench_info.get("mac")
+            if mac_address and mac_address != "Desconhecido":
+                from core.obsidian_memory import ObsidianMemory
+                obs_mem = ObsidianMemory()
+                search_results = obs_mem.search_notes(mac_address, limit=2)
+                if search_results:
+                    obsidian_history = search_results
+                    log(f"🗄️ Histórico prévio encontrado no Obsidian para o MAC {mac_address}!", level="warning")
+        except Exception as e:
+            import logging
+            logging.getLogger("obsidian").error(f"Erro ao consultar MAC no Obsidian: {e}")
+
         return {
             "ip": ip,
             "success": True,
             "telemetry": telemetry_data,
-            "ai_diagnosis": ai_verdict
+            "ai_diagnosis": ai_verdict,
+            "obsidian_history": obsidian_history
         }
 
     def run_pipeline(

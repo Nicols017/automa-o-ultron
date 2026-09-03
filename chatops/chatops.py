@@ -1736,20 +1736,26 @@ class TrueConfChatOps:
                     warranty_info = HardwareWarrantyService.lookup_warranty(serial_num, vendor=mfg, model=mdl)
                     warranty_str = f"{warranty_info.get('warranty_status')} ({warranty_info.get('vendor')})" if warranty_info.get("support_url") else "N/A"
 
+                    fields = {
+                        "Host": f"{telem.get('computer_name', 'N/A')} ({ip})",
+                        "Usuário Logado": user_str,
+                        "Serial": serial_num,
+                        "Garantia": warranty_str,
+                        "Processador": telem.get('cpu', 'N/A'),
+                        "Memória RAM": f"{telem.get('ram_gb', 'N/A')} GB",
+                        "Armazenamento": disks_str or 'Não detectado',
+                        "Telas Azuis": bsod_str,
+                        "Drivers": dev_str,
+                        "Parecer da IA": ai_diag
+                    }
+
+                    obs_hist = diag.get("obsidian_history")
+                    if obs_hist:
+                        fields["Histórico (Obsidian)"] = obs_hist
+
                     reply = self.msg_builder.success(
                         "DIAGNÓSTICO COMPLETO DE HARDWARE",
-                        {
-                            "Host": f"{telem.get('computer_name', 'N/A')} ({ip})",
-                            "Usuário Logado": user_str,
-                            "Serial": serial_num,
-                            "Garantia": warranty_str,
-                            "Processador": telem.get('cpu', 'N/A'),
-                            "Memória RAM": f"{telem.get('ram_gb', 'N/A')} GB",
-                            "Armazenamento": disks_str or 'Não detectado',
-                            "Telas Azuis": bsod_str,
-                            "Drivers": dev_str,
-                            "Parecer da IA": ai_diag
-                        },
+                        fields,
                         trace_id, emoji="🩺"
                     )
             except Exception as e:
