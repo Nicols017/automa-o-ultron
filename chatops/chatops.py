@@ -620,6 +620,28 @@ class TrueConfChatOps:
                 else:
                     return f"⚠️ Arquivo {versioned_filename} não foi encontrado no servidor para envio."
 
+        # 1.5. Salvar anotação na Memória de Longo Prazo (Obsidian)
+        m_obsidian = re.search(r"^(?:ul?tr?on\s*,?\s*)?(?:anota|anote|salva|salve|guarda|guarde|lembra|lembre|registra|registre)(?:\s+(?:que|isso|aí|ai))?\s*(?:que|sobre)?\s*([\s\S]+)$", text, re.IGNORECASE)
+        if m_obsidian and any(kw in norm_text for kw in ["anota", "salva", "guarda", "lembra", "registra", "anote", "salve", "guarde", "lembre", "registre"]):
+            conteudo_anotacao = m_obsidian.group(1).strip()
+            # Se tiver algo como "anota que a maquina 49 ta com problema de cooler"
+            # Vamos usar IA ou regex básico para extrair o título
+            try:
+                from core.obsidian_memory import ObsidianMemory
+                obs_mem = ObsidianMemory()
+                # Tenta achar um alvo para ser o título (ex: "maquina 49", "ip 10.0", etc)
+                m_title = re.search(r"(maquina\s*\d+|pc\s*\d+|ip\s*[\d\.]+)", conteudo_anotacao, re.IGNORECASE)
+                title = m_title.group(1).strip().title() if m_title else "Anotações Gerais"
+                
+                success = obs_mem.save_note(title, conteudo_anotacao, tags=["manual", "chatops"])
+                if success:
+                    return f"📝 Anotado na memória permanente! (Arquivo: `{title}.md` no Obsidian)"
+                else:
+                    return f"⚠️ Houve um erro ao tentar salvar a anotação na memória permanente."
+            except Exception as e:
+                logger.error(f"Erro ao salvar no obsidian via chat: {e}")
+                return f"⚠️ Erro ao salvar anotação: {e}"
+
         # 2. Consulta de usuários do TrueConf
         if any(kw in norm_text for kw in ["usuarios do trueconf", "usuarios da empresa", "lista usuarios", "usuarios trueconf", "quem esta no trueconf", "colaboradores"]):
             return self._cmd_list_trueconf_users()
@@ -2321,6 +2343,18 @@ class TrueConfChatOps:
     def _handle_ai_conversation(self, user_id: str, text: str) -> str:
         """Responde a conversas livres usando IA e Knowledge Engine com contexto de bancada instantâneo."""
         try:
+            # Recuperação de Memória do Obsidian (RAG)
+            obsidian_context = ""
+            try:
+                from core.obsidian_memory import ObsidianMemory
+                obs_mem = ObsidianMemory()
+                # A query pro obsidian pode ser o próprio texto do usuário
+                search_results = obs_mem.search_notes(text)
+                if search_results:
+                    obsidian_context = f"\n{search_results}\n"
+            except Exception as e:
+                logger.error(f"Erro ao buscar na memória do Obsidian: {e}")
+
             devices = self._get_cached_devices()
             clients = self.profile_mgr.list_clients()
 
@@ -2457,6 +2491,7 @@ Seja confiante quando possuir dados. Seja transparente quando não possuir. Nunc
                 f"- Clientes cadastrados: {client_summary}\n"
                 f"- Último IP operado: {self._last_user_ip.get(user_id, 'nenhum')}\n"
                 f"- Usuário atual: {user_title}\n"
+                f"{obsidian_context}"
                 f"{history_text}\n"
                 f"Mensagem atual do Usuário: \"{text}\"\n"
             )
