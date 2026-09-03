@@ -549,7 +549,7 @@ class TrueConfChatOps:
         # 0. Envio da MESMA MENSAGEM / Repetição contextual (Ex: "manda a mesma mensagem para arthur gabriel")
         if any(kw in norm_text for kw in ["mesma mensagem", "mesmo recado", "mesmo texto", "mesma msg"]):
             m_same = re.search(
-                r"(?:manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique|repete|repetir)\s+(?:a\s+)?(?:mesma\s+mensagem|mesmo\s+recado|mesmo\s+texto|mesma\s+msg)\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)?([a-zA-Z0-9._\s-]+)",
+                r"^(?:(?:manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique|repete|repetir)\s+)?(?:a\s+)?(?:mesma\s+mensagem|mesmo\s+recado|mesmo\s+texto|mesma\s+msg)\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)?([a-zA-Z0-9._\s\u00C0-\u00FF-]+)$",
                 text, re.IGNORECASE
             )
             if m_same:
