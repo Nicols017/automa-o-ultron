@@ -369,13 +369,9 @@ class DiagnosticAnalyzer:
             except Exception:
                 pass
 
-        last_user_msg = ""
-        for m in reversed(messages):
-            if m.get("role") == "user":
-                last_user_msg = m.get("content", "")
-                break
-
-        return self.generate(last_user_msg or "Olá", system_prompt=system_prompt)
+        history_str = "\n".join([f"{'Usuário' if m.get('role') == 'user' else 'Ultron'}: {m.get('content', '')}" for m in messages])
+        prompt = f"HISTÓRICO DA CONVERSA:\n{history_str}" if history_str else "Olá"
+        return self.generate(prompt, system_prompt=system_prompt)
 
     def _generate_rule_based_diagnosis(self, telemetry: Dict[str, Any]) -> str:
         """Gera parecer executivo de 4 pontos estruturado diretamente dos dados de telemetria da máquina."""
