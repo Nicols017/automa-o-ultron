@@ -700,7 +700,7 @@ class TrueConfChatOps:
         # 7. ENVIO IMEDIATO E DIRETO DE MENSAGEM PARA QUALQUER PESSOA NO TRUECONF
         # 7.1 Mensagem com texto entre aspas primeiro (ex: manda a mensagem "..." para Arthur Gabriel)
         m_text_first = re.search(
-            r"^(?:manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique)\s+(?:(?:uma|a)\s+)?(?:mensagem|recado|aviso|texto)?\s*[:\s]*[\"\'\“\‘]([\s\S]+?)[\"\'\”\’]\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)(?:usuario\s+|usuário\s+|colaborador\s+)?([a-zA-Z0-9._\s-]+)$",
+            r"^(?:manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique)\s+(?:(?:uma|a)\s+)?(?:mensagem|recado|aviso|texto)?\s*[:\s]*[\"\'\“\‘]([\s\S]+?)[\"\'\”\’]\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)(?:usuario\s+|usuário\s+|colaborador\s+)?([a-zA-Z0-9._\s\u00C0-\u00FF-]+)$",
             text, re.IGNORECASE
         )
         target_user = None
@@ -711,12 +711,12 @@ class TrueConfChatOps:
         else:
             # 7.2 Padrão com delimitadores: dizendo, falando, com o texto, que, ecrito, escrito, :, -, ou aspas
             m_delim = re.search(
-                r"^(?:manda\s+(?:um\s+)?(?:recado|aviso)|recado|aviso|manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique)\s+(?:(?:uma\s+)?(?:mensagem|recado|aviso|texto)\s+)?(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)?(?:usuario\s+|usuário\s+|colaborador\s+)?([a-zA-Z0-9._\s-]+?)\s*(?::\s*|\s+-\s*|\s+(?:com\s+o\s+texto|dizendo|falando|de\s+que|que|ecrito|escrito)\s*:?\s*|\s+[\"\'\“\‘])([\s\S]+)$",
+                r"^(?:manda\s+(?:um\s+)?(?:recado|aviso)|recado|aviso|manda|mandar|mande|envia|enviar|envie|fala|falar|avisa|avise|notifica|notifique)\s+(?:(?:uma\s+)?(?:mensagem|recado|aviso|texto)\s+)?(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+|a\s+|o\s+)?(?:usuario\s+|usuário\s+|colaborador\s+)?([a-zA-Z0-9._\s\u00C0-\u00FF-]+?)\s*(?::\s*|\s+-\s*|\s+(?:com\s+o\s+texto|dizendo|falando|de\s+que|que|ecrito|escrito)\s*:?\s*|\s+[\"\'\“\‘])([\s\S]+)$",
                 text, re.IGNORECASE
             )
             # 7.3 Padrão simplificado "fala pro Arthur Gabriel que ..."
             m_simple = re.search(
-                r"^(?:fala|falar|avisa|avise|notifica|notifique)\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+)(?:usuario\s+|usuário\s+|colaborador\s+)?([a-zA-Z0-9._\s-]+?)\s+(?:que\s+|de\s+que\s+)?([\s\S]+)$",
+                r"^(?:fala|falar|avisa|avise|notifica|notifique)\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+)(?:usuario\s+|usuário\s+|colaborador\s+)?([a-zA-Z0-9._\s\u00C0-\u00FF-]+?)\s+(?:que\s+|de\s+que\s+)?([\s\S]+)$",
                 text, re.IGNORECASE
             )
             m_res = m_delim or m_simple
@@ -725,7 +725,7 @@ class TrueConfChatOps:
                 msg_content = m_res.group(2).strip().strip("\"'“”‘’")
             elif not m_text_first:
                 m_missing = re.search(
-                    r"^(?:manda|mandar|mande|envia|enviar|envie)\s+(?:uma\s+)?(?:mensagem|recado|aviso)\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+)?([a-zA-Z0-9._\s-]+)$",
+                    r"^(?:manda|mandar|mande|envia|enviar|envie)\s+(?:uma\s+)?(?:mensagem|recado|aviso)\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+)?([a-zA-Z0-9._\s\u00C0-\u00FF-]+)$",
                     text, re.IGNORECASE
                 )
                 if m_missing:
@@ -2332,6 +2332,12 @@ class TrueConfChatOps:
 
             bench_summary = f"{len(devices)} dispositivos conectados ({winrm_str})" if devices else "Nenhum computador ativo detectado na bancada no momento."
             client_summary = ", ".join(f"{c.get('nome')} ({c.get('id')})" for c in clients[:8])
+
+            user_title = user_id
+            for u in self._get_trueconf_users_cached():
+                if u.get("id") == user_id:
+                    user_title = (u.get("display_name", "") or (u.get("first_name", "") + " " + u.get("last_name", ""))).strip()
+                    break
 
             if user_id not in self.user_conversations:
                 self.user_conversations[user_id] = []
