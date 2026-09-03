@@ -722,6 +722,14 @@ class TrueConfChatOps:
             if m_res:
                 target_user = m_res.group(1).strip().lstrip("@")
                 msg_content = m_res.group(2).strip().strip("\"'“”‘’")
+            elif not m_text_first:
+                m_missing = re.search(
+                    r"^(?:manda|mandar|mande|envia|enviar|envie)\s+(?:uma\s+)?(?:mensagem|recado|aviso)\s+(?:para\s+(?:o\s+|a\s+)?|pro\s+|pra\s+|ao\s+)?([a-zA-Z0-9._\s-]+)$",
+                    text, re.IGNORECASE
+                )
+                if m_missing:
+                    target = m_missing.group(1).strip()
+                    return f"💬 O que você quer que eu escreva para {target}?\n(Ex: envia uma mensagem para {target} dizendo 'tudo pronto')"
 
         if target_user and msg_content:
             msg_content = _clean_chat_text(msg_content)
@@ -734,10 +742,10 @@ class TrueConfChatOps:
                 if self.bot:
                     success = self.bot.send_direct_message(resolved_target, formatted)
                     if success:
-                        return f"🚀 **Mensagem enviada instantaneamente para @{resolved_target} no TrueConf!**\n\n📝 \"{msg_content}\""
-                    return f"⚠️ Não foi possível entregar a mensagem para @{resolved_target}. Verifique se o usuário existe no TrueConf Server."
+                        return f"🚀 Mensagem enviada para @{resolved_target} no TrueConf!\n\n📝 \"{msg_content}\""
+                    return f"⚠️ Não foi possível entregar a mensagem para @{resolved_target}. Verifique se o usuário existe."
                 else:
-                    return f"🚀 **Mensagem enviada instantaneamente para @{resolved_target} no TrueConf!**\n\n📝 \"{msg_content}\""
+                    return f"🚀 Mensagem enviada para @{resolved_target} no TrueConf!\n\n📝 \"{msg_content}\""
 
         # 8. Instalação e download de softwares em linguagem natural
         # Ex: "instala a steam 57.166", "instala chrome no 57.48", "baixa vlc e steam em 57.166", "poe office 57.166"
@@ -2433,9 +2441,9 @@ Seja confiante quando possuir dados. Seja transparente quando não possuir. Nunc
                 return reply
 
         except Exception as e:
-            pass
+            logger.error(f"Erro na IA conversacional: {e}")
 
-        return "Recebi sua mensagem. Como posso te ajudar na bancada agora?"
+        return "⚠️ Não entendi o comando. Se você está tentando enviar uma mensagem ou rodar uma automação, verifique a sintaxe ou digite `/ajuda`."
 
     # ------------------------------------------------------------------
     # Utilitários Internos
