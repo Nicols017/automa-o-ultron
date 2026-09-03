@@ -76,6 +76,7 @@ class TrueConfChatOps:
         self.user_conversations: Dict[str, List[Dict[str, str]]] = {}
         self._last_dispatched_message: Dict[str, str] = {}
         self._last_user_ip: Dict[str, str] = {}
+        self._pending_message_target: Dict[str, str] = {}
 
         # Cache de varredura de bancada para resposta instantânea
         self._cached_devices: List[Dict[str, Any]] = []
@@ -729,7 +730,8 @@ class TrueConfChatOps:
                 )
                 if m_missing:
                     target = m_missing.group(1).strip()
-                    return f"💬 O que você quer que eu escreva para {target}?\n(Ex: envia uma mensagem para {target} dizendo 'tudo pronto')"
+                    self._pending_message_target[user_id] = target
+                    return f"💬 O que você quer que eu escreva para {target}?\n(Basta digitar o texto da mensagem agora, sem nenhum comando)"
 
         if target_user and msg_content:
             msg_content = _clean_chat_text(msg_content)
@@ -775,6 +777,19 @@ class TrueConfChatOps:
             return self._cmd_interactive_menu()
 
         norm_text = _normalize_token(text)
+
+        # 0. Verifica se estamos aguardando o conteúdo de uma mensagem para alguém
+        if user_id in self._pending_message_target:
+            target = self._pending_message_target.pop(user_id)
+            msg_content = _clean_chat_text(text)
+            resolved_target = self._resolve_trueconf_user(target)
+            formatted = f"📢 Mensagem de Nicolas Silva:\n\n{msg_content}"
+            if self.bot:
+                success = self.bot.send_direct_message(resolved_target, formatted)
+                if success:
+                    return f"🚀 Mensagem enviada para @{resolved_target} no TrueConf!\n\n📝 \"{msg_content}\""
+                return f"⚠️ Não foi possível entregar a mensagem para @{resolved_target}. Verifique se o usuário existe."
+            return f"🚀 Mensagem enviada para @{resolved_target} no TrueConf!\n\n📝 \"{msg_content}\""
 
         # 1. Sessão interativa pendente (Wizard passo a passo ou Solicitação de Senha)
         if user_id in self.user_sessions:
