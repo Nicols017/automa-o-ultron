@@ -2436,13 +2436,22 @@ Diga apenas algo simples e direto, como: "Ainda não consigo automatizar isso. S
 # 21. POSTURA
 Seja confiante quando possuir dados. Seja transparente quando não possuir. Nunca finja certeza. Não aja como um menu automático. Você é o Ultron da bancada da Pense Rede: técnico, rápido, contextual e natural."""
 
+            history_lines = []
+            for m in self.user_conversations[user_id][:-1]:
+                role_pt = "Usuário" if m["role"] == "user" else "Ultron"
+                history_lines.append(f"{role_pt}: {m['content']}")
+            history_text = "\n".join(history_lines)
+            if history_text:
+                history_text = f"\nHISTÓRICO RECENTE DA CONVERSA:\n{history_text}\n"
+
             prompt = (
                 f"CONTEXTO DO LABORATÓRIO:\n"
                 f"- Bancada: {bench_summary}\n"
                 f"- Clientes cadastrados: {client_summary}\n"
                 f"- Último IP operado: {self._last_user_ip.get(user_id, 'nenhum')}\n"
-                f"- Usuário atual: {user_title}\n\n"
-                f"Mensagem recebida: \"{text}\"\n"
+                f"- Usuário atual: {user_title}\n"
+                f"{history_text}\n"
+                f"Mensagem atual do Usuário: \"{text}\"\n"
             )
 
             self._ensure_orchestrator()
