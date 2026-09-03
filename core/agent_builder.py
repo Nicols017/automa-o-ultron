@@ -51,7 +51,7 @@ class AgentBuilder:
         """Verifica se o código fonte C# é mais recente que o executável compilado"""
         if not os.path.exists(self.agent_cs_path):
             return False
-        if not os.path.exists(self.agent_exe_path) or not os.path.exists(self.static_exe_path):
+        if not os.path.exists(self.agent_exe_path):
             return True
         cs_mtime = os.path.getmtime(self.agent_cs_path)
         exe_mtime = os.path.getmtime(self.agent_exe_path)
@@ -59,8 +59,16 @@ class AgentBuilder:
 
     def compile(self, force: bool = False) -> Dict[str, Any]:
         """Recompila o UltronAgent.cs para UltronAgent.exe e atualiza os diretórios de distribuição"""
+        # Se não for compilar, pelo menos garante que o static_exe_path seja a versão mais recente
         if not force and not self.needs_compilation():
             version = self.get_source_version()
+            if os.path.exists(self.agent_exe_path):
+                if not os.path.exists(self.static_exe_path) or os.path.getmtime(self.agent_exe_path) > os.path.getmtime(self.static_exe_path):
+                    shutil.copy2(self.agent_exe_path, self.static_exe_path)
+                    
+                versioned_exe = os.path.join(self.downloads_dir, f"UltronAgent_v{version}.exe")
+                if not os.path.exists(versioned_exe) or os.path.getmtime(self.agent_exe_path) > os.path.getmtime(versioned_exe):
+                    shutil.copy2(self.agent_exe_path, versioned_exe)
             return {
                 "success": True,
                 "recompiled": False,

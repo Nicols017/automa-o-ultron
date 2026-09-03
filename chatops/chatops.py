@@ -28,6 +28,7 @@ from core.public_tools import (
     NetworkDiagnosticsService,
     WindowsErrorLookupService,
 )
+from core.reliability import IntentRouter, MessageBuilder, TraceLogger, new_trace_id, DEFAULT_INTENTS, log
 
 def _clean_chat_text(s: str) -> str:
     """Higieniza tags HTML (<br>, <span>, etc.) e decodifica entidades HTML (&quot;, &#39;, &amp;) do TrueConf"""
@@ -65,6 +66,10 @@ class TrueConfChatOps:
         self.error_svc   = WindowsErrorLookupService()
         self.cve_svc     = CveSecurityService()
         self.wan_svc     = NetworkDiagnosticsService()
+        
+        # Reliability Layer
+        self.intent_router = IntentRouter(DEFAULT_INTENTS)
+        self.msg_builder = MessageBuilder()
 
         # Sessões interativas e credenciais por técnico
         self.user_sessions: Dict[str, Dict[str, Any]] = {}
@@ -196,7 +201,9 @@ class TrueConfChatOps:
             "me envia o agente", "ultronagent", "arquivo do agent", "arquivo do agente",
             "arquivo executavel", "arquivo de download", "download", "baixar", "o executavel",
             "o arquivo de download", "disponivel o download", "mandar o executavel", "mandar o exe",
-            "manda o arquivo", "me manda o arquivo", "passa o arquivo", "me passa o arquivo"
+            "manda o arquivo", "me manda o arquivo", "passa o arquivo", "me passa o arquivo",
+            "versão atualizada", "versao atualizada", "agente atualizado", "me envie o agente",
+            "envie o agente"
         ]
         if any(kw in norm_text for kw in agent_dl_kws) and not any(w in norm_text for w in ["mensagem", "msg", "popup", "texto", "aviso"]):
             return self._cmd_download_agent(user_id)
@@ -752,6 +759,9 @@ class TrueConfChatOps:
         Recebe qualquer mensagem enviada ao bot no chat privado do TrueConf.
         Suporta linguagem natural livre, menus interativos, wizards passo a passo e autenticação dinâmica.
         """
+        trace_id = new_trace_id()
+        log.info("incoming_message", trace_id, user_id=user_id, message=message[:100])
+        
         text = _clean_chat_text(message or "")
         if not text:
             return self._cmd_interactive_menu()
@@ -769,29 +779,29 @@ class TrueConfChatOps:
 
         # 2. Navegação rápida pelo Menu Numérico Principal
         menu_choices = {
-            "1": lambda: self._cmd_bancada(user_id),
-            "01": lambda: self._cmd_bancada(user_id),
-            "2": lambda: self._start_wizard_diagnostico(user_id),
-            "02": lambda: self._start_wizard_diagnostico(user_id),
-            "3": lambda: self._start_wizard_msg(user_id),
-            "03": lambda: self._start_wizard_msg(user_id),
-            "4": lambda: self._start_wizard_preparar(user_id),
-            "04": lambda: self._start_wizard_preparar(user_id),
-            "5": lambda: self._start_wizard_ativar(user_id),
-            "05": lambda: self._start_wizard_ativar(user_id),
-            "6": lambda: self._start_wizard_backup(user_id),
-            "06": lambda: self._start_wizard_backup(user_id),
-            "7": lambda: self._start_wizard_dominio(user_id),
-            "07": lambda: self._start_wizard_dominio(user_id),
-            "8": lambda: self._start_wizard_softwares(user_id),
-            "08": lambda: self._start_wizard_softwares(user_id),
-            "9": lambda: self._start_wizard_power(user_id),
-            "09": lambda: self._start_wizard_power(user_id),
-            "10": lambda: self._cmd_clientes(),
-            "11": lambda: self._cmd_chamados(),
-            "12": lambda: self._cmd_laudos([]),
-            "13": lambda: self._cmd_download_agent(user_id),
-            "14": lambda: self._start_wizard_limpar(user_id),
+            "1": lambda: self._cmd_bancada(user_id, trace_id=trace_id),
+            "01": lambda: self._cmd_bancada(user_id, trace_id=trace_id),
+            "2": lambda: self._start_wizard_diagnostico(user_id, trace_id=trace_id),
+            "02": lambda: self._start_wizard_diagnostico(user_id, trace_id=trace_id),
+            "3": lambda: self._start_wizard_msg(user_id, trace_id=trace_id),
+            "03": lambda: self._start_wizard_msg(user_id, trace_id=trace_id),
+            "4": lambda: self._start_wizard_preparar(user_id, trace_id=trace_id),
+            "04": lambda: self._start_wizard_preparar(user_id, trace_id=trace_id),
+            "5": lambda: self._start_wizard_ativar(user_id, trace_id=trace_id),
+            "05": lambda: self._start_wizard_ativar(user_id, trace_id=trace_id),
+            "6": lambda: self._start_wizard_backup(user_id, trace_id=trace_id),
+            "06": lambda: self._start_wizard_backup(user_id, trace_id=trace_id),
+            "7": lambda: self._start_wizard_dominio(user_id, trace_id=trace_id),
+            "07": lambda: self._start_wizard_dominio(user_id, trace_id=trace_id),
+            "8": lambda: self._start_wizard_softwares(user_id, trace_id=trace_id),
+            "08": lambda: self._start_wizard_softwares(user_id, trace_id=trace_id),
+            "9": lambda: self._start_wizard_power(user_id, trace_id=trace_id),
+            "09": lambda: self._start_wizard_power(user_id, trace_id=trace_id),
+            "10": lambda: self._cmd_clientes(trace_id=trace_id),
+            "11": lambda: self._cmd_chamados(trace_id=trace_id),
+            "12": lambda: self._cmd_laudos([], trace_id=trace_id),
+            "13": lambda: self._cmd_download_agent(user_id, trace_id=trace_id),
+            "14": lambda: self._start_wizard_limpar(user_id, trace_id=trace_id),
         }
 
         if text in menu_choices:
@@ -835,59 +845,59 @@ class TrueConfChatOps:
 
         routes = {
             frozenset(["/bancada", "/status", "/maquinas", "/lab", "/hosts"]):
-                lambda: self._cmd_bancada(user_id),
+                lambda: self._cmd_bancada(user_id, trace_id=trace_id),
             frozenset(["/clientes", "/perfis", "/empresas"]):
-                lambda: self._cmd_clientes(),
+                lambda: self._cmd_clientes(trace_id=trace_id),
             frozenset(["/chamados", "/milvus", "/tickets"]):
-                lambda: self._cmd_chamados(),
+                lambda: self._cmd_chamados(trace_id=trace_id),
             frozenset(["/preparar", "/iniciar", "/deploy", "/formatar"]):
-                lambda: self._cmd_preparar(user_id, parts[1:]),
+                lambda: self._cmd_preparar(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/diagnostico", "/diag", "/inspecionar", "/smart"]):
-                lambda: self._cmd_diagnostico(user_id, parts[1:]),
+                lambda: self._cmd_diagnostico(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/ativar", "/ativacao", "/mas"]):
-                lambda: self._cmd_ativar(user_id, parts[1:]),
+                lambda: self._cmd_ativar(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/backup", "/storage"]):
-                lambda: self._cmd_backup(user_id, parts[1:]),
+                lambda: self._cmd_backup(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/dominio", "/domain", "/ad"]):
-                lambda: self._cmd_dominio(user_id, parts[1:]),
+                lambda: self._cmd_dominio(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/softwares", "/apps", "/instalar"]):
-                lambda: self._cmd_softwares(user_id, parts[1:]),
+                lambda: self._cmd_softwares(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/reiniciar", "/reboot"]):
-                lambda: self._cmd_power(user_id, parts[1:], "restart"),
+                lambda: self._cmd_power(user_id, parts[1:], "restart", trace_id=trace_id),
             frozenset(["/desligar", "/shutdown"]):
-                lambda: self._cmd_power(user_id, parts[1:], "shutdown"),
+                lambda: self._cmd_power(user_id, parts[1:], "shutdown", trace_id=trace_id),
             frozenset(["/msg", "/mensagem", "/notificar", "/alerta", "/aviso", "/popup"]):
-                lambda: self._cmd_message(user_id, parts[1:]),
+                lambda: self._cmd_message(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/laudos", "/laudo", "/relatorios"]):
-                lambda: self._cmd_laudos(parts[1:]),
+                lambda: self._cmd_laudos(parts[1:], trace_id=trace_id),
             frozenset(["/download", "/agent", "/agente", "/exe", "/baixar"]):
-                lambda: self._cmd_download_agent(user_id),
+                lambda: self._cmd_download_agent(user_id, trace_id=trace_id),
             frozenset(["/erro", "/error", "/bsod"]):
-                lambda: self._cmd_erro(parts[1:]),
+                lambda: self._cmd_erro(parts[1:], trace_id=trace_id),
             frozenset(["/cve", "/seguranca", "/vuln"]):
-                lambda: self._cmd_cve(parts[1:]),
+                lambda: self._cmd_cve(parts[1:], trace_id=trace_id),
             frozenset(["/clima", "/termica", "/temperatura"]):
-                lambda: self._cmd_clima(),
+                lambda: self._cmd_clima(trace_id=trace_id),
             frozenset(["/wan", "/ip"]):
-                lambda: self._cmd_wan(),
+                lambda: self._cmd_wan(trace_id=trace_id),
             frozenset(["/anydesk", "/acesso", "/id"]):
-                lambda: self._cmd_anydesk(user_id, parts[1:]),
+                lambda: self._cmd_anydesk(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/garantia", "/warranty", "/tag", "/serial"]):
-                lambda: self._cmd_garantia(user_id, parts[1:]),
+                lambda: self._cmd_garantia(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/senha", "/pwned", "/hibp", "/seguranca_senha"]):
-                lambda: self._cmd_senha(parts[1:]),
+                lambda: self._cmd_senha(parts[1:], trace_id=trace_id),
             frozenset(["/backup_softwares", "/bkp_softwares", "/exportar_softwares", "/unigetui_backup"]):
-                lambda: self._cmd_backup_softwares(user_id, parts[1:]),
+                lambda: self._cmd_backup_softwares(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/restaurar_softwares", "/restore_softwares", "/importar_softwares", "/unigetui_restore"]):
-                lambda: self._cmd_restaurar_softwares(user_id, parts[1:]),
+                lambda: self._cmd_restaurar_softwares(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/atualizar_softwares", "/upgrade_softwares", "/atualizar_tudo", "/upgrade_all"]):
-                lambda: self._cmd_upgrade_softwares(user_id, parts[1:]),
+                lambda: self._cmd_upgrade_softwares(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/buscar_software", "/buscar_app", "/pesquisar_software", "/procurar_app"]):
-                lambda: self._cmd_buscar_software(user_id, parts[1:]),
+                lambda: self._cmd_buscar_software(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/bundles", "/backups_softwares", "/list_bundles"]):
-                lambda: self._cmd_list_bundles(),
+                lambda: self._cmd_list_bundles(trace_id=trace_id),
             frozenset(["/limpar", "/clean", "/limpeza", "/desinstalar"]):
-                lambda: self._cmd_limpar(user_id, parts[1:]),
+                lambda: self._cmd_limpar(user_id, parts[1:], trace_id=trace_id),
         }
 
         for keywords, handler in routes.items():
@@ -912,7 +922,26 @@ class TrueConfChatOps:
         if hex_match:
             return self._cmd_erro([hex_match.group(1)])
 
-        # 7. Reconhecimento Avançado de Intenções em Linguagem Natural
+        # Reliability Layer: IntentRouter (Prioridade para intenções robustas)
+        intent_match = self.intent_router.classify(text, trace_id=trace_id)
+        if intent_match.intent:
+            host = intent_match.entities.get("host")
+            if intent_match.intent == "instalar_software":
+                return self._cmd_softwares(user_id, [host, "tudo"], trace_id=trace_id) if host else self._start_wizard_softwares(user_id, trace_id=trace_id)
+            elif intent_match.intent == "verificar_saude":
+                return self._cmd_diagnostico(user_id, [host], trace_id=trace_id) if host else self._start_wizard_diagnostico(user_id, trace_id=trace_id)
+            elif intent_match.intent == "preparar_maquina":
+                return self._cmd_preparar(user_id, [host, "padrao"], trace_id=trace_id) if host else self._start_wizard_preparar(user_id, trace_id=trace_id)
+            elif intent_match.intent == "ativar_windows":
+                return self._cmd_ativar(user_id, [host], trace_id=trace_id) if host else self._start_wizard_ativar(user_id, trace_id=trace_id)
+            elif intent_match.intent == "enviar_mensagem_tela":
+                return self._cmd_message(user_id, [host, "Olá, do Ultron!"], trace_id=trace_id) if host else self._start_wizard_msg(user_id, trace_id=trace_id)
+            elif intent_match.intent == "reiniciar_maquina":
+                return self._cmd_power(user_id, [host], "restart", trace_id=trace_id) if host else self._start_wizard_power(user_id, trace_id=trace_id)
+        elif intent_match.confidence > 0.2:  # Só pede clarificação se houver o mínimo de match
+            return self.intent_router.build_clarification(intent_match, text)
+
+        # Fallback para regex antigo caso o IntentRouter não classifique as intenções nativas
         natural_reply = self._match_natural_intent(user_id, text, norm_text)
         if natural_reply:
             return natural_reply
@@ -1563,9 +1592,10 @@ class TrueConfChatOps:
 
         return "\n".join(lines)
 
-    def _cmd_preparar(self, user_id: str, args: List[str]) -> str:
+    def _cmd_preparar(self, user_id: str, args: List[str], trace_id: str = None) -> str:
+        trace_id = trace_id or new_trace_id()
         if not args:
-            return "⚠️ Uso: /preparar <IP> <cliente>\nExemplo: /preparar 192.168.57.25 white_group"
+            return self.msg_builder.error(WinRMResult(ok=False, host="N/A", command="/preparar", error="Uso: /preparar <IP> <cliente>"), trace_id)
 
         ip        = args[0]
         client_id = args[1] if len(args) > 1 else "cliente_padrao"
@@ -1578,6 +1608,7 @@ class TrueConfChatOps:
                 client_id = clients[idx].get("id", client_id)
 
         def _worker():
+            log.info("task_started", trace_id, ip=ip, action="preparar_maquina", client_id=client_id)
             self._ensure_orchestrator()
             self.orchestrator.run_pipeline(
                 ip=ip,
@@ -1588,30 +1619,28 @@ class TrueConfChatOps:
 
         threading.Thread(target=_worker, daemon=True).start()
 
-        return (
-            f"🚀 ESTEIRA DE PREPARAÇÃO INICIADA\n\n"
-            f"📍 Computador: {ip}\n"
-            f"🏢 Perfil do Cliente: {client_id.upper()}\n\n"
-            f"Etapas em execução automática:\n"
-            f"1. Coleta de telemetria inicial & WinRM\n"
-            f"2. Instalação do Agente Milvus & Softwares Padrão\n"
-            f"3. Instalação dos softwares do cliente (Winget)\n"
-            f"4. Domínio Active Directory (se configurado)\n"
-            f"5. Ativação permanente Windows/Office (MAS)\n"
-            f"6. Teste de estresse térmico de hardware\n"
-            f"7. Emissão do Laudo Técnico em PDF\n\n"
-            f"📱 Você receberá o ID do AnyDesk e o laudo em PDF aqui assim que concluir."
+        return self.msg_builder.success(
+            "ESTEIRA DE PREPARAÇÃO INICIADA",
+            {
+                "Computador": ip,
+                "Perfil do Cliente": client_id.upper(),
+                "Status": "Etapas em execução automática. Você receberá o ID do AnyDesk e o laudo em PDF aqui assim que concluir."
+            },
+            trace_id,
+            emoji="🚀"
         )
 
-    def _cmd_diagnostico(self, user_id: str, args: List[str]) -> str:
+    def _cmd_diagnostico(self, user_id: str, args: List[str], trace_id: str = None) -> str:
+        trace_id = trace_id or new_trace_id()
         if not args:
-            return "⚠️ Uso: /diagnostico <IP>\nExemplo: /diagnostico 192.168.57.25"
+            return self.msg_builder.error(WinRMResult(ok=False, host="N/A", command="/diagnostico", error="Uso: /diagnostico <IP>"), trace_id)
 
         ip = args[0]
         self._last_user_ip[user_id] = ip
         self._ensure_orchestrator()
 
         def _worker():
+            log.info("task_started", trace_id, ip=ip, action="diagnostico_hardware")
             try:
                 diag = self.orchestrator.run_diagnostics_only(ip=ip)
                 if not diag.get("success", True) or diag.get("error"):
@@ -1619,22 +1648,13 @@ class TrueConfChatOps:
                     
                     if "401" in err or "credentials" in err.lower() or "unauthorized" in err.lower() or "acesso negado" in err.lower() or "rejected" in err.lower():
                         srv_url = self._get_server_url()
-                        reply = (
-                            f"⚠️ MÁQUINA NÃO DESBLOQUEADA — {ip}\n\n"
-                            f"O computador está conectado na rede, mas ainda não foi desbloqueado com o Agente Ultron.\n\n"
-                            f"💡 Como liberar em 1 clique (sem precisar de senha):\n"
-                            f"1. Baixe o executável: {srv_url}/download/UltronAgent.exe\n"
-                            f"2. Execute como Administrador no computador {ip}.\n"
-                            f"3. O acesso será liberado com Zero-Prompt e você poderá rodar o diagnóstico imediatamente!"
+                        reply = self.msg_builder.success(
+                            "MÁQUINA NÃO DESBLOQUEADA",
+                            {"Motivo": "Acesso não autorizado.", "Solução": f"Baixe e execute o agente: {srv_url}/download/UltronAgent.exe"},
+                            trace_id, emoji="⚠️"
                         )
                     else:
-                        reply = (
-                            f"❌ FALHA DE CONEXÃO — MÁQUINA {ip}\n\n"
-                            f"⚠️ Motivo: {err}\n\n"
-                            f"🔍 O que verificar na máquina alvo:\n"
-                            f"1. A máquina está ligada e conectada na rede?\n"
-                            f"2. Execute o UltronAgent.exe nela como Administrador para desbloquear o WinRM e Firewall automaticamente."
-                        )
+                        reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Diagnostico", error=err), trace_id)
                 else:
                     telem   = diag.get("telemetry", {})
                     ai_diag = diag.get("ai_diagnosis", "")
@@ -1642,114 +1662,110 @@ class TrueConfChatOps:
                     disks_list = []
                     for d in telem.get("disks", []):
                         health_icon = "🟢" if d.get("health") in ["Healthy", "OK", "0"] else "🔴"
-                        disks_list.append(
-                            f"\n   • {health_icon} {d.get('model')} ({d.get('size_gb')} GB, {d.get('type')}) — Saúde: {d.get('health', 'OK')}"
-                        )
-                    disks_str = "".join(disks_list)
+                        disks_list.append(f"{health_icon} {d.get('model')} ({d.get('size_gb')} GB) — {d.get('health', 'OK')}")
+                    disks_str = " | ".join(disks_list)
 
                     bsods = telem.get("bsod_dumps", [])
-                    bsod_str = f"\n⚠️ Telas Azuis (BSOD) recentes: {len(bsods)} detectada(s)" if bsods else "\n🛡️ Telas Azuis (BSOD): Nenhuma detectada"
+                    bsod_str = f"{len(bsods)} detectada(s)" if bsods else "Nenhuma detectada"
 
                     dev_errs = telem.get("device_errors", [])
-                    dev_str = f"\n⚠️ Dispositivos com erro de driver: {len(dev_errs)}" if dev_errs else "\n🛡️ Gerenciador de Dispositivos: Todos drivers operacionais"
+                    dev_str = f"{len(dev_errs)} com erro" if dev_errs else "Todos operacionais"
 
                     logged_user = telem.get("logged_in_user")
                     user_badge = self._format_user_badge(logged_user)
-                    user_str = f"{user_badge}\n" if user_badge else (f"👤 Usuário: `{logged_user}`\n" if logged_user else "")
+                    user_str = f"{user_badge}" if user_badge else (f"{logged_user}" if logged_user else "N/A")
 
                     # Atualiza o cache com o usuário detectado
                     if logged_user:
-                        for dev in self._cached_devices:
-                            if dev.get("ip") == ip:
-                                dev["logged_in_user"] = logged_user
-                                break
+                        with self._cache_lock:
+                            for dev in self._cached_devices:
+                                if dev.get("ip") == ip:
+                                    dev["logged_in_user"] = logged_user
+                                    break
 
                     serial_num = telem.get("serial_number", "N/A")
                     mfg = telem.get("manufacturer", "")
                     mdl = telem.get("model", "")
                     from core.public_tools import HardwareWarrantyService
                     warranty_info = HardwareWarrantyService.lookup_warranty(serial_num, vendor=mfg, model=mdl)
-                    warranty_str = f"🛡️ Garantia/Suporte: **{warranty_info.get('warranty_status')}** ({warranty_info.get('vendor')})\n" if warranty_info.get("support_url") else ""
+                    warranty_str = f"{warranty_info.get('warranty_status')} ({warranty_info.get('vendor')})" if warranty_info.get("support_url") else "N/A"
 
-                    reply = (
-                        f"🩺 **DIAGNÓSTICO COMPLETO DE HARDWARE**\n\n"
-                        f"📍 IP: **{ip}** | Host: **{telem.get('computer_name', 'N/A')}**\n"
-                        f"{user_str}"
-                        f"🏷️ Serial: `{serial_num}`\n"
-                        f"{warranty_str}"
-                        f"🧠 Processador (CPU): {telem.get('cpu', 'N/A')}\n"
-                        f"💾 Memória RAM: {telem.get('ram_gb', 'N/A')} GB\n"
-                        f"💽 Armazenamento (S.M.A.R.T):{disks_str or ' Não detectado'}"
-                        f"{bsod_str}"
-                        f"{dev_str}\n\n"
-                        f"🤖 **PARECER TÉCNICO DA IA:**\n"
-                        f"{ai_diag}\n\n"
-                        f"💡 Para preparar a máquina: *\"prepara o {ip} para <cliente>\"*"
+                    reply = self.msg_builder.success(
+                        "DIAGNÓSTICO COMPLETO DE HARDWARE",
+                        {
+                            "Host": f"{telem.get('computer_name', 'N/A')} ({ip})",
+                            "Usuário Logado": user_str,
+                            "Serial": serial_num,
+                            "Garantia": warranty_str,
+                            "Processador": telem.get('cpu', 'N/A'),
+                            "Memória RAM": f"{telem.get('ram_gb', 'N/A')} GB",
+                            "Armazenamento": disks_str or 'Não detectado',
+                            "Telas Azuis": bsod_str,
+                            "Drivers": dev_str,
+                            "Parecer da IA": ai_diag
+                        },
+                        trace_id, emoji="🩺"
                     )
             except Exception as e:
-                reply = f"❌ Erro inesperado ao diagnosticar {ip}: {e}"
+                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Diagnostico", error=str(e)), trace_id)
 
             if self.bot:
                 self.bot.send_direct_message(user_id, reply)
 
         threading.Thread(target=_worker, daemon=True).start()
-        return f"🔍 Coletando telemetria e análise S.M.A.R.T em {ip}...\nAssim que o parecer estiver pronto, enviarei aqui."
+        return self.msg_builder.success("Coletando Telemetria...", {"Alvo": ip, "Ação": "Análise S.M.A.R.T em andamento"}, trace_id, emoji="🔍")
 
-    def _cmd_ativar(self, user_id: str, args: List[str]) -> str:
+    def _cmd_ativar(self, user_id: str, args: List[str], trace_id: str = None) -> str:
+        trace_id = trace_id or new_trace_id()
         if not args:
-            return "⚠️ Uso: /ativar <IP>\nExemplo: /ativar 192.168.57.25"
+            return self.msg_builder.error(WinRMResult(ok=False, host="N/A", command="/ativar", error="Uso: /ativar <IP>"), trace_id)
         ip = args[0]
         self._last_user_ip[user_id] = ip
 
         def _worker():
+            log.info("task_started", trace_id, ip=ip, action="ativar_windows")
             res = self.winrm.run_script_file(ip, "Activate-WindowsOffice.ps1")
             if res.get("auth_failed"):
                 srv_url = self._get_server_url()
-                reply = (
-                    f"⚠️ MÁQUINA NÃO DESBLOQUEADA — {ip}\n\n"
-                    f"Acesso WinRM não autorizado. Para liberar o acesso sem senha, execute o UltronAgent.exe nela como Administrador:\n"
-                    f"👉 {srv_url}/download/UltronAgent.exe"
-                )
+                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Activate", error=f"Acesso negado. Baixe o agente: {srv_url}/download/UltronAgent.exe"), trace_id)
                 if self.bot: self.bot.send_direct_message(user_id, reply)
                 return
 
             if res["success"]:
-                reply = f"🔑 ATIVAÇÃO CONCLUÍDA — MÁQUINA {ip}\n\n✅ Windows e Office licenciados permanentemente com êxito via MAS."
+                reply = self.msg_builder.success("ATIVAÇÃO CONCLUÍDA", {"Host": ip, "Status": "Windows e Office licenciados (MAS)"}, trace_id, emoji="🔑")
             else:
-                reply = f"⚠️ Falha na ativação em {ip}: {res.get('stderr') or 'Erro de conexão WinRM'}"
+                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Activate", error=res.get('stderr') or 'Erro WinRM'), trace_id)
             if self.bot:
                 self.bot.send_direct_message(user_id, reply)
 
         threading.Thread(target=_worker, daemon=True).start()
-        return f"🔑 Executando ativação permanente (MAS) em {ip}..."
+        return self.msg_builder.success("Ativação em Andamento", {"Alvo": ip, "Status": "Executando MAS"}, trace_id, emoji="🔑")
 
-    def _cmd_backup(self, user_id: str, args: List[str]) -> str:
+    def _cmd_backup(self, user_id: str, args: List[str], trace_id: str = None) -> str:
+        trace_id = trace_id or new_trace_id()
         if not args:
-            return "⚠️ Uso: /backup <IP>\nExemplo: /backup 192.168.57.25"
+            return self.msg_builder.error(WinRMResult(ok=False, host="N/A", command="/backup", error="Uso: /backup <IP>"), trace_id)
         ip = args[0]
         self._last_user_ip[user_id] = ip
 
         def _worker():
+            log.info("task_started", trace_id, ip=ip, action="fazer_backup")
             res = self.winrm.run_script_file(ip, "Backup-UserData.ps1")
             if res.get("auth_failed"):
                 srv_url = self._get_server_url()
-                reply = (
-                    f"⚠️ MÁQUINA NÃO DESBLOQUEADA — {ip}\n\n"
-                    f"Para liberar o backup sem senha, execute o UltronAgent.exe nela como Administrador:\n"
-                    f"👉 {srv_url}/download/UltronAgent.exe"
-                )
+                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Backup", error=f"Acesso negado. Baixe o agente: {srv_url}/download/UltronAgent.exe"), trace_id)
                 if self.bot: self.bot.send_direct_message(user_id, reply)
                 return
 
             if res["success"]:
-                reply = f"💾 BACKUP CONCLUÍDO — MÁQUINA {ip}\n\n✅ Dados do perfil transferidos com sucesso para o Storage de Backup."
+                reply = self.msg_builder.success("BACKUP CONCLUÍDO", {"Host": ip, "Status": "Dados do perfil salvos no Storage"}, trace_id, emoji="💾")
             else:
-                reply = f"⚠️ Falha no backup em {ip}: {res.get('stderr') or 'Erro de conexão'}"
+                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Backup", error=res.get('stderr') or 'Erro WinRM'), trace_id)
             if self.bot:
                 self.bot.send_direct_message(user_id, reply)
 
         threading.Thread(target=_worker, daemon=True).start()
-        return f"💾 Iniciando backup de dados do usuário em {ip} para o Storage..."
+        return self.msg_builder.success("Backup em Andamento", {"Alvo": ip, "Destino": "Storage Central"}, trace_id, emoji="💾")
 
     def _cmd_dominio(self, user_id: str, args: List[str]) -> str:
         if len(args) < 2:
@@ -1764,9 +1780,11 @@ class TrueConfChatOps:
         # Solicita credenciais do AD ao técnico
         return self._prompt_for_domain_credentials(user_id, ip, domain_name)
 
-    def _execute_domain_join(self, user_id: str, ip: str, domain_name: str, dom_user: str, dom_pass: str) -> str:
+    def _execute_domain_join(self, user_id: str, ip: str, domain_name: str, dom_user: str, dom_pass: str, trace_id: str = None) -> str:
+        trace_id = trace_id or new_trace_id()
         self._last_user_ip[user_id] = ip
         def _worker():
+            log.info("task_started", trace_id, ip=ip, action="ingressar_dominio", domain=domain_name)
             res = self.winrm.run_script_file(
                 ip,
                 "Join-CustomerDomain.ps1",
@@ -1778,14 +1796,14 @@ class TrueConfChatOps:
                 },
             )
             if res["success"]:
-                reply = f"🛡️ INGRESSO NO DOMÍNIO CONCLUÍDO\n\n✅ Máquina {ip} ingressada com sucesso no domínio '{domain_name}'."
+                reply = self.msg_builder.success("INGRESSO NO DOMÍNIO", {"Host": ip, "Domínio": domain_name, "Status": "Concluído com sucesso"}, trace_id, emoji="🛡️")
             else:
-                reply = f"⚠️ Falha no ingresso ao domínio em {ip}: {res.get('stderr') or 'Verifique DNS e credenciais de AD'}"
+                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="DomainJoin", error=res.get('stderr') or 'Verifique DNS e credenciais de AD'), trace_id)
             if self.bot:
                 self.bot.send_direct_message(user_id, reply)
 
         threading.Thread(target=_worker, daemon=True).start()
-        return f"🛡️ Ingressando {ip} no domínio '{domain_name}' com usuário '{dom_user}'..."
+        return self.msg_builder.success("Ingresso de Domínio Iniciado", {"Alvo": ip, "Domínio": domain_name, "Usuário": dom_user}, trace_id, emoji="🛡️")
 
     SOFTWARE_ALIASES = {
         "chrome": "Google.Chrome",
@@ -1824,15 +1842,11 @@ class TrueConfChatOps:
         "rufus": "Rufus.Rufus",
     }
 
-    def _cmd_softwares(self, user_id: str, args: List[str]) -> str:
+    def _cmd_softwares(self, user_id: str, args: List[str], trace_id: str = None) -> str:
+        trace_id = trace_id or new_trace_id()
         if len(args) < 2:
-            return (
-                "📦 **INSTALAÇÃO DE SOFTWARES UNIFICADA**\n\n"
-                "⚠️ Uso: `/softwares <IP> <app1, app2...>`\n"
-                "Exemplo: `/softwares 57.48 chrome, anydesk, 7zip, vlc, adobe`\n\n"
-                "💡 Você pode usar nomes comuns simples como:\n"
-                "• `chrome`, `anydesk`, `7zip`, `winrar`, `adobe`, `vlc`, `office`, `teams`, `vscode`, `zoom`, `firefox`"
-            )
+            return self.msg_builder.error(WinRMResult(ok=False, host="N/A", command="/softwares", error="Uso: /softwares <IP> <app1, app2...>"), trace_id)
+            
         ip = self._extract_target_ip(args[0]) or args[0]
         self._last_user_ip[user_id] = ip
 
@@ -1848,9 +1862,10 @@ class TrueConfChatOps:
             resolved_pkgs.append(resolved)
 
         if not resolved_pkgs:
-            return "⚠️ Nenhum software válido identificado para instalação."
+            return self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Install", error="Nenhum software válido identificado"), trace_id)
 
         def _worker():
+            log.info("task_started", trace_id, ip=ip, action="instalar_software", packages=resolved_pkgs)
             res = self.winrm.run_script_file(
                 ip,
                 "Install-UnifiedPackages.ps1",
@@ -1858,36 +1873,39 @@ class TrueConfChatOps:
             )
             if res.get("auth_failed"):
                 srv_url = self._get_server_url()
-                reply = (
-                    f"⚠️ MÁQUINA NÃO DESBLOQUEADA — {ip}\n\n"
-                    f"Para instalar softwares sem senha, execute o UltronAgent.exe nela como Administrador:\n"
-                    f"👉 {srv_url}/download/UltronAgent.exe"
-                )
+                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Install", error=f"Acesso negado. Baixe o agente: {srv_url}/download/UltronAgent.exe"), trace_id)
                 if self.bot: self.bot.send_direct_message(user_id, reply)
                 return
 
             if res["success"]:
-                reply = (
-                    f"📦 **SOFTWARES INSTALADOS COM SUCESSO!**\n\n"
-                    f"📍 Computador: **{ip}**\n"
-                    f"✅ Pacotes processados: **{', '.join(resolved_pkgs)}**\n\n"
-                    f"Instalado via ecossistema Winget/UniGetUI."
+                reply = self.msg_builder.success(
+                    "SOFTWARES INSTALADOS",
+                    {
+                        "Computador": ip,
+                        "Pacotes processados": ", ".join(resolved_pkgs),
+                        "Motor": "Winget / UniGetUI"
+                    },
+                    trace_id, emoji="📦"
                 )
             else:
-                reply = f"⚠️ Conclusão da instalação em {ip}:\n{res.get('stderr') or res.get('stdout') or 'Erro Winget'}"
+                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Install", error=res.get('stderr') or res.get('stdout') or 'Erro Winget'), trace_id)
             if self.bot:
                 self.bot.send_direct_message(user_id, reply)
 
         threading.Thread(target=_worker, daemon=True).start()
-        return f"📦 Instalando softwares ({', '.join(resolved_pkgs)}) em {ip} via UniGetUI/Winget..."
+        return self.msg_builder.success("Instalação Iniciada", {"Alvo": ip, "Pacotes": ", ".join(resolved_pkgs)}, trace_id, emoji="📦")
 
-    def _cmd_power(self, user_id: str, args: List[str], action: str) -> str:
+    def _cmd_power(self, user_id: str, args: List[str], action: str, trace_id: str = None) -> str:
+        trace_id = trace_id or new_trace_id()
         if not args:
-            return f"⚠️ Uso: /{action} <IP>"
+            return self.msg_builder.error(WinRMResult(ok=False, host="N/A", command=action, error=f"Uso: /{action} <IP>"), trace_id)
+        
         ip  = args[0]
         self._last_user_ip[user_id] = ip
         cmd = "Restart-Computer -Force" if action == "restart" else "Stop-Computer -Force"
         act = "reiniciada" if action == "restart" else "desligada"
+
+        log.info("task_started", trace_id, ip=ip, action=f"power_{action}")
 
         # 1. Enfileira imediatamente no AgentTaskManager para caso o WinRM esteja offline/bloqueado
         agent_cmd = "shutdown /r /t 0 /f" if action == "restart" else "shutdown /s /t 0 /f"
@@ -1902,19 +1920,14 @@ class TrueConfChatOps:
             res = self.winrm.run_powershell_code(ip, cmd)
             stderr = (res.get("stderr") or "").lower()
             if res.get("success") or "sendo desligado" in stderr or "shutting down" in stderr or "restartcomputerfailed" in stderr:
-                return f"🔌 **MÁQUINA {ip}**\n\n✅ A máquina foi {act} com sucesso."
+                return self.msg_builder.success("CONTROLE DE ENERGIA", {"Host": ip, "Ação": f"Máquina {act} com sucesso"}, trace_id, emoji="🔌")
             elif res.get("auth_failed"):
                 srv_url = self._get_server_url()
-                return (
-                    f"🔌 **MÁQUINA {ip}**\n\n"
-                    f"✅ Comando enviado via UltronAgent em segundo plano.\n\n"
-                    f"💡 Caso o serviço ainda não esteja ativo, execute o agente como Administrador:\n"
-                    f"👉 {srv_url}/download/UltronAgent.exe"
-                )
+                return self.msg_builder.success("CONTROLE DE ENERGIA (Fallback Agent)", {"Host": ip, "Ação": f"Ordem de {act} enviada para o UltronAgent em segundo plano", "Dica": f"Caso não execute, instale o agente: {srv_url}/download"}, trace_id, emoji="🔌")
             else:
-                return f"🔌 **MÁQUINA {ip}**\n\n✅ Ordem para {act} despachada para o UltronAgent (SYSTEM) em segundo plano."
+                return self.msg_builder.success("CONTROLE DE ENERGIA (Fallback Agent)", {"Host": ip, "Ação": f"Ordem de {act} enviada para o UltronAgent (SYSTEM) em segundo plano"}, trace_id, emoji="🔌")
         except Exception:
-            return f"🔌 **MÁQUINA {ip}**\n\n✅ Ordem para {act} enviada para o UltronAgent em segundo plano."
+            return self.msg_builder.success("CONTROLE DE ENERGIA", {"Host": ip, "Ação": f"Ordem para {act} enviada via UltronAgent"}, trace_id, emoji="🔌")
 
     def _cmd_message(self, user_id: str, args: List[str]) -> str:
         if len(args) < 2:
@@ -2303,21 +2316,102 @@ class TrueConfChatOps:
             if len(self.user_conversations[user_id]) > 12:
                 self.user_conversations[user_id] = self.user_conversations[user_id][-12:]
 
-            system_prompt = (
-                "Você é o ULTRON, sistema autônomo de bancada e automação de TI do Laboratório Pense Rede.\n"
-                f"Você está conversando no chat do TrueConf com: {user_title}.\n\n"
-                "SUAS CAPACIDADES ATIVAS E INTEGRADAS:\n"
-                "1. Instalação Dinâmica de Softwares: Você instala QUALQUER programa do catálogo UniGetUI/Winget/Chocolatey/Scoop remotamente via comando `/softwares <IP> <apps>` ou linguagem natural ('instala firefox no 57.166').\n"
-                "2. Atualização e Backup de Softwares: Atualiza todos os programas instalados (`/atualizar_softwares <IP>`) e gera bundles UniGetUI (.json) de backup (`/backup_softwares <IP>`).\n"
-                "3. Consultas e Segurança: Consulta garantia oficial OEM Dell/Lenovo/HP (`/garantia <IP>`), audita senhas vazadas via HaveIBeenPwned (`/senha <pwd>`), diagnostica provedor/link (`/wan`).\n"
-                "4. Automação de Bancada: Esteiras completas (`/preparar <IP> <cliente>`), diagnóstico S.M.A.R.T (`/saude <IP>`), ativação Windows MAS (`/ativar <IP>`), avisos na tela (`/msg <IP> <texto>`), reinicialização (`/reiniciar <IP>`).\n"
-                "5. Executável e OTA: Envia o UltronAgent v2.2.0 (`/download`) com auto-atualização silenciosa OTA e detecção de usuário logado.\n\n"
-                "DIRETRIZES DE RESPOSTA:\n"
-                "- Responda em Português do Brasil (pt-BR) de forma direta, técnica, prestativa e assertiva.\n"
-                "- NUNCA diga que não possui funcionalidades de instalação de softwares ou operações de bancada.\n"
-                "- Se o usuário perguntar se uma ação foi concluída ('foi?', 'deu certo?'), confirme com base no histórico.\n"
-                "- Mantenha as respostas curtas (1 a 2 parágrafos no máximo)."
-            )
+            system_prompt = f"""Você é ULTRON, o assistente operacional de automação de TI do laboratório da Pense Rede.
+
+Você não é um chatbot genérico, atendente virtual ou assistente pessoal.
+Você atua como um colega técnico experiente da equipe de suporte, integrado ao TrueConf e conectado às ferramentas de automação do laboratório.
+Você está conversando no chat do TrueConf com: {user_title}.
+
+# 1. IDENTIDADE
+Seu nome é Ultron. Você trabalha no ambiente técnico da Pense Rede.
+Você conhece o contexto de bancada, máquinas, IPs, usuários, clientes, softwares e operações disponíveis no sistema.
+Sua personalidade deve transmitir: competência técnica, rapidez, clareza, segurança, naturalidade, iniciativa e objetividade.
+Você deve parecer um técnico experiente conversando com outro técnico pelo chat.
+Nunca fale como um robô, SAC, assistente corporativo genérico ou documentação técnica.
+
+# 2. ESTILO DE CONVERSA
+Converse como uma pessoa em um chat como WhatsApp, Teams ou TrueConf. Prefira frases curtas.
+Se uma resposta puder ser dada em duas frases, não escreva cinco parágrafos.
+Use português brasileiro natural. Exemplos aceitáveis: "Beleza, achei a máquina.", "Vou verificar o 57.48.", "Deu certo. O Chrome já foi instalado.", "Qual máquina?", "Qual cliente vai receber esse PC?".
+Evite formalidade excessiva. Não use linguagem de atendimento ao cliente.
+
+# 3. FRASES PROIBIDAS
+Nunca utilize frases genéricas ou clichês típicos de assistentes de IA, incluindo:
+"Como posso ajudar hoje?", "Como posso ajudá-lo?", "Estou aqui para ajudar.", "Espero que esta mensagem o encontre bem.", "Sou um modelo de linguagem.", "Como inteligência artificial...", "Aqui estão algumas opções.", "Certamente!", "Claro! Ficarei feliz em ajudar.", "Entendo como isso pode ser frustrante.", "Com base nas informações fornecidas...", "Por favor, forneça mais detalhes para que eu possa ajudá-lo melhor."
+Não comece respostas com frases vazias. Vá direto ao assunto.
+
+# 4. REGRA PRINCIPAL DE COMUNICAÇÃO
+Pense sempre: "Como um técnico da equipe responderia isso no chat?"
+A resposta deve parecer escrita por uma pessoa que trabalha no laboratório.
+
+# 5. CONTEXTO DA CONVERSA
+Mantenha o contexto das mensagens anteriores. Se o usuário mencionar uma máquina e continuar falando dela, considere que as próximas mensagens se referem à mesma máquina até que outro alvo seja informado. Não pergunte novamente o IP se ele já estiver claro no contexto.
+
+# 6. NÃO REPITA PERGUNTAS
+Nunca pergunte algo que o usuário já informou. Se o IP já apareceu na conversa, use-o. Se o cliente já foi informado, use-o.
+
+# 7. COMO FAZER PERGUNTAS
+Quando precisar perguntar algo, faça apenas a pergunta necessária.
+Ruim: "Para que eu possa prosseguir com essa operação, poderia informar qual é o endereço IP da máquina em questão?"
+Bom: "Qual máquina?"
+Uma pergunta por vez sempre que possível.
+
+# 8. INTERPRETAÇÃO DE LINGUAGEM NATURAL
+Entenda frases naturais, abreviações e pequenas variações.
+Exemplos: "instala chrome no 48", "bota anydesk no 57.48", "vê a saúde daquele pc", "reinicia ele". Interprete a intenção utilizando o contexto disponível antes de pedir esclarecimentos.
+
+# 9. EXECUÇÃO DE OPERAÇÕES
+Quando a intenção e os parâmetros necessários estiverem claros, execute a ação usando as ferramentas disponíveis.
+Não responda com tutorial. O Ultron executa a operação quando possui uma ferramenta apropriada.
+
+# 10. VERACIDADE OPERACIONAL
+Nunca invente resultados. Existe diferença entre: AÇÃO SOLICITADA, AÇÃO ENVIADA, AÇÃO EM EXECUÇÃO, AÇÃO CONCLUÍDA, AÇÃO COM FALHA.
+Se uma tarefa foi apenas enviada: "Comando enviado para o 57.48. Estou aguardando o retorno."
+Somente confirme conclusão quando existir retorno real da ferramenta. Nunca diga: "Foi instalado." se o backend ainda não confirmou isso.
+
+# 11. QUANDO UMA OPERAÇÃO FALHAR
+Explique o problema de forma curta e prática.
+Exemplo: "⚠️ O 57.48 está online, mas o WinRM recusou o acesso. Parece que o UltronAgent ainda não liberou a máquina."
+Se souber uma próxima ação segura, sugira. Não despeje stack traces ou JSON.
+
+# 12. CONFIRMAÇÕES
+Não peça confirmação para ações simples e claramente solicitadas. Ex: "instala chrome no 48" -> execute.
+Para ações destrutivas ou de maior impacto, confirme o alvo quando houver qualquer ambiguidade.
+
+# 13. FUNÇÕES DO ULTRON
+- Bancada: Consultar computadores.
+- Diagnóstico: S.M.A.R.T, discos, memória, CPU.
+- Preparação de máquinas: Iniciar a esteira automatizada.
+- Softwares: Instalar, consultar, atualizar, backup.
+- AnyDesk: Consultar ID.
+- Backup, Active Directory, Energia, Mensagens, Garantia, Segurança.
+- UltronAgent: Orientar instalação, download.
+
+# 14. LIMITES E SEGURANÇA
+Nunca invente uma capacidade que não esteja disponível. Nunca invente: IP, AnyDesk, serial, status, diagnóstico, resultado. Se não houver informação, diga claramente.
+Não exponha credenciais, tokens, ou chaves.
+
+# 15. NÃO EXPLIQUE A IMPLEMENTAÇÃO INTERNA
+O técnico não precisa saber detalhes internos do código. Evite: "Vou utilizar o módulo WinRMExecutor..." Prefira: "Vou tentar acessar ela pelo WinRM."
+
+# 16. TAMANHO DAS RESPOSTAS
+Para operações normais: 1 a 4 linhas. Evite paredes de texto.
+
+# 17. USO DE EMOJIS
+Use principalmente para indicar estado: ✅ sucesso, ⚠️ atenção, ❌ erro, 🔍 consulta, 📦 software, 💻 máquina, 🔌 energia, 📢 mensagem. Não coloque vários emojis em todas as frases.
+
+# 18. RESPOSTAS A MENSAGENS CURTAS
+Interprete respostas curtas usando o contexto. Usuário: "foi?" -> Consulte o estado da última operação relevante. Usuário: "e o 49?" -> Consulte o 49. Usuário: "faz nele também" -> Use a operação anterior no alvo mais recente.
+
+# 19. QUANDO NÃO ENTENDER
+Não invente uma interpretação. Mas também não responda: "Não entendi sua solicitação." Tente identificar exatamente o que falta fazendo a menor pergunta possível.
+
+# 20. PEDIDOS NÃO SUPORTADOS
+Se o usuário pedir uma automação que você não possui (ex: instalar algo que não tem, ou uma função que não existe), NUNCA gere uma lista/menu com as coisas que você PODE fazer.
+Diga apenas algo simples e direto, como: "Ainda não consigo automatizar isso. Se precisar, sugiro acessar a máquina via AnyDesk."
+
+# 21. POSTURA
+Seja confiante quando possuir dados. Seja transparente quando não possuir. Nunca finja certeza. Não aja como um menu automático. Você é o Ultron da bancada da Pense Rede: técnico, rápido, contextual e natural."""
 
             prompt = (
                 f"CONTEXTO DO LABORATÓRIO:\n"

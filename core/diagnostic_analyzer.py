@@ -232,13 +232,13 @@ class DiagnosticAnalyzer:
         if m_ip:
             ip_str = m_ip.group(1)
             return (
-                f"Identifiquei que você mencionou a máquina **{ip_str}**.\n\n"
-                f"As principais ações disponíveis para ela agora são:\n"
-                f"• *'diagnóstico no {ip_str}'* (Saúde de discos S.M.A.R.T, CPU e RAM)\n"
-                f"• *'preparar {ip_str} para <cliente>'* (Esteira completa de softwares)\n"
-                f"• *'ativar {ip_str}'* (Licenciamento digital MAS)\n"
-                f"• *'reiniciar {ip_str}'* (Controle remoto de energia)\n\n"
-                f"Como posso te ajudar com essa máquina?"
+                f"Encontrei a máquina **{ip_str}**, mas não entendi exatamente o que fazer com ela.\n\n"
+                f"Se quiser, posso rodar as seguintes automações rápidas nela:\n"
+                f"▶️ `/diagnostico {ip_str}` para checar a saúde geral (Discos, RAM, BSOD).\n"
+                f"▶️ `/preparar {ip_str} <cliente>` para iniciar a esteira de formatação.\n"
+                f"▶️ `/ativar {ip_str}` para aplicar o licenciamento Windows.\n"
+                f"▶️ `/reiniciar {ip_str}` para forçar o reboot.\n\n"
+                f"Ou acesse ela via `/anydesk` se for algo manual."
             )
 
         return (

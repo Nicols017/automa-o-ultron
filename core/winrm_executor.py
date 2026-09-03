@@ -7,7 +7,10 @@ import os
 import socket
 import winrm
 import yaml
+import asyncio
+import traceback
 from typing import Dict, Any, Optional, List, Tuple
+from core.reliability import ResilientWinRM, new_trace_id, log
 
 class WinRMExecutor:
     def __init__(self, config_path: str = None):
@@ -149,6 +152,37 @@ class WinRMExecutor:
             lines.append(line)
         return "\n".join(lines)
 
+    async def _execute_winrm_async(self, ip: str, session: winrm.Session, script_content: str, timeout_s: float) -> Tuple[int, str, str]:
+        """Executor assíncrono para ser chamado pelo ResilientWinRM"""
+        def _blocking_run():
+            if len(script_content) < 1800:
+                response = session.run_ps(script_content)
+            else:
+                import base64
+                b64_script = base64.b64encode(script_content.encode("utf-8")).decode("ascii")
+                chunk_sz = 1000
+                chunks = [b64_script[i:i+chunk_sz] for i in range(0, len(b64_script), chunk_sz)]
+
+                session.run_cmd("cmd.exe /c del /q %TEMP%\\ultron_task.b64 %TEMP%\\ultron_task.ps1 2>nul")
+                for c in chunks:
+                    session.run_cmd(f'cmd.exe /c echo|set /p="{c}">>%TEMP%\\ultron_task.b64')
+
+                decode_exec = (
+                    "$p=[System.IO.Path]::Combine($env:TEMP,'ultron_task.ps1');"
+                    "$b=[System.IO.Path]::Combine($env:TEMP,'ultron_task.b64');"
+                    "$t=[System.IO.File]::ReadAllText($b);"
+                    "[System.IO.File]::WriteAllText($p,[System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($t)),[System.Text.Encoding]::UTF8);"
+                    "& $p"
+                )
+                response = session.run_ps(decode_exec)
+            
+            stdout_str = response.std_out.decode("utf-8", errors="replace").strip() if response.std_out else ""
+            stderr_str = response.std_err.decode("utf-8", errors="replace").strip() if response.std_err else ""
+            return response.status_code, stdout_str, stderr_str
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _blocking_run)
+
     def run_powershell_code(
         self,
         ip: str,
@@ -180,51 +214,45 @@ class WinRMExecutor:
             try:
                 session = self.get_session(ip, user, pwd)
                 
-                # Se o script minificado for pequeno (< 1800 chars), executa direto via run_ps
-                if len(minified) < 1800:
-                    response = session.run_ps(minified)
+                # Encapsulamento com ResilientWinRM
+                def executor_fn(h: str, c: str, ts: float):
+                    return self._execute_winrm_async(ip, session, minified, ts)
+
+                resilient = ResilientWinRM(executor=executor_fn, max_attempts=3, timeout_s=45.0)
+                
+                # Executa de forma síncrona aguardando o loop
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                trace_id = new_trace_id()
+                result = loop.run_until_complete(resilient.run(ip, "execute_script", trace_id=trace_id))
+
+                if result.ok or result.exit_code is not None:
+                    # Mesmo se o exit_code não for 0, se respondeu, a credencial funcionou
+                    stderr_str = result.stderr
+                    if result.exit_code == 0 or ("credentials were rejected" not in stderr_str.lower() and "401" not in stderr_str and "access is denied" not in stderr_str.lower() and "acesso negado" not in stderr_str.lower()):
+                        self.set_host_credentials(ip, user, pwd)
+                        return {
+                            "success": result.exit_code == 0,
+                            "auth_failed": False,
+                            "status_code": result.exit_code,
+                            "stdout": result.stdout,
+                            "stderr": stderr_str,
+                            "ip": ip,
+                            "user_used": user
+                        }
+                    
+                    last_error = stderr_str
+                    is_auth_error = True
                 else:
-                    # Para scripts maiores, transfere via chunks de 1000 caracteres para contornar o limite do cmd.exe
-                    import base64
-                    b64_script = base64.b64encode(minified.encode("utf-8")).decode("ascii")
-                    chunk_sz = 1000
-                    chunks = [b64_script[i:i+chunk_sz] for i in range(0, len(b64_script), chunk_sz)]
-
-                    # Limpa arquivos temporários anteriores
-                    session.run_cmd("cmd.exe /c del /q %TEMP%\\ultron_task.b64 %TEMP%\\ultron_task.ps1 2>nul")
-
-                    # Envia chunks em base64
-                    for c in chunks:
-                        session.run_cmd(f'cmd.exe /c echo|set /p="{c}">>%TEMP%\\ultron_task.b64')
-
-                    # Decodifica e executa o script remotamente
-                    decode_exec = (
-                        "$p=[System.IO.Path]::Combine($env:TEMP,'ultron_task.ps1');"
-                        "$b=[System.IO.Path]::Combine($env:TEMP,'ultron_task.b64');"
-                        "$t=[System.IO.File]::ReadAllText($b);"
-                        "[System.IO.File]::WriteAllText($p,[System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($t)),[System.Text.Encoding]::UTF8);"
-                        "& $p"
-                    )
-                    response = session.run_ps(decode_exec)
-
-                stdout_str = response.std_out.decode("utf-8", errors="replace").strip() if response.std_out else ""
-                stderr_str = response.std_err.decode("utf-8", errors="replace").strip() if response.std_err else ""
-
-                # Se autenticou com sucesso (mesmo que o script retorne erro de execução)
-                if response.status_code == 0 or ("credentials were rejected" not in stderr_str.lower() and "401" not in stderr_str and "access is denied" not in stderr_str.lower() and "acesso negado" not in stderr_str.lower()):
-                    # Salva no cache como credencial funcional
-                    self.set_host_credentials(ip, user, pwd)
-                    return {
-                        "success": response.status_code == 0,
-                        "auth_failed": False,
-                        "status_code": response.status_code,
-                        "stdout": stdout_str,
-                        "stderr": stderr_str,
-                        "ip": ip,
-                        "user_used": user
-                    }
-                last_error = stderr_str
-                is_auth_error = True
+                    last_error = result.error or "Falha de conexão WinRM resiliente"
+                    if "credentials were rejected" in last_error.lower() or "401" in last_error or "access is denied" in last_error.lower() or "acesso negado" in last_error.lower():
+                        is_auth_error = True
+                    else:
+                        break # Se for erro de rede (time out), não tenta outra credencial
             except Exception as e:
                 last_error = str(e)
                 err_lower = str(e).lower()
