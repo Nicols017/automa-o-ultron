@@ -1385,7 +1385,7 @@ class TrueConfChatOps:
         # 2. Tenta executar diretamente via WinRM se a máquina estiver online
         def _bg_clean():
             try:
-                self.winrm.run_command(ip, "cmd.exe /c sc stop UltronService & sc delete UltronService & net user UltronAdmin /delete 2>nul & rmdir /s /q \"%ProgramFiles%\\UltronAgent\" 2>nul", timeout_sec=20)
+                self.winrm.run_command(ip, "cmd.exe /c sc stop UltronService & sc delete UltronService & net user penserede /delete 2>nul & rmdir /s /q \"%ProgramFiles%\\UltronAgent\" 2>nul", timeout_sec=20)
             except Exception:
                 pass
 
@@ -1394,7 +1394,7 @@ class TrueConfChatOps:
         return (
             f"🧹 **Ordem de Limpeza Pós-Bancada Enviada**\n\n"
             f"📍 Máquina Alvo: **{ip}**\n\n"
-            f"O `UltronService`, a conta `UltronAdmin` e os arquivos temporários de automação estão sendo desinstalados e removidos da máquina.\n\n"
+            f"O `UltronService`, a conta `penserede` e os arquivos temporários de automação estão sendo desinstalados e removidos da máquina.\n\n"
             f"✅ A máquina ficará 100% limpa para entrega ao cliente final."
         )
 
