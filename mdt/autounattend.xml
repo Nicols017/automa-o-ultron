@@ -103,7 +103,7 @@
                 <LocalAccounts>
                     <LocalAccount wcm:action="add">
                         <Password>
-                            <Value>Ultron@AutoBench2026!</Value>
+                            <Value>@a123456</Value>
                             <PlainText>true</PlainText>
                         </Password>
                         <Description>Conta de automação do Ultron Lab</Description>
@@ -115,7 +115,7 @@
             </UserAccounts>
             <AutoLogon>
                 <Password>
-                    <Value>Ultron@AutoBench2026!</Value>
+                    <Value>@a123456</Value>
                     <PlainText>true</PlainText>
                 </Password>
                 <Enabled>true</Enabled>

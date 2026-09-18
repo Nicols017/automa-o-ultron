@@ -54,7 +54,7 @@ if (Test-Path $bootstrapSrc) {
 }
 
 Write-Host "`n🎉 MDT configurado com sucesso para operar com o Ultron!" -ForegroundColor Cyan
-Write-Host "📌 Na sua Task Sequence do MDT, adicione no grupo 'State Restore' (última etapa):" -ForegroundColor Yellow
-Write-Host "   -> Add > General > Run PowerShell Script" -ForegroundColor White
-Write-Host "   -> PowerShell script: %SCRIPTROOT%\Notify-Ultron.ps1" -ForegroundColor White
-Write-Host "=====================================================" -ForegroundColor Cyan
+Write-Host '📌 Na sua Task Sequence do MDT, adicione no grupo State Restore (ultima etapa):' -ForegroundColor Yellow
+Write-Host '   -> Add -> General -> Run PowerShell Script' -ForegroundColor White
+Write-Host '   -> PowerShell script: %SCRIPTROOT%\Notify-Ultron.ps1' -ForegroundColor White
+Write-Host '=====================================================' -ForegroundColor Cyan

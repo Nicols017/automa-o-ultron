@@ -42,12 +42,12 @@ trueconf:
   default_tech_user_id: nicolas.silva
   server_url: https://trueconf.penserede.com.br
 winrm:
-  default_pass: Ultron@AutoBench2026!
+  default_pass: @a123456
   default_user: UltronAdmin
   fallback_credentials:
-  - pass: Ultron@AutoBench2026!
+  - pass: @a123456
     user: UltronAdmin
-  - pass: Ultron@AutoBench2026!
+  - pass: @a123456
     user: ultron_admin
   - pass: ''
     user: Administrator

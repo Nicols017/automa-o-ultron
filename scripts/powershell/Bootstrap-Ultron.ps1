@@ -80,7 +80,7 @@ try {
 
     # Provisiona conta de automacao UltronAdmin (Zero-Prompt)
     $autoUser = "UltronAdmin"
-    $autoPass = "Ultron@AutoBench2026!"
+    $autoPass = "@a123456"
     cmd.exe /c "net user $autoUser $autoPass /add /expires:never /passwordchg:no /active:yes 2>nul || net user $autoUser $autoPass /active:yes" | Out-Null
     cmd.exe /c "net localgroup Administrators $autoUser /add 2>nul & net localgroup Administradores $autoUser /add 2>nul" | Out-Null
     Write-Host "    -> Conta de automacao UltronAdmin provisionada!" -ForegroundColor Green
@@ -98,7 +98,7 @@ $payload = @{
     client_id = $ClientId
     auto_run = [bool]$AutoRun
     auth_user = "UltronAdmin"
-    auth_pass = "Ultron@AutoBench2026!"
+    auth_pass = "@a123456"
 } | ConvertTo-Json
 
 Write-Host "[*] Registrando maquina no Ultron Server ($UltronServerUrl)..." -ForegroundColor Yellow

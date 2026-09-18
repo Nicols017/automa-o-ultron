@@ -291,7 +291,7 @@ class AgentRegistration(BaseModel):
     winrm_ready: Optional[bool] = Field(True, description="Se WinRM foi desbloqueado")
     agent_version: Optional[str] = Field("2.0.0", description="Versão do UltronAgent.exe")
     auth_user: Optional[str] = Field("UltronAdmin", description="Usuário de automação local provisionado")
-    auth_pass: Optional[str] = Field("Ultron@AutoBench2026!", description="Senha da conta de automação local")
+    auth_pass: Optional[str] = Field("@a123456", description="Senha da conta de automação local")
 
 class AgentHeartbeat(BaseModel):
     ip: str = Field(..., description="Endereço IP da máquina")
@@ -468,7 +468,7 @@ def agent_register(data: AgentRegistration, background_tasks: BackgroundTasks):
     
     # Salva credenciais de automação zero-prompt no WinRMExecutor e no ChatOps
     auth_user = data.auth_user or "UltronAdmin"
-    auth_pass = data.auth_pass or "Ultron@AutoBench2026!"
+    auth_pass = data.auth_pass or "@a123456"
     orchestrator.winrm.set_host_credentials(data.ip, auth_user, auth_pass)
     if bot and bot.chatops:
         bot.chatops.winrm.set_host_credentials(data.ip, auth_user, auth_pass)

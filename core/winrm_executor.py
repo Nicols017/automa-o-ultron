@@ -101,7 +101,7 @@ class WinRMExecutor:
             candidates.append(cached)
 
         # 3. Credencial padrão de automação do UltronAgent (Zero-Prompt)
-        agent_cred = ("UltronAdmin", "Ultron@AutoBench2026!")
+        agent_cred = ("UltronAdmin", "@a123456")
         if agent_cred not in candidates:
             candidates.append(agent_cred)
 
