@@ -14,7 +14,7 @@ irm http://192.168.57.43:7000/bootstrap.ps1 | iex
 ```
 * **O que acontece:**
   1. Identifica automaticamente a Service Tag / Serial, Modelo, IP e MAC.
-  2. Cria o usuário de automação `Administrador` e configura o WinRM / Firewall.
+  2. Cria o usuário de automação `UltronAdmin` e configura o WinRM / Firewall.
   3. Notifica o Ultron Server (`/api/v1/mdt/completed`).
   4. O Ultron assume a máquina e roda a esteira completa (Softwares, Milvus, Domínio, Laudo PDF).
 

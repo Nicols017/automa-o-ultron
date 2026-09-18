@@ -109,7 +109,7 @@
                         <Description>Conta de automação do Ultron Lab</Description>
                         <DisplayName>Ultron Admin</DisplayName>
                         <Group>Administrators;Administradores</Group>
-                        <Name>Administrador</Name>
+                        <Name>UltronAdmin</Name>
                     </LocalAccount>
                 </LocalAccounts>
             </UserAccounts>
@@ -120,7 +120,7 @@
                 </Password>
                 <Enabled>true</Enabled>
                 <LogonCount>3</LogonCount>
-                <Username>Administrador</Username>
+                <Username>UltronAdmin</Username>
             </AutoLogon>
             <!-- Executa o Bootstrap do Ultron automaticamente no primeiro logon -->
             <FirstLogonCommands>

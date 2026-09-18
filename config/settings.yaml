@@ -43,10 +43,10 @@ trueconf:
   server_url: https://trueconf.penserede.com.br
 winrm:
   default_pass: @a123456
-  default_user: Administrador
+  default_user: UltronAdmin
   fallback_credentials:
   - pass: @a123456
-    user: Administrador
+    user: UltronAdmin
   - pass: @a123456
     user: ultron_admin
   - pass: ''
@@ -54,5 +54,5 @@ winrm:
   - pass: ''
     user: Administrador
   - pass: ''
-    user: Administrador
+    user: UltronAdmin
   port: 5985
