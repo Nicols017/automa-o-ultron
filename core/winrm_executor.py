@@ -101,7 +101,7 @@ class WinRMExecutor:
             candidates.append(cached)
 
         # 3. Credencial padrão de automação do UltronAgent (Zero-Prompt)
-        agent_cred = ("penserede", "@C3por2d2")
+        agent_cred = ("Administrador", "@a123456")
         if agent_cred not in candidates:
             candidates.append(agent_cred)
 
@@ -121,7 +121,7 @@ class WinRMExecutor:
         extra_fallbacks = [
             ("Administrator", ""),
             ("Administrador", ""),
-            ("penserede", ""),
+            ("Administrador", ""),
             ("suporte", ""),
             ("admin", ""),
             ("nicolas.silva", ""),

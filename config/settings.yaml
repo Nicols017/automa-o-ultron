@@ -42,17 +42,17 @@ trueconf:
   default_tech_user_id: nicolas.silva
   server_url: https://trueconf.penserede.com.br
 winrm:
-  default_pass: @C3por2d2
-  default_user: penserede
+  default_pass: @a123456
+  default_user: Administrador
   fallback_credentials:
-  - pass: @C3por2d2
-    user: penserede
-  - pass: @C3por2d2
+  - pass: @a123456
+    user: Administrador
+  - pass: @a123456
     user: ultron_admin
   - pass: ''
     user: Administrator
   - pass: ''
     user: Administrador
   - pass: ''
-    user: penserede
+    user: Administrador
   port: 5985

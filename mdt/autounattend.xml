@@ -103,24 +103,24 @@
                 <LocalAccounts>
                     <LocalAccount wcm:action="add">
                         <Password>
-                            <Value>@C3por2d2</Value>
+                            <Value>@a123456</Value>
                             <PlainText>true</PlainText>
                         </Password>
                         <Description>Conta de automação do Ultron Lab</Description>
                         <DisplayName>Ultron Admin</DisplayName>
                         <Group>Administrators;Administradores</Group>
-                        <Name>penserede</Name>
+                        <Name>Administrador</Name>
                     </LocalAccount>
                 </LocalAccounts>
             </UserAccounts>
             <AutoLogon>
                 <Password>
-                    <Value>@C3por2d2</Value>
+                    <Value>@a123456</Value>
                     <PlainText>true</PlainText>
                 </Password>
                 <Enabled>true</Enabled>
                 <LogonCount>3</LogonCount>
-                <Username>penserede</Username>
+                <Username>Administrador</Username>
             </AutoLogon>
             <!-- Executa o Bootstrap do Ultron automaticamente no primeiro logon -->
             <FirstLogonCommands>
