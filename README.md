@@ -36,41 +36,62 @@ irm http://192.168.57.43:7000/bootstrap.ps1 | iex
 
 ```
 automa-o-ultron/
+├── .env                         # Configurações de ambiente (Ollama/LLM, IPs)
+├── agent/                       # Agente C# (Windows Service) para máquinas
+│   ├── UltronAgent.cs           # Código fonte do Agente
+│   ├── UltronAgent.exe          # Executável do Agente
+│   └── build_agent.ps1          # Script de compilação
+├── backups/                     # Armazenamento de backups (UserData, etc.)
+├── chatops/                     # Integração de ChatOps
+│   ├── bot.py                   # Bot de notificações (TrueConf/Slack/etc.)
+│   └── chatops.py               # Lógica principal do ChatOps
 ├── config/
-│   ├── settings.yaml            # Configurações globais (IPs, TrueConf, WinRM, Ollama, Switch)
-│   ├── clients.yaml             # Mapeamento dos 15 clientes (Tokens Milvus, Domínios e OUs)
+│   ├── settings.yaml            # Configurações globais (IPs, WinRM, Ollama, Switch)
+│   ├── clients.yaml             # Mapeamento dos clientes (Tokens Milvus, Domínios e OUs)
 │   └── profiles/                # Perfis YAML de software/política por cliente
-│       ├── cliente_padrao.yaml  # Perfil genérico de bancada
-│       ├── extinbras.yaml       # Perfil específico Extinbras
-│       └── white_group.yaml     # Perfil específico White Group
 ├── core/
-│   ├── orchestrator.py          # Esteira ponta a ponta (Pipeline mestre)
-│   ├── winrm_executor.py        # Execução remota de scripts PowerShell via WinRM
-│   ├── network_scanner.py       # Varredura de rede concorrente
-│   ├── profile_manager.py       # Leitor e consolidador de perfis de clientes
+│   ├── agent_builder.py         # Compilador e empacotador dinâmico do agente
 │   ├── diagnostic_analyzer.py   # Diagnóstico de hardware com LLM local (Ollama)
-│   └── switch_identifier.py     # Leitura de portas de switch (opcional)
-├── mdt/
+│   ├── milvus_sync.py           # Sincronização e integração com a API do Milvus
+│   ├── network_scanner.py       # Varredura de rede concorrente
+│   ├── obsidian_memory.py       # Memória baseada em Markdown (Obsidian Vault)
+│   ├── orchestrator.py          # Esteira ponta a ponta (Pipeline mestre)
+│   ├── package_manager.py       # Gerenciamento de pacotes instalados/winget
+│   ├── profile_manager.py       # Leitor e consolidador de perfis de clientes
+│   ├── public_tools.py          # Ferramentas expostas e utilitários públicos
+│   ├── reliability.py           # Testes de estresse e validação de estabilidade
+│   ├── scheduler.py             # Agendador de tarefas automatizadas
+│   ├── switch_identifier.py     # Leitura de portas de switch (opcional)
+│   └── winrm_executor.py        # Execução remota de scripts PowerShell via WinRM
+├── mdt/                         # Automação de deploy do Windows (MDT)
+│   ├── Bootstrap.ini            # Configuração inicial MDT
+│   ├── CustomSettings.ini       # Regras do MDT
+│   ├── Setup-MDT-Automation.ps1 # Script de setup do MDT
+│   ├── autounattend.xml         # Respostas automáticas do Windows
 │   └── scripts/
-│       └── Notify-Ultron.ps1    # Script chamado na etapa final da Task Sequence do MDT
+│       └── Notify-Ultron.ps1    # Script chamado na etapa final do MDT
 ├── reports/
 │   ├── report_generator.py      # Gerador de Laudos Técnicos em PDF (ReportLab)
 │   └── output/                  # Armazenamento dos PDFs gerados
 ├── scripts/powershell/          # Scripts executados nas máquinas cliente
+│   ├── Backup-UserData.ps1      # Backup de dados de perfil de usuário
 │   ├── Bootstrap-Ultron.ps1     # Inicializador universal One-Liner (Ultron Anywhere)
+│   ├── Configure-TrueConfClient.ps1 # Configuração do cliente TrueConf
+│   ├── Export-InstalledPackages.ps1 # Exportação de lista de softwares instalados
+│   ├── Inspect-SystemLogs.ps1   # Coleta S.M.A.R.T, BSODs e logs de eventos
+│   ├── Install-Flutter.ps1      # Ambiente de desenvolvimento Flutter
 │   ├── Install-LabStandard.ps1  # Instalação padrão (AnyDesk, Office, Milvus, Ativação MAS)
 │   ├── Install-MilvusAgent.ps1  # Instalação do agente Milvus com token do cliente
+│   ├── Install-UltronService.ps1# Instalação do Agente C# como serviço Windows
+│   ├── Install-UnifiedPackages.ps1# Instalação unificada de softwares customizados
 │   ├── Join-CustomerDomain.ps1  # Ingresso automático no Active Directory do cliente
-│   ├── Run-LabBurnIn.ps1        # Teste de estresse de CPU/RAM e validação de drivers
-│   ├── Inspect-SystemLogs.ps1   # Coleta S.M.A.R.T, BSODs e logs de eventos
-│   ├── Configure-TrueConfClient.ps1 # Configuração do cliente TrueConf
 │   ├── Map-SPAShares.ps1        # Mapeamento de unidades de rede
-│   ├── Install-Flutter.ps1      # Ambiente de desenvolvimento Flutter
-│   └── Backup-UserData.ps1      # Backup de dados de perfil de usuário
+│   ├── Run-LabBurnIn.ps1        # Teste de estresse de CPU/RAM e validação de drivers
+│   ├── Search-Packages.ps1      # Busca por pacotes (Winget/Chocolatey)
+│   ├── Send-UserMessage.ps1     # Envio de mensagem pop-up para o usuário logado
+│   └── Upgrade-AllPackages.ps1  # Atualização automática de todos os softwares
 ├── static/                      # Interface Web (CSS e JavaScript)
 ├── templates/                   # Template HTML do Dashboard
-├── trueconf/
-│   └── bot.py                   # Bot de notificações TrueConf para técnicos
 ├── tests/                       # Testes automatizados
 │   ├── test_components.py       # Testes unitários dos módulos internos
 │   └── test_api.py              # Testes de integração da API FastAPI
