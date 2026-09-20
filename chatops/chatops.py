@@ -4,6 +4,7 @@ Processa comandos slash, diálogos interativos, solicitação dinâmica de crede
 """
 
 import os
+import json
 import socket
 import logging
 import time
