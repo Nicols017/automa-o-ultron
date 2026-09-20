@@ -56,8 +56,8 @@ class DiagnosticAnalyzer:
         except (ValueError, TypeError):
             self.timeout_seconds = 1200.0
 
-        # Timeout de conexão de 5s e leitura configurada
-        self.request_timeout = (5.0, min(self.timeout_seconds, 1200.0))
+        # Timeout de conexão de 5s e leitura configurada (max 60s para evitar travamentos indefinidos)
+        self.request_timeout = (5.0, min(self.timeout_seconds, 60.0))
         self.session = requests.Session()
 
     def _is_openai_compatible(self) -> bool:
