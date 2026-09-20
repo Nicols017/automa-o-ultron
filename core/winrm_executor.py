@@ -172,7 +172,7 @@ class WinRMExecutor:
                     "$b=[System.IO.Path]::Combine($env:TEMP,'ultron_task.b64');"
                     "$t=[System.IO.File]::ReadAllText($b);"
                     "[System.IO.File]::WriteAllText($p,[System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($t)),[System.Text.Encoding]::UTF8);"
-                    "& $p"
+                    "powershell.exe -ExecutionPolicy Bypass -NoProfile -NonInteractive -File $p"
                 )
                 response = session.run_ps(decode_exec)
             
