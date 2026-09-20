@@ -29,7 +29,7 @@ from core.public_tools import (
     NetworkDiagnosticsService,
     WindowsErrorLookupService,
 )
-from core.reliability import IntentRouter, MessageBuilder, TraceLogger, new_trace_id, DEFAULT_INTENTS, log
+from core.reliability import IntentRouter, MessageBuilder, TraceLogger, new_trace_id, DEFAULT_INTENTS, log, WinRMResult
 
 def _clean_chat_text(s: str) -> str:
     """Higieniza tags HTML (<br>, <span>, etc.) e decodifica entidades HTML (&quot;, &#39;, &amp;) do TrueConf"""
