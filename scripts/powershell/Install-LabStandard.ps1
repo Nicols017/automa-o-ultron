@@ -12,7 +12,7 @@ Write-Host " Cliente: $ClientName" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 
 # 1. Instalação do AnyDesk via Winget / Direct
-Write-Host "`n[1/5] Instalando AnyDesk..." -ForegroundColor Yellow
+Write-Host "`n[1/6] Instalando AnyDesk..." -ForegroundColor Yellow
 try {
     winget install --id AnyDeskSoftwareGmbH.AnyDesk --exact --silent --accept-package-agreements --accept-source-agreements
     Write-Host "✅ AnyDesk instalado com sucesso!" -ForegroundColor Green
@@ -47,8 +47,26 @@ if ($anydeskId) {
     Write-Host "ANYDESK_ID:NÃO_DETECTADO" -ForegroundColor Yellow
 }
 
-# 2. Instalação do Microsoft Office 365 / 2021
-Write-Host "`n[2/5] Instalando Microsoft Office..." -ForegroundColor Yellow
+# 2. Instalação de Softwares Essenciais (Chrome, WinRAR, Adobe Acrobat)
+Write-Host "`n[2/6] Instalando Softwares Essenciais (Chrome, WinRAR, Adobe Acrobat)..." -ForegroundColor Yellow
+$essentials = @(
+    "Google.Chrome",
+    "RARLab.WinRAR",
+    "Adobe.Acrobat.Reader.64-bit"
+)
+
+foreach ($app in $essentials) {
+    Write-Host "      -> Baixando e instalando $app..." -ForegroundColor Gray
+    try {
+        winget install --id $app --exact --silent --accept-package-agreements --accept-source-agreements | Out-Null
+        Write-Host "      [OK] $app instalado!" -ForegroundColor Green
+    } catch {
+        Write-Host "      [ERRO] Falha ao instalar $app: $_" -ForegroundColor Red
+    }
+}
+
+# 3. Instalação do Microsoft Office 365 / 2021
+Write-Host "`n[3/6] Instalando Microsoft Office..." -ForegroundColor Yellow
 try {
     winget install --id Microsoft.Office --silent --accept-package-agreements --accept-source-agreements
     Write-Host "✅ Office instalado com sucesso!" -ForegroundColor Green
@@ -56,9 +74,9 @@ try {
     Write-Host "⚠️ Erro ao instalar Office via Winget, tentando instalador local..." -ForegroundColor Red
 }
 
-# 3. Ativação do Windows e Office via Massgrave (MAS)
+# 4. Ativação do Windows e Office via Massgrave (MAS)
 if ($ActivateOfficeWin) {
-    Write-Host "`n[3/5] Executando Ativação (Massgrave MAS)..." -ForegroundColor Yellow
+    Write-Host "`n[4/6] Executando Ativação (Massgrave MAS)..." -ForegroundColor Yellow
     try {
         # Execução silenciosa do script Massgrave (HWID para Windows + Ohook para Office)
         $masScript = "irm https://get.activated.win | iex"
@@ -69,8 +87,8 @@ if ($ActivateOfficeWin) {
     }
 }
 
-# 4. Instalação do Agente Milvus (MSI Específico do Cliente no Compartilhamento)
-Write-Host "`n[4/5] Instalando Agente Milvus para $ClientName..." -ForegroundColor Yellow
+# 5. Instalação do Agente Milvus (MSI Específico do Cliente no Compartilhamento)
+Write-Host "`n[5/6] Instalando Agente Milvus para $ClientName..." -ForegroundColor Yellow
 
 $cleanClientName = $ClientName -replace '[^a-zA-Z0-9_]', ''
 $localMsiPath = "\\$MdtServer\MilvusAgents\Milvus_$cleanClientName.msi"
@@ -99,8 +117,8 @@ if (Test-Path $localMsiPath) {
     Write-Host "⚠️ Nenhum instalador MSI encontrado no servidor para $ClientName." -ForegroundColor Yellow
 }
 
-# 5. Otimizações de Sistema e Ativação do RDP
-Write-Host "`n[5/5] Aplicando otimizações finais de Bancada..." -ForegroundColor Yellow
+# 6. Otimizações de Sistema e Ativação do RDP
+Write-Host "`n[6/6] Aplicando otimizações finais de Bancada..." -ForegroundColor Yellow
 Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
 Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 Write-Host "✅ RDP Ativado e Firewall configurado!" -ForegroundColor Green
