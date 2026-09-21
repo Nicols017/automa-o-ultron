@@ -1664,27 +1664,21 @@ class TrueConfChatOps:
 
         ip = args[0]
         self._last_user_ip[user_id] = ip
-        log.info("task_started", trace_id, ip=ip, action="formatar_pxe")
+        log.info("task_started", trace_id, ip=ip, action="formatar_mdt")
 
         pxe_script = """
         $ProgressPreference = 'SilentlyContinue'
         $ErrorActionPreference = 'Stop'
         try {
-            $fw = bcdedit /enum firmware 2>&1
-            if ($fw -match 'could not be opened' -or $fw -match 'não pôde ser aberto') {
-                Write-Output "ERRO: Computador em modo Legacy (BIOS) ou BCD bloqueado. Requer UEFI."
-                exit 1
-            }
+            net use "\\\\192.168.57.87\\DeploymentShare$" /user:Administrador "@a123456" 2>&1 | Out-Null
+            $script = "\\\\192.168.57.87\\DeploymentShare$\\Scripts\\LiteTouch.vbs"
             
-            $NetworkBoot = $fw | Select-String -Pattern 'Network|Rede|PXE|IPv4|LAN|NIC' -Context 3 | Select-String 'identifier' | ForEach-Object { $_.Line.Split(' ')[-1] }
-            
-            if ($NetworkBoot) {
-                $id = $NetworkBoot[0]
-                bcdedit /set '{fwbootmgr}' bootsequence $id /addfirst 2>&1 | Out-Null
-                Restart-Computer -Force
-                Write-Output "SUCESSO: Máquina reiniciando no MDT."
+            if (Test-Path $script) {
+                # O LiteTouch copia o boot.wim para o C: e injeta no BCD local (funciona até sem PXE na BIOS)
+                Start-Process -FilePath "cscript.exe" -ArgumentList "//B `"$script`"" -PassThru -NoNewWindow | Out-Null
+                Write-Output "SUCESSO: LiteTouch.vbs iniciado. O PC vai reiniciar no WinPE (MDT)."
             } else {
-                Write-Output "ERRO: Opção de Boot via Rede (PXE) não encontrada no UEFI."
+                Write-Output "ERRO: Compartilhamento do servidor MDT (192.168.57.87) inacessível."
                 exit 1
             }
         } catch {
@@ -1704,31 +1698,27 @@ class TrueConfChatOps:
             res = self.orchestrator.winrm.run_powershell_code(ip, pxe_script)
             
             stdout = res.get("stdout", "")
-            if res.get("success"):
+            if res.get("success") or "SUCESSO:" in stdout:
                 reply = self.msg_builder.success(
-                    "Formatação PXE Iniciada",
-                    {"Alvo": ip, "Status": "A máquina foi configurada para Boot via Rede e reiniciada."},
+                    "Formatação MDT Iniciada",
+                    {"Alvo": ip, "Status": "LiteTouch injetado com sucesso! A máquina vai reiniciar no ambiente de deployment em instantes."},
                     trace_id
                 )
             else:
-                err_msg = "Verifique se o PC tem UEFI e PXE ativado. Use '/power ip restart' se a máquina travou."
+                err_msg = "Falha ao conectar no servidor MDT ou executar o LiteTouch.vbs. Verifique se a máquina-alvo alcança o servidor 192.168.57.87."
                 for line in stdout.splitlines():
                     if line.startswith("ERRO:"):
                         err_msg = line.replace("ERRO:", "").strip()
                         break
                         
-                if not err_msg and res.get("stderr"):
-                    # Se não veio na nossa string "ERRO:" mas falhou, ignoramos CLIXML e usamos erro genérico
-                    pass
-
-                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="PXEBoot", error=err_msg), trace_id)
+                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="FormatarMDT", error=err_msg), trace_id)
             
             self.bot.send_direct_message(user_id, reply)
 
         import threading
         threading.Thread(target=_worker, daemon=True).start()
 
-        return f"🔄 Configurando {ip} para formatar via PXE (MDT). Aguarde a confirmação..."
+        return f"🔄 Iniciando formatação automática em {ip} via MDT LiteTouch. Aguarde a confirmação..."
 
 
     def _cmd_preparar(self, user_id: str, args: List[str], trace_id: str = None) -> str:
