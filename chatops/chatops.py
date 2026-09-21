@@ -1127,6 +1127,12 @@ class TrueConfChatOps:
                 self.user_sessions.pop(user_id, None)
                 return "❌ Formatação cancelada. A máquina não foi alterada.\n\n" + self._cmd_interactive_menu()
 
+        # 3.2. Entrada de IP para Formatação
+        if wtype == "wizard_formatar":
+            ip = self._extract_target_ip(text) or text.strip()
+            self.user_sessions.pop(user_id, None)
+            return self._cmd_formatar(user_id, [ip])
+
         # 4. Wizard de Diagnóstico
         if wtype == "wizard_diag":
             ip = self._extract_target_ip(text) or text.strip()
