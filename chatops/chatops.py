@@ -1670,23 +1670,16 @@ class TrueConfChatOps:
         $ProgressPreference = 'SilentlyContinue'
         $ErrorActionPreference = 'Stop'
         try {
-            $share = "\\\\192.168.57.87\\DeploymentShare$"
-            $user = "192.168.57.87\\Administrador"
-            $pass = "@a123456"
+            $launcherPath = "C:\\Windows\\Temp\\run_litetouch.ps1"
+            $launcherCode = 'net use "\\\\192.168.57.87\\DeploymentShare$" /user:192.168.57.87\\Administrador "@a123456" 2>&1 | Out-Null; cscript.exe //B "\\\\192.168.57.87\\DeploymentShare$\\Scripts\\LiteTouch.vbs"'
+            Set-Content -Path $launcherPath -Value $launcherCode -Force
+
+            $wmi = Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File $launcherPath"
             
-            $netout = net use $share /user:$user $pass 2>&1
-            if ($LASTEXITCODE -ne 0) {
-                Write-Output "ERRO: Falha no net use. Retorno: $($netout -join ' ')"
-                exit 1
-            }
-            
-            $script = "$share\\Scripts\\LiteTouch.vbs"
-            
-            if (Test-Path $script) {
-                Start-Process -FilePath "cscript.exe" -ArgumentList "//B `"$script`"" -PassThru -NoNewWindow | Out-Null
-                Write-Output "SUCESSO: LiteTouch.vbs iniciado. O PC vai reiniciar no WinPE (MDT)."
+            if ($wmi.ReturnValue -eq 0) {
+                Write-Output "SUCESSO: LiteTouch.vbs injetado via processo independente."
             } else {
-                Write-Output "ERRO: O script LiteTouch.vbs nao foi encontrado em $script"
+                Write-Output "ERRO: Falha ao iniciar processo WMI. ReturnValue: $($wmi.ReturnValue)"
                 exit 1
             }
         } catch {
@@ -1718,6 +1711,9 @@ class TrueConfChatOps:
                     if line.startswith("ERRO:"):
                         err_msg = line.replace("ERRO:", "").strip()
                         break
+                
+                if err_msg == "Falha desconhecida no LiteTouch.":
+                    err_msg += f" | STDOUT: {stdout} | STDERR: {res.get('stderr')}"
                         
                 reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="FormatarMDT", error=err_msg), trace_id)
             
