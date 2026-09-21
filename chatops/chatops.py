@@ -78,6 +78,7 @@ class TrueConfChatOps:
         self._last_dispatched_message: Dict[str, str] = {}
         self._last_user_ip: Dict[str, str] = {}
         self._pending_message_target: Dict[str, str] = {}
+        self.active_jobs: Dict[str, Any] = {}
 
         # Cache de varredura de bancada para resposta instantânea
         self._cached_devices: List[Dict[str, Any]] = []
@@ -546,6 +547,26 @@ class TrueConfChatOps:
         """Processa comandos administrativos e controle mestre para Nicolas Silva"""
         if not self._is_master_user(user_id):
             return None
+
+        # Intercepta cancelamento de tarefas em andamento (ex: instalacao de softwares)
+        if "cancela" in norm_text or "aborta" in norm_text or "pare " in norm_text or norm_text == "pare" or norm_text == "parar":
+            active_job = self.active_jobs.get(user_id)
+            if active_job:
+                # Dispara o evento para silenciar a thread no background
+                active_job["event"].set()
+                ip = active_job["ip"]
+                self.active_jobs.pop(user_id, None)
+                
+                # Bônus: Aborta a instalação fisicamente via WinRM matando o winget e powershell
+                try:
+                    def _kill_worker():
+                        self.winrm.run_powershell_code(ip, "Stop-Process -Name winget, powershell -Force -ErrorAction SilentlyContinue")
+                    threading.Thread(target=_kill_worker, daemon=True).start()
+                except Exception:
+                    pass
+                
+                return self.msg_builder.success("Operação Cancelada", {"Alvo": ip, "Status": "A tarefa em andamento foi abortada fisicamente com sucesso."}, new_trace_id(), emoji="🛑")
+
 
         # 0. Envio da MESMA MENSAGEM / Repetição contextual (Ex: "manda a mesma mensagem para arthur gabriel")
         if any(kw in norm_text for kw in ["mesma mensagem", "mesmo recado", "mesmo texto", "mesma msg"]):
@@ -2094,33 +2115,53 @@ class TrueConfChatOps:
         if not resolved_pkgs:
             return self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Install", error="Nenhum software válido identificado"), trace_id)
 
-        def _worker():
-            log.info("task_started", trace_id, ip=ip, action="instalar_software", packages=resolved_pkgs)
-            res = self.winrm.run_script_file(
-                ip,
-                "Install-UnifiedPackages.ps1",
-                params={"Packages": resolved_pkgs}
-            )
-            if res.get("auth_failed"):
-                srv_url = self._get_server_url()
-                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Install", error=f"Acesso negado. Baixe o agente: {srv_url}/download/UltronAgent.exe"), trace_id)
-                if self.bot: self.bot.send_direct_message(user_id, reply)
-                return
+        # Rastreamento do Job para permitir cancelamento
+        cancel_event = threading.Event()
+        self.active_jobs[user_id] = {
+            "type": "software_install",
+            "ip": ip,
+            "event": cancel_event
+        }
 
-            if res["success"]:
-                reply = self.msg_builder.success(
-                    "SOFTWARES INSTALADOS",
-                    {
-                        "Computador": ip,
-                        "Pacotes processados": ", ".join(resolved_pkgs),
-                        "Motor": "Winget / UniGetUI"
-                    },
-                    trace_id, emoji="📦"
+        def _worker():
+            try:
+                log.info("task_started", trace_id, ip=ip, action="instalar_software", packages=resolved_pkgs)
+                res = self.winrm.run_script_file(
+                    ip,
+                    "Install-UnifiedPackages.ps1",
+                    params={"Packages": resolved_pkgs}
                 )
-            else:
-                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Install", error=res.get('stderr') or res.get('stdout') or 'Erro Winget'), trace_id)
-            if self.bot:
-                self.bot.send_direct_message(user_id, reply)
+                
+                # Se o usuário cancelou via chat, morre silenciosamente e aborta a notificação final.
+                if cancel_event.is_set():
+                    log.info("task_cancelled", trace_id, ip=ip)
+                    return
+
+                if res.get("auth_failed"):
+                    srv_url = self._get_server_url()
+                    reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Install", error=f"Acesso negado. Baixe o agente: {srv_url}/download/UltronAgent.exe"), trace_id)
+                    if self.bot: self.bot.send_direct_message(user_id, reply)
+                    return
+
+                if res["success"]:
+                    reply = self.msg_builder.success(
+                        "SOFTWARES INSTALADOS",
+                        {
+                            "Computador": ip,
+                            "Pacotes processados": ", ".join(resolved_pkgs),
+                            "Motor": "Winget / UniGetUI"
+                        },
+                        trace_id, emoji="📦"
+                    )
+                else:
+                    reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Install", error=res.get('stderr') or res.get('stdout') or 'Erro Winget'), trace_id)
+                
+                if self.bot:
+                    self.bot.send_direct_message(user_id, reply)
+            finally:
+                # Remove o job ativo (apenas se ainda for o mesmo job rodando)
+                if self.active_jobs.get(user_id, {}).get("event") == cancel_event:
+                    self.active_jobs.pop(user_id, None)
 
         threading.Thread(target=_worker, daemon=True).start()
         return self.msg_builder.success("Instalação Iniciada", {"Alvo": ip, "Pacotes": ", ".join(resolved_pkgs)}, trace_id, emoji="📦")
