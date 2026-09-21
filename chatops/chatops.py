@@ -1735,8 +1735,8 @@ class TrueConfChatOps:
         $ProgressPreference = 'SilentlyContinue'
         $ErrorActionPreference = 'Stop'
         try {
-            # Limpa conexoes previas se houver
-            net use "\\\\192.168.57.87\\DeploymentShare$" /delete 2>&1 | Out-Null
+            # Limpa conexoes previas se houver (sem falhar o script se nao existir)
+            try { net use "\\\\192.168.57.87\\DeploymentShare$" /delete 2>&1 | Out-Null } catch {}
             
             # 1. Conecta no servidor MDT
             $net = net use "\\\\192.168.57.87\\DeploymentShare$" /user:192.168.57.87\\Administrador "@a123456" 2>&1
