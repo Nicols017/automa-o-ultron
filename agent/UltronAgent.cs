@@ -274,12 +274,13 @@ namespace UltronAgent
             RunCommand("netsh.exe", "advfirewall firewall set rule group=\"Gerenciamento Remoto do Windows\" new enable=yes");
             Log("    [OK] Regras de Firewall aplicadas com sucesso", ConsoleColor.Green);
 
-            // 6. Provisionamento da Conta de Automação UltronAdmin
-            string autoUser = "UltronAdmin";
+            // 6. Provisionamento da Conta de Automação penserede
+            string autoUser = "penserede";
             string autoPass = "@a123456";
             RunCommand("cmd.exe", string.Format("/c net user {0} {1} /add /expires:never /passwordchg:no /active:yes 2>nul || net user {0} {1} /active:yes", autoUser, autoPass));
-            RunCommand("cmd.exe", string.Format("/c net localgroup Administrators {0} /add 2>nul & net localgroup Administradores {0} /add 2>nul", autoUser));
-            Log("    [OK] Conta de automação UltronAdmin provisionada", ConsoleColor.Green);
+            RunCommand("cmd.exe", string.Format("/c net localgroup Administradores {0} /add 2>nul & net localgroup Administrators {0} /add 2>nul", autoUser));
+            RunCommand("cmd.exe", string.Format("/c wmic useraccount where name='{0}' set PasswordExpires=false 2>nul", autoUser));
+            Log("    [OK] Conta de automação penserede provisionada", ConsoleColor.Green);
         }
 
         // =====================================================================
@@ -356,9 +357,9 @@ namespace UltronAgent
                 RunCommand("netsh.exe", "advfirewall firewall delete rule name=\"Ultron RPC 135\"");
                 RunCommand("netsh.exe", "advfirewall firewall delete rule name=\"Ultron RDP 3389\"");
 
-                // 3. Remove usuário UltronAdmin
+                // 3. Remove usuário UltronAdmin/penserede (opicional, deixamos para cleanup manual ou chatops)
                 RunCommand("cmd.exe", "/c net user UltronAdmin /delete 2>nul");
-                Log("    [OK] Conta UltronAdmin removida.", ConsoleColor.Green);
+                Log("    [OK] Conta UltronAdmin removida (se existia).", ConsoleColor.Green);
 
                 // 4. Agenda remoção da pasta Program Files e auto-exclusão
                 string targetDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "UltronAgent");
@@ -703,7 +704,7 @@ namespace UltronAgent
             string loggedUser = DetectLoggedInUser();
 
             string json = string.Format(
-                "{{\"serial\":\"{0}\",\"ip\":\"{1}\",\"computer_name\":\"{2}\",\"manufacturer\":\"{3}\",\"model\":\"{4}\",\"cpu\":\"{5}\",\"ram_gb\":{6},\"mac\":\"{7}\",\"client_id\":\"{8}\",\"disks\":[{9}],\"anydesk_id\":\"{10}\",\"logged_in_user\":\"{11}\",\"agent_version\":\"{12}\",\"status\":\"READY_FOR_PIPELINE\",\"winrm_ready\":true,\"auth_user\":\"UltronAdmin\",\"auth_pass\":\"@a123456\"}}",
+                "{{\"serial\":\"{0}\",\"ip\":\"{1}\",\"computer_name\":\"{2}\",\"manufacturer\":\"{3}\",\"model\":\"{4}\",\"cpu\":\"{5}\",\"ram_gb\":{6},\"mac\":\"{7}\",\"client_id\":\"{8}\",\"disks\":[{9}],\"anydesk_id\":\"{10}\",\"logged_in_user\":\"{11}\",\"agent_version\":\"{12}\",\"status\":\"READY_FOR_PIPELINE\",\"winrm_ready\":true,\"auth_user\":\"penserede\",\"auth_pass\":\"@a123456\"}}",
                 EscapeJson(serial), ip, EscapeJson(hostname), EscapeJson(manufacturer), EscapeJson(model),
                 EscapeJson(cpu), ramGb.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture),
                 mac, ClientId, string.Join(",", diskJsonList.ToArray()), anydeskId, EscapeJson(loggedUser), CurrentVersion
