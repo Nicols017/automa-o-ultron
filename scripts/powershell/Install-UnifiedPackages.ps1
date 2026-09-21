@@ -73,6 +73,12 @@ foreach ($pkgQuery in $targetPackages) {
 
     Write-Host "`n[*] Processando e buscando: $clean..." -ForegroundColor Cyan
 
+    # Em sessões WinRM (Sessão 0), o banco do Winget costuma estar vazio se não for inicializado.
+    if ($clean -eq $targetPackages[0]) {
+        Write-Host "    -> [Opcional] Atualizando fontes do Winget (Session 0 fix)..." -ForegroundColor Gray
+        Start-Process -FilePath $wingetExe -ArgumentList @("source", "update") -Wait -NoNewWindow -ErrorAction SilentlyContinue
+    }
+
     # Emite aviso na tela da máquina física para o operador ver
     try {
         msg * /time:5 "🤖 [ULTRON] Instalando '$clean'... Termos e licenças aceitos automaticamente." 2>$null
