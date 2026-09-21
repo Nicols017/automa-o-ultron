@@ -1069,6 +1069,10 @@ class TrueConfChatOps:
         if norm in ["0", "cancelar", "cancela", "voltar", "sair", "menu", "parar"]:
             self.user_sessions.pop(user_id, None)
             return "❌ Operação cancelada.\n\n" + self._cmd_interactive_menu()
+            
+        if text.startswith("/"):
+            self.user_sessions.pop(user_id, None)
+            return self.handle_incoming_message(user_id, text)
 
         wtype = session.get("type")
 
@@ -2446,7 +2450,7 @@ class TrueConfChatOps:
             del self.user_sessions[user_id]
             return self._cmd_preparar(user_id, [ip, chosen_client])
 
-        return None
+        return "⚠️ Opção inválida. Por favor, digite o número correspondente ao cliente (ou '0' para cancelar)."
 
     # ------------------------------------------------------------------
     # IA Conversacional com Histórico e Restrições de Domínio
