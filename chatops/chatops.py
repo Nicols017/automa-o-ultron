@@ -1697,7 +1697,7 @@ class TrueConfChatOps:
         if (-not $user) { $user = "Nenhum usuário logado" }
         Write-Output "$($sys.Name)|$user|$cpu|${ram}GB"
         """
-        res = self.orchestrator.winrm.run_powershell_code(ip, ps_code, timeout_sec=10)
+        res = self.orchestrator.winrm.run_powershell_code(ip, ps_code)
         
         if not res.get("success"):
             return self.msg_builder.error(WinRMResult(ok=False, host=ip, command="FormatarMDT", error="Falha ao conectar via WinRM para obter dados da máquina. Verifique se ela está ligada e online."), trace_id)
