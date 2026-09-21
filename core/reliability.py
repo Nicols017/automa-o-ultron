@@ -291,7 +291,7 @@ class ResilientWinRM:
                         stdout=stdout, stderr=stderr, exit_code=exit_code,
                         attempts=attempt, duration_s=time.time() - start,
                     )
-                last_err = f"exit_code={exit_code} stderr={stderr[:300]}"
+                last_err = f"exit_code={exit_code} stdout={stdout[:300]} stderr={stderr[:300]}"
                 log.warn("winrm_nonzero_exit", trace_id, host=host, attempt=attempt, **{"exit_code": exit_code})
             except asyncio.TimeoutError:
                 last_err = "timeout"

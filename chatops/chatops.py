@@ -1735,8 +1735,15 @@ class TrueConfChatOps:
         $ProgressPreference = 'SilentlyContinue'
         $ErrorActionPreference = 'Stop'
         try {
+            # Limpa conexoes previas se houver
+            net use "\\\\192.168.57.87\\DeploymentShare$" /delete 2>&1 | Out-Null
+            
             # 1. Conecta no servidor MDT
-            net use "\\\\192.168.57.87\\DeploymentShare$" /user:192.168.57.87\\Administrador "@a123456" 2>&1 | Out-Null
+            $net = net use "\\\\192.168.57.87\\DeploymentShare$" /user:192.168.57.87\\Administrador "@a123456" 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Output "ERRO: Falha ao mapear MDT ($net)"
+                exit 1
+            }
             
             $wimPath = "\\\\192.168.57.87\\DeploymentShare$\\Boot\\LiteTouchPE_x64.wim"
             if (-not (Test-Path $wimPath)) {
@@ -1761,11 +1768,11 @@ class TrueConfChatOps:
                 exit 1
             }
             
-            # 4. Força o boot no MDT e reinicia
+            # 4. Força o boot no MDT e reinicia (usando cmd /c para nao matar o powershell e o WinRM no meio)
             reagentc /boottore 2>&1 | Out-Null
-            Restart-Computer -Force
             
             Write-Output "SUCESSO: O sistema MDT foi injetado com sucesso! A máquina já está reiniciando para formatar."
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/c timeout /t 3 & shutdown /r /f /t 0" -WindowStyle Hidden
         } catch {
             Write-Output "ERRO: $($_.Exception.Message)"
             exit 1

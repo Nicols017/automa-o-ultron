@@ -271,7 +271,7 @@ class WinRMExecutor:
             "success": False,
             "auth_failed": is_auth_error,
             "status_code": -1,
-            "stdout": "",
+            "stdout": result.stdout if 'result' in locals() and hasattr(result, 'stdout') else "",
             "stderr": f"Erro de autenticação ou execução WinRM: {last_error}",
             "ip": ip
         }
