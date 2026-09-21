@@ -124,9 +124,10 @@ class WinRMExecutor:
 
         # 6. Contas padrão adicionais de bancada e suporte
         extra_fallbacks = [
+            ("Administrator", "@a123456"),
+            ("Administrador", "@a123456"),
             ("Administrator", ""),
             ("Administrador", ""),
-            ("UltronAdmin", ""),
             ("suporte", ""),
             ("admin", ""),
             ("nicolas.silva", ""),

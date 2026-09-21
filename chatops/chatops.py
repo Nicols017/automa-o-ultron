@@ -1116,6 +1116,17 @@ class TrueConfChatOps:
         if wtype == "pending_mdt":
             return self._handle_pending_mdt_choice(user_id, session, text)
 
+        # 3.1. Confirmação de Formatação MDT
+        if wtype == "wizard_formatar_confirm":
+            if norm == "sim":
+                ip = session.get("ip")
+                trace_id = session.get("trace_id")
+                self.user_sessions.pop(user_id, None)
+                return self._execute_formatar(user_id, ip, trace_id)
+            else:
+                self.user_sessions.pop(user_id, None)
+                return "❌ Formatação cancelada. A máquina não foi alterada.\n\n" + self._cmd_interactive_menu()
+
         # 4. Wizard de Diagnóstico
         if wtype == "wizard_diag":
             ip = self._extract_target_ip(text) or text.strip()
@@ -1668,7 +1679,51 @@ class TrueConfChatOps:
 
         ip = args[0]
         self._last_user_ip[user_id] = ip
-        log.info("task_started", trace_id, ip=ip, action="formatar_mdt")
+        log.info("task_started", trace_id, ip=ip, action="formatar_mdt_confirm")
+
+        # Busca dados WMI antes de prosseguir
+        self._ensure_orchestrator()
+        ps_code = r"""
+        $sys = Get-CimInstance Win32_ComputerSystem
+        $cpu = (Get-CimInstance Win32_Processor)[0].Name
+        $ram = [math]::Round($sys.TotalPhysicalMemory / 1GB)
+        $user = $sys.UserName
+        if (-not $user) { $user = "Nenhum usuário logado" }
+        Write-Output "$($sys.Name)|$user|$cpu|${ram}GB"
+        """
+        res = self.orchestrator.winrm.run_powershell_code(ip, ps_code, timeout_sec=10)
+        
+        if not res.get("success"):
+            return self.msg_builder.error(WinRMResult(ok=False, host=ip, command="FormatarMDT", error="Falha ao conectar via WinRM para obter dados da máquina. Verifique se ela está ligada e online."), trace_id)
+        
+        out = (res.get("stdout") or "").strip().split("|")
+        hostname = out[0] if len(out) > 0 else "Desconhecido"
+        current_user = out[1] if len(out) > 1 else "Desconhecido"
+        cpu_name = out[2] if len(out) > 2 else "Desconhecido"
+        ram_size = out[3] if len(out) > 3 else "Desconhecida"
+
+        self.user_sessions[user_id] = {
+            "type": "wizard_formatar_confirm",
+            "ip": ip,
+            "hostname": hostname,
+            "trace_id": trace_id
+        }
+
+        return (
+            f"⚠️ **AVISO DE FORMATAÇÃO (MDT)**\n\n"
+            f"Você solicitou a formatação da máquina **{ip}**.\n\n"
+            f"🖥️ **Configurações Atuais:**\n"
+            f"• Hostname: **{hostname}**\n"
+            f"• Usuário Conectado: **{current_user}**\n"
+            f"• Processador: {cpu_name}\n"
+            f"• Memória RAM: {ram_size}\n\n"
+            f"❗️ *Esta ação irá zerar completamente a máquina e apagar todos os dados!* ❗️\n\n"
+            f"Para confirmar, responda com `sim`. Para cancelar, digite `0`."
+        )
+
+    def _execute_formatar(self, user_id: str, ip: str, trace_id: str = None):
+        trace_id = trace_id or new_trace_id()
+        log.info("task_started", trace_id, ip=ip, action="formatar_mdt_execute")
 
         pxe_script = """
         $ProgressPreference = 'SilentlyContinue'
