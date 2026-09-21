@@ -997,7 +997,14 @@ class TrueConfChatOps:
         if intent_match.intent:
             host = intent_match.entities.get("host")
             if intent_match.intent == "instalar_software":
-                return self._cmd_softwares(user_id, [host, "tudo"], trace_id=trace_id) if host else self._start_wizard_softwares(user_id, trace_id=trace_id)
+                # Extrai o nome do software desejado, ignorando os verbos de ação e o IP.
+                m_pkg = re.search(r"\b(?:instala|instalar|instale|baixa|baixar|baixe|coloca|coloque|poe|põe|winget(?:_install)?|unigetui)\s+(?:os?\s+)?(?:programas?|softwares?|apps?|aplicativos?)?\s*(.+?)(?:\s+(?:no|na|para|pro|pra|em|o|a|ip|maquina|máquina|pc|[\d\.]+)\b|$)", text, re.IGNORECASE)
+                pacotes = m_pkg.group(1).strip() if m_pkg and m_pkg.group(1).strip() else ""
+                
+                if host and pacotes:
+                    return self._cmd_softwares(user_id, [host, pacotes], trace_id=trace_id)
+                else:
+                    return self._start_wizard_softwares(user_id, trace_id=trace_id)
             elif intent_match.intent == "formatar_maquina":
                 return self._cmd_formatar(user_id, [host], trace_id=trace_id) if host else self._start_wizard_formatar(user_id)
             elif intent_match.intent == "verificar_saude":
