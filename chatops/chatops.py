@@ -1772,7 +1772,7 @@ class TrueConfChatOps:
             reagentc /boottore 2>&1 | Out-Null
             
             Write-Output "SUCESSO: O sistema MDT foi injetado com sucesso! A máquina já está reiniciando para formatar."
-            Start-Process -FilePath "cmd.exe" -ArgumentList "/c timeout /t 3 & shutdown /r /f /t 0" -WindowStyle Hidden
+            Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList "cmd.exe /c ping 127.0.0.1 -n 5 > nul & shutdown /r /f /t 0" | Out-Null
         } catch {
             Write-Output "ERRO: $($_.Exception.Message)"
             exit 1
