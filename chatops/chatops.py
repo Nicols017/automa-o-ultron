@@ -897,8 +897,10 @@ class TrueConfChatOps:
                 lambda: self._cmd_clientes(trace_id=trace_id),
             frozenset(["/chamados", "/milvus", "/tickets"]):
                 lambda: self._cmd_chamados(trace_id=trace_id),
-            frozenset(["/preparar", "/iniciar", "/deploy", "/formatar"]):
+            frozenset(["/preparar", "/iniciar", "/deploy"]):
                 lambda: self._cmd_preparar(user_id, parts[1:], trace_id=trace_id),
+            frozenset(["/formatar"]):
+                lambda: self._cmd_formatar(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/diagnostico", "/diag", "/inspecionar", "/smart"]):
                 lambda: self._cmd_diagnostico(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/ativar", "/ativacao", "/mas"]):
@@ -975,6 +977,8 @@ class TrueConfChatOps:
             host = intent_match.entities.get("host")
             if intent_match.intent == "instalar_software":
                 return self._cmd_softwares(user_id, [host, "tudo"], trace_id=trace_id) if host else self._start_wizard_softwares(user_id, trace_id=trace_id)
+            elif intent_match.intent == "formatar_maquina":
+                return self._cmd_formatar(user_id, [host], trace_id=trace_id) if host else self._cmd_formatar(user_id, [], trace_id=trace_id)
             elif intent_match.intent == "verificar_saude":
                 return self._cmd_diagnostico(user_id, [host], trace_id=trace_id) if host else self._start_wizard_diagnostico(user_id, trace_id=trace_id)
             elif intent_match.intent == "preparar_maquina":
@@ -1638,6 +1642,50 @@ class TrueConfChatOps:
             )
 
         return "\n".join(lines)
+
+    def _cmd_formatar(self, user_id: str, args: List[str], trace_id: str = None) -> str:
+        trace_id = trace_id or new_trace_id()
+        if not args:
+            return self.msg_builder.error(WinRMResult(ok=False, host="N/A", command="/formatar", error="Uso: /formatar <IP>"), trace_id)
+
+        ip = args[0]
+        self._last_user_ip[user_id] = ip
+        log.info("task_started", trace_id, ip=ip, action="formatar_pxe")
+
+        pxe_script = (
+            "$NetworkBoot = bcdedit /enum firmware | Select-String 'Network' -Context 3 | "
+            "Select-String 'identifier' | ForEach-Object { $_.Line.Split(' ')[-1] }; "
+            "if ($NetworkBoot) { bcdedit /set '{fwbootmgr}' bootsequence $NetworkBoot[0] /addfirst; "
+            "Restart-Computer -Force } else { throw 'Boot de Rede (PXE) não encontrado na BIOS/UEFI.' }"
+        )
+
+        try:
+            from main import agent_task_mgr
+            agent_task_mgr.enqueue_task(ip, pxe_script, task_type="ps1")
+        except Exception:
+            pass
+
+        def _worker():
+            self._ensure_orchestrator()
+            res = self.orchestrator.winrm.run_powershell_code(ip, pxe_script)
+            
+            if res.get("success"):
+                reply = self.msg_builder.success(
+                    "Formatação PXE Iniciada",
+                    {"Alvo": ip, "Status": "Máquina configurada para Boot via Rede e reiniciada."},
+                    trace_id
+                )
+            else:
+                err = res.get("stderr") or res.get("stdout") or "Erro desconhecido. Verifique se o PC suporta UEFI e PXE."
+                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="PXEBoot", error=err), trace_id)
+            
+            self.bot.send_direct_message(user_id, reply)
+
+        import threading
+        threading.Thread(target=_worker, daemon=True).start()
+
+        return f"🔄 Configurando {ip} para formatar via PXE (MDT). Aguarde a confirmação..."
+
 
     def _cmd_preparar(self, user_id: str, args: List[str], trace_id: str = None) -> str:
         trace_id = trace_id or new_trace_id()

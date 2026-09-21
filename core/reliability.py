@@ -412,6 +412,11 @@ DEFAULT_INTENTS = [
         patterns=[r"\breinici", r"\bcontrole de energia\b", r"\bshutdown\b", r"\brestart\b"],
         handler_hint="orchestrator.reiniciar_maquina",
     ),
+    Intent(
+        name="formatar_maquina",
+        patterns=[r"\bformata", r"\bformatar\b", r"\bwipe\b", r"\bzerar\b", r"\breset\b"],
+        handler_hint="orchestrator.formatar_maquina",
+    ),
 ]
 
 
