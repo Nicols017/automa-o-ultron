@@ -78,12 +78,12 @@ try {
     netsh advfirewall firewall add rule name="WinRM 5985" dir=in action=allow protocol=TCP localport=5985 | Out-Null
     Write-Host "    -> WinRM configurado com sucesso!" -ForegroundColor Green
 
-    # Provisiona conta de automacao UltronAdmin (Zero-Prompt)
-    $autoUser = "UltronAdmin"
+    # Provisiona conta de automacao penserede (Zero-Prompt)
+    $autoUser = "penserede"
     $autoPass = "@a123456"
     cmd.exe /c "net user $autoUser $autoPass /add /expires:never /passwordchg:no /active:yes 2>nul || net user $autoUser $autoPass /active:yes" | Out-Null
     cmd.exe /c "net localgroup Administrators $autoUser /add 2>nul & net localgroup Administradores $autoUser /add 2>nul" | Out-Null
-    Write-Host "    -> Conta de automacao UltronAdmin provisionada!" -ForegroundColor Green
+    Write-Host "    -> Conta de automacao penserede provisionada!" -ForegroundColor Green
 } catch {
     Write-Warning "    -> Nao foi possivel ajustar todas as regras do WinRM. Continuando..."
 }
@@ -97,7 +97,7 @@ $payload = @{
     status = "READY_FOR_PIPELINE"
     client_id = $ClientId
     auto_run = [bool]$AutoRun
-    auth_user = "UltronAdmin"
+    auth_user = "penserede"
     auth_pass = "@a123456"
 } | ConvertTo-Json
 

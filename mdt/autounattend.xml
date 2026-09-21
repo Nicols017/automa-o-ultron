@@ -106,10 +106,10 @@
                             <Value>@a123456</Value>
                             <PlainText>true</PlainText>
                         </Password>
-                        <Description>Conta de automação do Ultron Lab</Description>
-                        <DisplayName>Ultron Admin</DisplayName>
+                        <Description>Conta de suporte e automação Pense Rede</Description>
+                        <DisplayName>Pense Rede</DisplayName>
                         <Group>Administrators;Administradores</Group>
-                        <Name>UltronAdmin</Name>
+                        <Name>penserede</Name>
                     </LocalAccount>
                 </LocalAccounts>
             </UserAccounts>
@@ -120,7 +120,7 @@
                 </Password>
                 <Enabled>true</Enabled>
                 <LogonCount>3</LogonCount>
-                <Username>UltronAdmin</Username>
+                <Username>penserede</Username>
             </AutoLogon>
             <!-- Executa o Bootstrap do Ultron automaticamente no primeiro logon -->
             <FirstLogonCommands>
