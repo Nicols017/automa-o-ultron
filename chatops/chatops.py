@@ -1670,18 +1670,37 @@ class TrueConfChatOps:
         $ProgressPreference = 'SilentlyContinue'
         $ErrorActionPreference = 'Stop'
         try {
-            $launcherPath = "C:\\Windows\\Temp\\run_litetouch.ps1"
-            $launcherCode = 'net use "\\\\192.168.57.87\\DeploymentShare$" /user:192.168.57.87\\Administrador "@a123456" 2>&1 | Out-Null; cscript.exe //B "\\\\192.168.57.87\\DeploymentShare$\\Scripts\\LiteTouch.vbs"'
-            Set-Content -Path $launcherPath -Value $launcherCode -Force
-
-            $wmi = Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File $launcherPath"
+            # 1. Conecta no servidor MDT
+            net use "\\\\192.168.57.87\\DeploymentShare$" /user:192.168.57.87\\Administrador "@a123456" 2>&1 | Out-Null
             
-            if ($wmi.ReturnValue -eq 0) {
-                Write-Output "SUCESSO: LiteTouch.vbs injetado via processo independente."
-            } else {
-                Write-Output "ERRO: Falha ao iniciar processo WMI. ReturnValue: $($wmi.ReturnValue)"
+            $wimPath = "\\\\192.168.57.87\\DeploymentShare$\\Boot\\LiteTouchPE_x64.wim"
+            if (-not (Test-Path $wimPath)) {
+                Write-Output "ERRO: O arquivo LiteTouchPE_x64.wim não foi encontrado no MDT."
                 exit 1
             }
+            
+            # 2. Prepara o diretorio de Boot do MDT no C:
+            if (-not (Test-Path "C:\\MDTBoot")) {
+                New-Item -ItemType Directory -Path "C:\\MDTBoot" | Out-Null
+            }
+            
+            # 3. Copia o WinPE e injeta no Recovery Environment do Windows
+            Copy-Item -Path $wimPath -Destination "C:\\MDTBoot\\winre.wim" -Force
+            
+            reagentc /disable 2>&1 | Out-Null
+            $reagent = reagentc /setreimage /path C:\\MDTBoot /target C:\\Windows 2>&1
+            reagentc /enable 2>&1 | Out-Null
+            
+            if ($LASTEXITCODE -ne 0) {
+                Write-Output "ERRO: Falha ao injetar o MDT no WinRE. Retorno: $reagent"
+                exit 1
+            }
+            
+            # 4. Força o boot no MDT e reinicia
+            reagentc /boottore 2>&1 | Out-Null
+            Restart-Computer -Force
+            
+            Write-Output "SUCESSO: O sistema MDT foi injetado com sucesso! A máquina já está reiniciando para formatar."
         } catch {
             Write-Output "ERRO: $($_.Exception.Message)"
             exit 1
