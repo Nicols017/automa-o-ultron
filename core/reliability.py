@@ -280,19 +280,26 @@ class ResilientWinRM:
                     self._executor(host, command, self.timeout_s),
                     timeout=self.timeout_s + 5,
                 )
-                if exit_code == 0:
+                if exit_code is not None:
+                    # Se rodou o script, seja sucesso (0) ou erro lógico do script (!= 0), 
+                    # a conexão de rede funcionou. Registra sucesso no circuito.
                     self._record_success(host)
-                    log.info(
-                        "winrm_ok", trace_id, host=host, command=command,
-                        attempt=attempt, duration_s=round(time.time() - start, 2),
-                    )
+                    if exit_code == 0:
+                        log.info(
+                            "winrm_ok", trace_id, host=host, command=command,
+                            attempt=attempt, duration_s=round(time.time() - start, 2),
+                        )
+                    else:
+                        log.warn(
+                            "winrm_nonzero_exit", trace_id, host=host, command=command,
+                            attempt=attempt, exit_code=exit_code,
+                        )
+                    
                     return WinRMResult(
-                        ok=True, host=host, command=command,
+                        ok=(exit_code == 0), host=host, command=command,
                         stdout=stdout, stderr=stderr, exit_code=exit_code,
                         attempts=attempt, duration_s=time.time() - start,
                     )
-                last_err = f"exit_code={exit_code} stdout={stdout[:300]} stderr={stderr[:300]}"
-                log.warn("winrm_nonzero_exit", trace_id, host=host, attempt=attempt, **{"exit_code": exit_code})
             except asyncio.TimeoutError:
                 last_err = "timeout"
                 log.warn("winrm_timeout", trace_id, host=host, attempt=attempt, timeout_s=self.timeout_s)
