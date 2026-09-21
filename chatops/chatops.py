@@ -900,7 +900,7 @@ class TrueConfChatOps:
             frozenset(["/preparar", "/iniciar", "/deploy"]):
                 lambda: self._cmd_preparar(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/formatar"]):
-                lambda: self._cmd_formatar(user_id, parts[1:], trace_id=trace_id),
+                lambda: self._cmd_formatar(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_formatar(user_id),
             frozenset(["/diagnostico", "/diag", "/inspecionar", "/smart"]):
                 lambda: self._cmd_diagnostico(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/ativar", "/ativacao", "/mas"]):
@@ -978,7 +978,7 @@ class TrueConfChatOps:
             if intent_match.intent == "instalar_software":
                 return self._cmd_softwares(user_id, [host, "tudo"], trace_id=trace_id) if host else self._start_wizard_softwares(user_id, trace_id=trace_id)
             elif intent_match.intent == "formatar_maquina":
-                return self._cmd_formatar(user_id, [host], trace_id=trace_id) if host else self._cmd_formatar(user_id, [], trace_id=trace_id)
+                return self._cmd_formatar(user_id, [host], trace_id=trace_id) if host else self._start_wizard_formatar(user_id)
             elif intent_match.intent == "verificar_saude":
                 return self._cmd_diagnostico(user_id, [host], trace_id=trace_id) if host else self._start_wizard_diagnostico(user_id, trace_id=trace_id)
             elif intent_match.intent == "preparar_maquina":
@@ -1164,6 +1164,11 @@ class TrueConfChatOps:
                 self.user_sessions.pop(user_id, None)
                 return self._cmd_preparar(user_id, [ip, client_id])
 
+        if wtype == "wizard_formatar":
+            ip = self._extract_target_ip(text) or text.strip()
+            self.user_sessions.pop(user_id, None)
+            return self._cmd_formatar(user_id, [ip])
+
         if wtype == "wizard_preparar_ip":
             client_id = session.get("client_id")
             ip = self._extract_target_ip(text) or text.strip()
@@ -1315,6 +1320,15 @@ class TrueConfChatOps:
             "🚀 PREPARAÇÃO AUTOMÁTICA DE MÁQUINA\n\n"
             "Digite o IP do computador na bancada:\n"
             "(ex: 192.168.57.59 ou 192.168.58.182)\n\n"
+            "[ 0 ] Cancelar e voltar ao Menu"
+        )
+
+    def _start_wizard_formatar(self, user_id: str) -> str:
+        self.user_sessions[user_id] = {"type": "wizard_formatar", "step": "ip"}
+        return (
+            "🔄 FORMATAÇÃO VIA REDE (PXE)\n\n"
+            "Digite o IP do computador que deseja formatar:\n"
+            "(ex: 192.168.57.59)\n\n"
             "[ 0 ] Cancelar e voltar ao Menu"
         )
 
