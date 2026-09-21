@@ -1670,15 +1670,23 @@ class TrueConfChatOps:
         $ProgressPreference = 'SilentlyContinue'
         $ErrorActionPreference = 'Stop'
         try {
-            net use "\\\\192.168.57.87\\DeploymentShare$" /user:Administrador "@a123456" 2>&1 | Out-Null
-            $script = "\\\\192.168.57.87\\DeploymentShare$\\Scripts\\LiteTouch.vbs"
+            $share = "\\\\192.168.57.87\\DeploymentShare$"
+            $user = "192.168.57.87\\Administrador"
+            $pass = "@a123456"
+            
+            $netout = net use $share /user:$user $pass 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Output "ERRO: Falha no net use. Retorno: $($netout -join ' ')"
+                exit 1
+            }
+            
+            $script = "$share\\Scripts\\LiteTouch.vbs"
             
             if (Test-Path $script) {
-                # O LiteTouch copia o boot.wim para o C: e injeta no BCD local (funciona até sem PXE na BIOS)
                 Start-Process -FilePath "cscript.exe" -ArgumentList "//B `"$script`"" -PassThru -NoNewWindow | Out-Null
                 Write-Output "SUCESSO: LiteTouch.vbs iniciado. O PC vai reiniciar no WinPE (MDT)."
             } else {
-                Write-Output "ERRO: Compartilhamento do servidor MDT (192.168.57.87) inacessível."
+                Write-Output "ERRO: O script LiteTouch.vbs nao foi encontrado em $script"
                 exit 1
             }
         } catch {
@@ -1705,7 +1713,7 @@ class TrueConfChatOps:
                     trace_id
                 )
             else:
-                err_msg = "Falha ao conectar no servidor MDT ou executar o LiteTouch.vbs. Verifique se a máquina-alvo alcança o servidor 192.168.57.87."
+                err_msg = "Falha desconhecida no LiteTouch."
                 for line in stdout.splitlines():
                     if line.startswith("ERRO:"):
                         err_msg = line.replace("ERRO:", "").strip()
