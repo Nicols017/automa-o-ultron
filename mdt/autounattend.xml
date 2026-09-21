@@ -68,8 +68,8 @@
             </ImageInstall>
             <UserData>
                 <AcceptEula>true</AcceptEula>
-                <FullName>Ultron Lab Automation</FullName>
-                <Organization>Pense Rede</Organization>
+                <FullName>penserede</FullName>
+                <Organization>penserede</Organization>
             </UserData>
             <!-- Bypass de requisitos de hardware Windows 11 (TPM 2.0, SecureBoot, RAM) -->
             <RunSynchronous>
@@ -106,8 +106,8 @@
                             <Value>@a123456</Value>
                             <PlainText>true</PlainText>
                         </Password>
-                        <Description>Conta de suporte e automação Pense Rede</Description>
-                        <DisplayName>Pense Rede</DisplayName>
+                        <Description>Conta de automação do penserede</Description>
+                        <DisplayName>penserede</DisplayName>
                         <Group>Administrators;Administradores</Group>
                         <Name>penserede</Name>
                     </LocalAccount>
