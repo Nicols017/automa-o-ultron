@@ -174,4 +174,7 @@ Write-Host "==================================================" -ForegroundColor
 Write-Host "✅ Sucesso: $($successList.Count) pacotes ($($successList -join ', '))" -ForegroundColor Green
 if ($failedList.Count -gt 0) {
     Write-Host "❌ Falhas/Não encontrados: $($failedList.Count) pacotes ($($failedList -join ', '))" -ForegroundColor Red
+    exit 1
+} else {
+    exit 0
 }
