@@ -1666,12 +1666,32 @@ class TrueConfChatOps:
         self._last_user_ip[user_id] = ip
         log.info("task_started", trace_id, ip=ip, action="formatar_pxe")
 
-        pxe_script = (
-            "$NetworkBoot = bcdedit /enum firmware | Select-String 'Network' -Context 3 | "
-            "Select-String 'identifier' | ForEach-Object { $_.Line.Split(' ')[-1] }; "
-            "if ($NetworkBoot) { bcdedit /set '{fwbootmgr}' bootsequence $NetworkBoot[0] /addfirst; "
-            "Restart-Computer -Force } else { throw 'Boot de Rede (PXE) não encontrado na BIOS/UEFI.' }"
-        )
+        pxe_script = """
+        $ProgressPreference = 'SilentlyContinue'
+        $ErrorActionPreference = 'Stop'
+        try {
+            $fw = bcdedit /enum firmware 2>&1
+            if ($fw -match 'could not be opened' -or $fw -match 'não pôde ser aberto') {
+                Write-Output "ERRO: Computador em modo Legacy (BIOS) ou BCD bloqueado. Requer UEFI."
+                exit 1
+            }
+            
+            $NetworkBoot = $fw | Select-String -Pattern 'Network|Rede|PXE|IPv4|LAN|NIC' -Context 3 | Select-String 'identifier' | ForEach-Object { $_.Line.Split(' ')[-1] }
+            
+            if ($NetworkBoot) {
+                $id = $NetworkBoot[0]
+                bcdedit /set '{fwbootmgr}' bootsequence $id /addfirst 2>&1 | Out-Null
+                Restart-Computer -Force
+                Write-Output "SUCESSO: Máquina reiniciando no MDT."
+            } else {
+                Write-Output "ERRO: Opção de Boot via Rede (PXE) não encontrada no UEFI."
+                exit 1
+            }
+        } catch {
+            Write-Output "ERRO: $($_.Exception.Message)"
+            exit 1
+        }
+        """
 
         try:
             from main import agent_task_mgr
@@ -1683,15 +1703,25 @@ class TrueConfChatOps:
             self._ensure_orchestrator()
             res = self.orchestrator.winrm.run_powershell_code(ip, pxe_script)
             
+            stdout = res.get("stdout", "")
             if res.get("success"):
                 reply = self.msg_builder.success(
                     "Formatação PXE Iniciada",
-                    {"Alvo": ip, "Status": "Máquina configurada para Boot via Rede e reiniciada."},
+                    {"Alvo": ip, "Status": "A máquina foi configurada para Boot via Rede e reiniciada."},
                     trace_id
                 )
             else:
-                err = res.get("stderr") or res.get("stdout") or "Erro desconhecido. Verifique se o PC suporta UEFI e PXE."
-                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="PXEBoot", error=err), trace_id)
+                err_msg = "Verifique se o PC tem UEFI e PXE ativado. Use '/power ip restart' se a máquina travou."
+                for line in stdout.splitlines():
+                    if line.startswith("ERRO:"):
+                        err_msg = line.replace("ERRO:", "").strip()
+                        break
+                        
+                if not err_msg and res.get("stderr"):
+                    # Se não veio na nossa string "ERRO:" mas falhou, ignoramos CLIXML e usamos erro genérico
+                    pass
+
+                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="PXEBoot", error=err_msg), trace_id)
             
             self.bot.send_direct_message(user_id, reply)
 
