@@ -101,9 +101,14 @@ class WinRMExecutor:
             candidates.append(cached)
 
         # 3. Credencial padrão de automação do UltronAgent (Zero-Prompt)
-        agent_cred = ("UltronAdmin", "@a123456")
+        agent_cred = ("penserede", "@a123456")
         if agent_cred not in candidates:
             candidates.append(agent_cred)
+
+        # Adiciona a credencial antiga (legado) para retrocompatibilidade
+        legacy_cred = ("UltronAdmin", "@a123456")
+        if legacy_cred not in candidates:
+            candidates.append(legacy_cred)
 
         # 4. Usuário padrão configurado se houver
         if self.default_user and (self.default_user, self.default_pass) not in candidates:
