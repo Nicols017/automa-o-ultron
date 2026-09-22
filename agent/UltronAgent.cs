@@ -73,7 +73,7 @@ namespace UltronAgent
 
         static void Main(string[] args)
         {
-            Console.OutputEncoding = Encoding.UTF8;
+            try { Console.OutputEncoding = Encoding.UTF8; } catch { }
             ParseArguments(args);
 
             // 1. Execução no modo Windows Service
@@ -137,16 +137,20 @@ namespace UltronAgent
             {
                 if (!SilentMode)
                 {
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine("\n[OK] Desbloqueio e registro concluídos com sucesso!");
-                    Console.WriteLine("[OK] Serviço UltronService instalado e operando em segundo plano.");
-                    Console.WriteLine("[*] A máquina está 100% pronta para automação e nunca perderá o acesso.");
-                    Console.ResetColor();
-                    Console.WriteLine("\nPressione qualquer tecla para fechar esta janela...");
-                    if (!Console.IsInputRedirected)
+                    try
                     {
-                        try { Console.ReadKey(); } catch { }
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine("\n[OK] Desbloqueio e registro concluídos com sucesso!");
+                        Console.WriteLine("[OK] Serviço UltronService instalado e operando em segundo plano.");
+                        Console.WriteLine("[*] A máquina está 100% pronta para automação e nunca perderá o acesso.");
+                        Console.ResetColor();
+                        Console.WriteLine("\nPressione qualquer tecla para fechar esta janela...");
+                        if (!Console.IsInputRedirected)
+                        {
+                            Console.ReadKey();
+                        }
                     }
+                    catch { }
                 }
             }
         }
@@ -209,20 +213,26 @@ namespace UltronAgent
         static void PrintBanner()
         {
             if (SilentMode) return;
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("===============================================================");
-            Console.WriteLine("       🤖 [ULTRON] LAB AUTOMATION AUTONOMOUS AGENT v2.2.0        ");
-            Console.WriteLine("       Pense Rede Network Solutions - Laboratório de TI        ");
-            Console.WriteLine("===============================================================");
-            Console.ResetColor();
+            try
+            {
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("===============================================================");
+                Console.WriteLine("       🤖 [ULTRON] LAB AUTOMATION AUTONOMOUS AGENT v2.2.0        ");
+                Console.WriteLine("       Pense Rede Network Solutions - Laboratório de TI        ");
+                Console.WriteLine("===============================================================");
+                Console.ResetColor();
+            } catch { }
         }
 
         static void Log(string msg, ConsoleColor color)
         {
             if (SilentMode) return;
-            Console.ForegroundColor = color;
-            Console.WriteLine(msg);
-            Console.ResetColor();
+            try
+            {
+                Console.ForegroundColor = color;
+                Console.WriteLine(msg);
+                Console.ResetColor();
+            } catch { }
         }
 
         // =====================================================================
