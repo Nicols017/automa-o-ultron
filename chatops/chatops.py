@@ -1973,7 +1973,7 @@ class TrueConfChatOps:
                         f"Armazenamento: {disks_str or 'Não detectado'}\n"
                     )
 
-                    reply = f"{hw_header}\n{ai_diag}\n\ntrace_id: `{trace_id}`"
+                    reply = f"{hw_header}\n{ai_diag}"
             except Exception as e:
                 reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Diagnostico", error=str(e)), trace_id)
 
