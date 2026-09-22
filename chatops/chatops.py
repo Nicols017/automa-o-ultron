@@ -1371,7 +1371,7 @@ class TrueConfChatOps:
     # Starters dos Wizards
     # ------------------------------------------------------------------
 
-    def _start_wizard_diagnostico(self, user_id: str) -> str:
+    def _start_wizard_diagnostico(self, user_id: str, trace_id: str = None) -> str:
         self.user_sessions[user_id] = {"type": "wizard_diag", "step": "ip"}
         return (
             "🩺 DIAGNÓSTICO DE HARDWARE & S.M.A.R.T\n\n"
@@ -1380,7 +1380,7 @@ class TrueConfChatOps:
             "[ 0 ] Cancelar e voltar ao Menu"
         )
 
-    def _start_wizard_msg(self, user_id: str) -> str:
+    def _start_wizard_msg(self, user_id: str, trace_id: str = None) -> str:
         self.user_sessions[user_id] = {"type": "wizard_msg", "step": "ip"}
         return (
             "📢 ENVIAR MENSAGEM / POP-UP NA TELA\n\n"
@@ -1389,7 +1389,7 @@ class TrueConfChatOps:
             "[ 0 ] Cancelar e voltar ao Menu"
         )
 
-    def _start_wizard_preparar(self, user_id: str) -> str:
+    def _start_wizard_preparar(self, user_id: str, trace_id: str = None) -> str:
         self.user_sessions[user_id] = {"type": "wizard_preparar", "step": "ip"}
         return (
             "🚀 PREPARAÇÃO AUTOMÁTICA DE MÁQUINA\n\n"
@@ -1398,7 +1398,7 @@ class TrueConfChatOps:
             "[ 0 ] Cancelar e voltar ao Menu"
         )
 
-    def _start_wizard_formatar(self, user_id: str) -> str:
+    def _start_wizard_formatar(self, user_id: str, trace_id: str = None) -> str:
         self.user_sessions[user_id] = {"type": "wizard_formatar", "step": "ip"}
         return (
             "🔄 FORMATAÇÃO VIA REDE (PXE)\n\n"
@@ -1407,7 +1407,7 @@ class TrueConfChatOps:
             "[ 0 ] Cancelar e voltar ao Menu"
         )
 
-    def _start_wizard_ativar(self, user_id: str) -> str:
+    def _start_wizard_ativar(self, user_id: str, trace_id: str = None) -> str:
         self.user_sessions[user_id] = {"type": "wizard_ativar", "step": "ip"}
         return (
             "🔑 ATIVAÇÃO DO WINDOWS E OFFICE (MAS)\n\n"
@@ -1416,7 +1416,7 @@ class TrueConfChatOps:
             "[ 0 ] Cancelar e voltar ao Menu"
         )
 
-    def _start_wizard_backup(self, user_id: str) -> str:
+    def _start_wizard_backup(self, user_id: str, trace_id: str = None) -> str:
         self.user_sessions[user_id] = {"type": "wizard_backup", "step": "ip"}
         return (
             "💾 BACKUP DE DADOS PARA O STORAGE\n\n"
@@ -1425,7 +1425,7 @@ class TrueConfChatOps:
             "[ 0 ] Cancelar e voltar ao Menu"
         )
 
-    def _start_wizard_dominio(self, user_id: str) -> str:
+    def _start_wizard_dominio(self, user_id: str, trace_id: str = None) -> str:
         self.user_sessions[user_id] = {"type": "wizard_dominio", "step": "ip"}
         return (
             "🛡️ INGRESSO NO DOMÍNIO (ACTIVE DIRECTORY)\n\n"
@@ -1434,7 +1434,7 @@ class TrueConfChatOps:
             "[ 0 ] Cancelar e voltar ao Menu"
         )
 
-    def _start_wizard_softwares(self, user_id: str) -> str:
+    def _start_wizard_softwares(self, user_id: str, trace_id: str = None) -> str:
         self.user_sessions[user_id] = {"type": "wizard_softwares", "step": "ip"}
         return (
             "📦 INSTALAÇÃO DE SOFTWARES\n\n"
