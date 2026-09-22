@@ -423,6 +423,7 @@ class DiagnosticAnalyzer:
             "- Idioma: Português do Brasil (pt-BR).\n"
             "- Não inclua saudações, introduções ou conversas fiadas.\n"
             "- Escreva de forma simples e natural, em parágrafos curtos.\n"
+            "- SEJA CONCISO E DIRETO. Não ultrapasse 150 palavras no total para não cortar o texto.\n"
             "- ZERO emojis.\n"
             "- ZERO formatação agressiva (sem negritos em frases inteiras, sem marcações markdown agressivas).\n"
             "- Siga exatamente esta estrutura em texto corrido (utilize estas exatas palavras como início de frase, sem negrito, seguido de dois pontos e pule uma linha entre elas):\n\n"
