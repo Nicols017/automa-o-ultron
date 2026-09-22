@@ -1964,8 +1964,14 @@ class TrueConfChatOps:
                     obs_hist = diag.get("obsidian_history")
                     if obs_hist:
                         ai_diag += f"\n\nHistórico (Obsidian):\n{obs_hist}"
+                        
+                    hw_header = (
+                        f"Computador: {telem.get('computer_name', 'N/A')} ({ip})\n"
+                        f"CPU: {telem.get('cpu', 'N/A')} | RAM: {telem.get('ram_gb', 'N/A')} GB\n"
+                        f"Armazenamento: {disks_str or 'Não detectado'}\n"
+                    )
 
-                    reply = f"{ai_diag}\n\ntrace_id: `{trace_id}`"
+                    reply = f"{hw_header}\n{ai_diag}\n\ntrace_id: `{trace_id}`"
             except Exception as e:
                 reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Diagnostico", error=str(e)), trace_id)
 
