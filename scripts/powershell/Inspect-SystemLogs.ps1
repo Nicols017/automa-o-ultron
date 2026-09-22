@@ -28,14 +28,25 @@ $diagReport = @{
 
 # 0. Checagem do AnyDesk ID
 try {
-    $anydeskExe = "${env:ProgramFiles(x86)}\AnyDesk\AnyDesk.exe"
-    if (-not (Test-Path $anydeskExe)) { $anydeskExe = "$env:ProgramFiles\AnyDesk\AnyDesk.exe" }
-    if (Test-Path $anydeskExe) {
-        $idOut = & $anydeskExe --get-id 2>$null
-        if ($idOut -match "^\d+$") { 
-            $diagReport.anydesk_id = $idOut.Trim() 
+    $anydeskId = ""
+    $sysConf = "C:\ProgramData\AnyDesk\system.conf"
+    if (Test-Path $sysConf) {
+        $match = Get-Content -Path $sysConf -ErrorAction SilentlyContinue | Select-String "ad.anynet.id=(\d+)"
+        if ($match) { $anydeskId = $match.Matches.Groups[1].Value }
+    }
+    
+    if (-not $anydeskId) {
+        $anydeskExe = "${env:ProgramFiles(x86)}\AnyDesk\AnyDesk.exe"
+        if (-not (Test-Path $anydeskExe)) { $anydeskExe = "$env:ProgramFiles\AnyDesk\AnyDesk.exe" }
+        if (Test-Path $anydeskExe) {
+            $idOut = & $anydeskExe --get-id 2>$null
+            if ($idOut -match "\d+") { 
+                $anydeskId = [regex]::Match($idOut, "\d+").Value 
+            }
         }
     }
+    
+    if ($anydeskId) { $diagReport.anydesk_id = $anydeskId }
 } catch {}
 
 # 1. Checagem de Saúde de Discos Físicos (S.M.A.R.T)
