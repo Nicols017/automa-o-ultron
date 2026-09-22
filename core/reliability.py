@@ -364,12 +364,11 @@ class MessageBuilder:
 
     def error(self, result: WinRMResult, trace_id: str) -> str:
         msg = (
-            f"🔴 **Falha ao executar comando**\n\n"
+            f"❌ **Falha ao executar comando**\n\n"
             f"**Host:** {result.host}\n"
             f"**Comando:** `{result.command}`\n"
             f"**Tentativas:** {result.attempts}\n"
-            f"**Erro:** {self._escape_md(result.error or 'desconhecido')}\n\n"
-            f"trace_id: `{trace_id}`"
+            f"**Erro:** {self._escape_md(result.error or 'desconhecido')}\n"
         )
         return self._validate_and_trim(msg, trace_id)
 

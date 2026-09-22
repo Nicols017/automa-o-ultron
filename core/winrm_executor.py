@@ -85,7 +85,9 @@ class WinRMExecutor:
             endpoint,
             auth=(user, pwd),
             transport="ntlm",
-            server_cert_validation="ignore"
+            server_cert_validation="ignore",
+            read_timeout_sec=130,
+            operation_timeout_sec=120
         )
 
     def _get_credential_candidates(self, ip: str, username: Optional[str] = None, password: Optional[str] = None) -> List[Tuple[str, str]]:
