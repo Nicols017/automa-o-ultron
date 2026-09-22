@@ -161,7 +161,7 @@ class WinRMExecutor:
     async def _execute_winrm_async(self, ip: str, session: winrm.Session, script_content: str, timeout_s: float) -> Tuple[int, str, str]:
         """Executor assíncrono para ser chamado pelo ResilientWinRM"""
         def _blocking_run():
-            if len(script_content) < 1800:
+            if len(script_content) < 1000:
                 response = session.run_ps(script_content)
             else:
                 import base64

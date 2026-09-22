@@ -1157,13 +1157,17 @@ class TrueConfChatOps:
 
         # 3.2. Entrada de IP para Formatação
         if wtype == "wizard_formatar":
-            ip = self._extract_target_ip(text) or text.strip()
+            ip = self._extract_target_ip(text)
+            if not ip:
+                return "⚠️ Endereço IP inválido. Por favor, digite um IP válido (ex: 57.48) ou 0 para cancelar."
             self.user_sessions.pop(user_id, None)
             return self._cmd_formatar(user_id, [ip])
 
         # 4. Wizard de Diagnóstico
         if wtype == "wizard_diag":
-            ip = self._extract_target_ip(text) or text.strip()
+            ip = self._extract_target_ip(text)
+            if not ip:
+                return "⚠️ Endereço IP inválido. Por favor, digite um IP válido (ex: 57.48) ou 0 para cancelar."
             self.user_sessions.pop(user_id, None)
             return self._cmd_diagnostico(user_id, [ip])
 
@@ -1171,7 +1175,9 @@ class TrueConfChatOps:
         if wtype == "wizard_msg":
             step = session.get("step")
             if step == "ip":
-                ip = self._extract_target_ip(text) or text.strip()
+                ip = self._extract_target_ip(text)
+                if not ip:
+                    return "⚠️ Endereço IP inválido. Por favor, digite um IP válido (ex: 57.48) ou 0 para cancelar."
                 session["ip"] = ip
                 session["step"] = "text"
                 return (
@@ -1190,7 +1196,9 @@ class TrueConfChatOps:
         if wtype == "wizard_preparar":
             step = session.get("step")
             if step == "ip":
-                ip = self._extract_target_ip(text) or text.strip()
+                ip = self._extract_target_ip(text)
+                if not ip:
+                    return "⚠️ Endereço IP inválido. Por favor, digite um IP válido (ex: 57.48) ou 0 para cancelar."
                 session["ip"] = ip
                 session["step"] = "client"
                 clients = self.profile_mgr.list_clients()
@@ -1214,13 +1222,17 @@ class TrueConfChatOps:
                 return self._cmd_preparar(user_id, [ip, client_id])
 
         if wtype == "wizard_formatar":
-            ip = self._extract_target_ip(text) or text.strip()
+            ip = self._extract_target_ip(text)
+            if not ip:
+                return "⚠️ Endereço IP inválido. Por favor, digite um IP válido (ex: 57.48) ou 0 para cancelar."
             self.user_sessions.pop(user_id, None)
             return self._cmd_formatar(user_id, [ip])
 
         if wtype == "wizard_preparar_ip":
             client_id = session.get("client_id")
-            ip = self._extract_target_ip(text) or text.strip()
+            ip = self._extract_target_ip(text)
+            if not ip:
+                return "⚠️ Endereço IP inválido. Por favor, digite um IP válido (ex: 57.48) ou 0 para cancelar."
             self.user_sessions.pop(user_id, None)
             return self._cmd_preparar(user_id, [ip, client_id])
 
@@ -1240,13 +1252,17 @@ class TrueConfChatOps:
 
         # 7. Wizard de Ativação MAS
         if wtype == "wizard_ativar":
-            ip = self._extract_target_ip(text) or text.strip()
+            ip = self._extract_target_ip(text)
+            if not ip:
+                return "⚠️ Endereço IP inválido. Por favor, digite um IP válido (ex: 57.48) ou 0 para cancelar."
             self.user_sessions.pop(user_id, None)
             return self._cmd_ativar(user_id, [ip])
 
         # 8. Wizard de Backup
         if wtype == "wizard_backup":
-            ip = self._extract_target_ip(text) or text.strip()
+            ip = self._extract_target_ip(text)
+            if not ip:
+                return "⚠️ Endereço IP inválido. Por favor, digite um IP válido (ex: 57.48) ou 0 para cancelar."
             self.user_sessions.pop(user_id, None)
             return self._cmd_backup(user_id, [ip])
 
@@ -1254,7 +1270,9 @@ class TrueConfChatOps:
         if wtype == "wizard_dominio":
             step = session.get("step")
             if step == "ip":
-                ip = self._extract_target_ip(text) or text.strip()
+                ip = self._extract_target_ip(text)
+                if not ip:
+                    return "⚠️ Endereço IP inválido. Por favor, digite um IP válido (ex: 57.48) ou 0 para cancelar."
                 session["ip"] = ip
                 session["step"] = "domain"
                 return (
@@ -1276,7 +1294,9 @@ class TrueConfChatOps:
             return self._cmd_dominio(user_id, [ip, dom])
 
         if wtype == "wizard_power":
-            ip = self._extract_target_ip(text) or text.strip()
+            ip = self._extract_target_ip(text)
+            if not ip:
+                return "⚠️ Endereço IP inválido. Por favor, digite um IP válido (ex: 57.48) ou 0 para cancelar."
             action = session.get("action", "restart")
             self.user_sessions.pop(user_id, None)
             return self._cmd_power(user_id, [ip], action)
@@ -1285,7 +1305,9 @@ class TrueConfChatOps:
         if wtype == "wizard_softwares":
             step = session.get("step")
             if step == "ip":
-                ip = text.strip()
+                ip = self._extract_target_ip(text)
+                if not ip:
+                    return "⚠️ Endereço IP inválido. Por favor, digite um IP válido (ex: 57.48) ou 0 para cancelar."
                 session["ip"] = ip
                 session["step"] = "choice"
                 return (
@@ -1314,7 +1336,9 @@ class TrueConfChatOps:
         if wtype == "wizard_power":
             step = session.get("step")
             if step == "ip":
-                ip = text.strip()
+                ip = self._extract_target_ip(text)
+                if not ip:
+                    return "⚠️ Endereço IP inválido. Por favor, digite um IP válido (ex: 57.48) ou 0 para cancelar."
                 session["ip"] = ip
                 session["step"] = "action"
                 return (
@@ -1334,7 +1358,9 @@ class TrueConfChatOps:
 
         # 12. Wizard de Limpeza Pós-Bancada
         if wtype == "wizard_limpar":
-            ip = self._extract_target_ip(text) or text.strip()
+            ip = self._extract_target_ip(text)
+            if not ip:
+                return "⚠️ Endereço IP inválido. Por favor, digite um IP válido (ex: 57.48) ou 0 para cancelar."
             self.user_sessions.pop(user_id, None)
             return self._cmd_limpar(user_id, [ip])
 
@@ -1417,7 +1443,7 @@ class TrueConfChatOps:
             "[ 0 ] Cancelar e voltar ao Menu"
         )
 
-    def _start_wizard_power(self, user_id: str) -> str:
+    def _start_wizard_power(self, user_id: str, trace_id: str = None) -> str:
         self.user_sessions[user_id] = {"type": "wizard_power", "step": "ip"}
         return (
             "🔌 CONTROLE REMOTO DE ENERGIA\n\n"
@@ -1426,7 +1452,7 @@ class TrueConfChatOps:
             "[ 0 ] Cancelar e voltar ao Menu"
         )
 
-    def _start_wizard_limpar(self, user_id: str) -> str:
+    def _start_wizard_limpar(self, user_id: str, trace_id: str = None) -> str:
         self.user_sessions[user_id] = {"type": "wizard_limpar", "step": "ip"}
         return (
             "🧹 **LIMPEZA PÓS-BANCADA (ENTREGA AO CLIENTE)**\n\n"
