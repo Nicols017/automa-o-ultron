@@ -23,7 +23,20 @@ $diagReport = @{
     bsod_dumps = @()
     critical_events = @()
     device_errors = @()
+    anydesk_id = ""
 }
+
+# 0. Checagem do AnyDesk ID
+try {
+    $anydeskExe = "${env:ProgramFiles(x86)}\AnyDesk\AnyDesk.exe"
+    if (-not (Test-Path $anydeskExe)) { $anydeskExe = "$env:ProgramFiles\AnyDesk\AnyDesk.exe" }
+    if (Test-Path $anydeskExe) {
+        $idOut = & $anydeskExe --get-id 2>$null
+        if ($idOut -match "^\d+$") { 
+            $diagReport.anydesk_id = $idOut.Trim() 
+        }
+    }
+} catch {}
 
 # 1. Checagem de Saúde de Discos Físicos (S.M.A.R.T)
 try {
