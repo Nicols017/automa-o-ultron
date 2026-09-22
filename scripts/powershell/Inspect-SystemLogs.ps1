@@ -79,7 +79,8 @@ if (Test-Path "C:\Windows\Minidump") {
 
 # 3. Dispositivos com Erro no Gerenciador de Dispositivos (Drivers faltando/corrompidos)
 try {
-    $problemDevices = Get-PnpDevice | Where-Object { $_.Status -eq "Error" -or $_.Problem -gt 0 }
+    # Ignoramos o código 45 (dispositivos não conectados / fantasmas) para não poluir o JSON
+    $problemDevices = Get-PnpDevice | Where-Object { ($_.Status -eq "Error" -or $_.Problem -gt 0) -and $_.Problem -ne 45 }
     foreach ($dev in $problemDevices) {
         $diagReport.device_errors += @{
             name = $dev.FriendlyName
