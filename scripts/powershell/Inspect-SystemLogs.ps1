@@ -24,7 +24,16 @@ $diagReport = @{
     critical_events = @()
     device_errors = @()
     anydesk_id = ""
+    mac_address = ""
 }
+
+# Pegar MAC Address da interface de rede ativa
+try {
+    $activeNet = Get-NetAdapter | Where-Object { $_.Status -eq "Up" -and $_.MacAddress } | Select-Object -First 1
+    if ($activeNet) {
+        $diagReport.mac_address = $activeNet.MacAddress
+    }
+} catch {}
 
 # 0. Checagem do AnyDesk ID
 try {

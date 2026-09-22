@@ -1966,8 +1966,10 @@ class TrueConfChatOps:
                         ai_diag += f"\n\nHistórico (Obsidian):\n{obs_hist}"
                         
                     anydesk = telem.get("anydesk_id") or "Não instalado"
+                    mac_addr = telem.get("mac_address") or "Desconhecido"
                     hw_header = (
                         f"Computador: {telem.get('computer_name', 'N/A')} ({ip})\n"
+                        f"MAC Address: {mac_addr}\n"
                         f"Usuário Logado: {user_str} | AnyDesk: {anydesk}\n"
                         f"CPU: {telem.get('cpu', 'N/A')} | RAM: {telem.get('ram_gb', 'N/A')} GB\n"
                         f"Armazenamento: {disks_str or 'Não detectado'}\n"
