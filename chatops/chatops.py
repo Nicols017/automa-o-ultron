@@ -83,6 +83,7 @@ class TrueConfChatOps:
         # Cache de varredura de bancada para resposta instantânea
         self._cached_devices: List[Dict[str, Any]] = []
         self._last_scan_time: float = 0
+        self._cache_lock = threading.Lock()
 
     def _get_server_url(self) -> str:
         """Resolve o IP oficial do servidor configurado em settings.yaml ou detecta da rede local"""
