@@ -408,7 +408,12 @@ class DiagnosticAnalyzer:
             root_cause = "O hardware principal apresenta-se íntegro, operando dentro dos parâmetros ideais."
             actions = "Prossiga para a esteira de automação e instalação do perfil do cliente."
 
-        return f"Os dados indicam que {issues_str.lower()} {root_cause} {actions}"
+        return (
+            f"Diagnóstico:\nOs dados indicam que {issues_str.lower()}\n\n"
+            f"Causa provável:\n{root_cause}\n\n"
+            f"Ações recomendadas:\n{actions}\n\n"
+            f"Veredito:\n{'Requer manutenção de hardware' if unhealthy_disks else 'Aprovada para preparação'}"
+        )
 
     def analyze_logs(self, telemetry_data: Dict[str, Any]) -> str:
         """
@@ -443,9 +448,9 @@ Responda seguindo estritamente a estrutura solicitada no system prompt (Diagnós
 
         try:
             res = self.generate(prompt, system_prompt=system_prompt)
-            if res:
+            if res and "Veredito" in res and "Diagnóstico" in res:
                 return res
         except Exception:
             pass
-
+            
         return self._generate_rule_based_diagnosis(telemetry_data)
