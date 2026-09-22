@@ -396,28 +396,19 @@ class DiagnosticAnalyzer:
         issues_str = "; ".join(issues) if issues else "Nenhuma falha crítica detectada."
 
         if unhealthy_disks:
-            root_cause = "Degradação física ou setores defeituosos detectados na unidade de armazenamento."
-            actions = "Substituir unidade de armazenamento danificada antes de iniciar a instalação de softwares."
-            verdict = "REQUER MANUTENÇÃO DE HARDWARE ANTES DO DEPLOY"
+            root_cause = "Há sinais de degradação física ou setores defeituosos na unidade de armazenamento."
+            actions = "Substitua a unidade de armazenamento danificada antes de iniciar a instalação de softwares."
         elif has_bsod:
-            root_cause = "Histórico de travamento por falha de driver, superaquecimento ou instabilidade de memória."
-            actions = "Executar esteira de atualização de drivers e rodar teste de estresse térmico."
-            verdict = "APROVADA COM RESSALVAS (MONITORAR ESTRESSE)"
+            root_cause = "O histórico de telas azuis indica travamento por falha de driver, superaquecimento ou instabilidade de memória."
+            actions = "Execute uma atualização completa de drivers e rode um teste de estresse térmico para confirmar a estabilidade."
         elif has_driver_errs:
-            root_cause = f"Sistema operacional recém-instalado com {len(dev_errs)} drivers pendentes de instalação."
-            actions = "Prosseguir para esteira de preparação e aplicar o perfil do cliente com atualização de drivers."
-            verdict = "APROVADA PARA PREPARAÇÃO"
+            root_cause = f"O sistema operacional possui {len(dev_errs)} drivers pendentes de instalação."
+            actions = "Prossiga para a esteira de preparação e aplique o perfil do cliente para atualizar os drivers faltantes."
         else:
-            root_cause = "Hardware 100% íntegro com processador, memória e barramentos operando dentro dos parâmetros ideais."
-            actions = "Prosseguir para esteira de automação e instalação do perfil do cliente."
-            verdict = "APROVADA PARA PREPARAÇÃO"
+            root_cause = "O hardware principal apresenta-se íntegro, operando dentro dos parâmetros ideais."
+            actions = "Prossiga para a esteira de automação e instalação do perfil do cliente."
 
-        return (
-            f"1. 🚨 **Problemas Identificados:** {issues_str}\n"
-            f"2. 🔬 **Causa Raiz:** {root_cause}\n"
-            f"3. 🛠️ **Ações de Reparo Recomendadas:** {actions}\n"
-            f"4. 🩺 **Veredito da Máquina:** **{verdict}**"
-        )
+        return f"Os dados indicam que {issues_str.lower()} {root_cause} {actions}"
 
     def analyze_logs(self, telemetry_data: Dict[str, Any]) -> str:
         """
@@ -427,13 +418,17 @@ class DiagnosticAnalyzer:
         """
         system_prompt = (
             "Você é o ULTRON, perito sênior em hardware de computadores e suporte de TI da Pense Rede.\n"
-            "Sua missão é emitir um laudo técnico executivo estritamente profissional, claro e direto.\n"
+            "Sua missão é emitir um laudo técnico estritamente profissional, claro e direto.\n"
             "Diretrizes:\n"
             "- Idioma: Português do Brasil (pt-BR).\n"
             "- Não inclua saudações, introduções ou conversas fiadas.\n"
-            "- Responda exatamente na estrutura solicitada de 4 pontos.\n"
-            "- Se não houver problemas graves, afirme com clareza e autoridade técnica.\n"
-            "- Seja prático: indique comandos ou ações físicas exatas de bancada."
+            "- Escreva de forma simples e natural, em parágrafos curtos, como um técnico sênior falando com outro.\n"
+            "- ZERO emojis.\n"
+            "- ZERO formatação excessiva (sem negritos desnecessários, sem títulos, sem listas numeradas).\n"
+            "- NÃO repita os dados fornecidos pelo sistema (Host, IP, CPU, RAM) apenas para preencher espaço. Selecione apenas o que for relevante para justificar seu parecer.\n"
+            "- NÃO afirme hipóteses como certezas absolutas. Diferencie fatos de suspeitas.\n"
+            "- Não utilize jargões dramáticos (ex: 'Veredito da máquina', 'Colapso', 'Falha crítica' sem base).\n"
+            "- Siga esta estrutura natural (sem títulos explícitos): O que foi encontrado -> O que significa -> Possível causa -> Recomendação."
         )
 
         prompt = f"""Analise a telemetria e logs de hardware da máquina de bancada abaixo:
@@ -442,16 +437,11 @@ class DiagnosticAnalyzer:
 {json.dumps(telemetry_data, indent=2, ensure_ascii=False)}
 ------------------------
 
-Responda estritamente no seguinte formato executivo em Markdown:
-
-1. 🚨 **Problemas Identificados:** (Resumo claro de falhas em discos, memória, drivers ou BSOD. Se nenhum erro existir, declare explicitamente: "Nenhuma falha crítica detectada.")
-2. 🔬 **Causa Raiz Provável:** (Explicação técnica objetiva do diagnóstico ou comprovação de integridade operacional).
-3. 🛠️ **Ações de Reparo Recomendadas:** (Passo a passo técnico prático para o técnico de bancada. Ex: prosseguir para esteira de software, substituir unidade de disco, executar teste de memória MemTest86, etc.)
-4. 🩺 **Veredito da Máquina:** (Indique claramente: **APROVADA PARA PREPARAÇÃO** ou **REQUER MANUTENÇÃO DE HARDWARE ANTES DO DEPLOY**)."""
+Responda em texto natural e corrido, seguindo rigorosamente as diretrizes de estilo sem formatação excessiva, relatórios ou emojis."""
 
         try:
             res = self.generate(prompt, system_prompt=system_prompt)
-            if res and "1. 🚨" in res and not res.startswith("🩺 **Diagnóstico"):
+            if res:
                 return res
         except Exception:
             pass
