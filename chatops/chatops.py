@@ -218,7 +218,8 @@ class TrueConfChatOps:
             "saude do disco", "saúde do disco", "testar hardware", "teste de estresse", "teste",
             "testar", "verificar", "verifica", "verifique", "checar", "checa", "cheque",
             "olhar", "olha", "olhe", "analisar", "analisa", "analise", "integridade",
-            "status do pc", "status da maquina", "status da máquina", "saude da maquina", "saude do pc"
+            "status do pc", "status da maquina", "status da máquina", "saude da maquina", "saude do pc",
+            "reparo", "repara", "conserta", "arruma", "fix"
         ]
         if any(kw in norm_text for kw in diag_kws) and not any(w in norm_text for w in ["como fazer", "o que e", "o que é", "explica", "ajuda"]):
             ip = self._extract_target_ip(text)
