@@ -25,6 +25,8 @@ $diagReport = @{
     device_errors = @()
     anydesk_id = ""
     mac_address = ""
+    performance = @{}
+    top_processes = @()
 }
 
 # Pegar MAC Address da interface de rede ativa
@@ -110,6 +112,33 @@ try {
             provider = $evt.ProviderName
             id = $evt.Id
             message = $evt.Message -replace "`r`n", " " | Select-Object -First 1
+        }
+    }
+} catch {}
+
+# 5. Métricas de Performance em Tempo Real (Gargalos)
+try {
+    $cpuUsage = (Get-WmiObject Win32_Processor -ErrorAction SilentlyContinue | Measure-Object -Property LoadPercentage -Average).Average
+    $ram = Get-WmiObject Win32_OperatingSystem -ErrorAction SilentlyContinue
+    $ramUsage = if ($ram) { [math]::Round((($ram.TotalVisibleMemorySize - $ram.FreePhysicalMemory) / $ram.TotalVisibleMemorySize) * 100, 1) } else { 0 }
+    
+    $diskPerf = Get-WmiObject Win32_PerfFormattedData_PerfDisk_PhysicalDisk -Filter "Name='_Total'" -ErrorAction SilentlyContinue
+    $diskTime = if ($diskPerf) { $diskPerf.PercentDiskTime } else { 0 }
+    
+    $diagReport.performance = @{
+        cpu_usage_percent = if ($cpuUsage) { $cpuUsage } else { 0 }
+        ram_usage_percent = $ramUsage
+        disk_active_time_percent = $diskTime
+    }
+    
+    $topProcs = Get-Process | Sort-Object CPU -Descending | Select-Object -First 3
+    foreach ($p in $topProcs) {
+        if ($p.ProcessName -ne "Idle") {
+            $diagReport.top_processes += @{
+                name = $p.ProcessName
+                cpu_time_s = if ($p.CPU) { [math]::Round($p.CPU, 1) } else { 0 }
+                ram_mb = [math]::Round($p.WorkingSet / 1MB, 1)
+            }
         }
     }
 } catch {}
