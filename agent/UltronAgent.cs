@@ -206,7 +206,7 @@ namespace UltronAgent
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[-] Falha ao obter privilégios de Administrador: " + ex.Message);
+                try { Console.WriteLine("[-] Falha ao obter privilégios de Administrador: " + ex.Message); } catch { }
             }
         }
 

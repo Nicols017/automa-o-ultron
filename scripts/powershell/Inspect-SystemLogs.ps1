@@ -1,5 +1,5 @@
 param (
-    [int]$Days = 7
+    [int]$Days = 2
 )
 
 $loggedUser = ""
@@ -103,7 +103,7 @@ try {
 # 4. Logs Críticos e Erros Recentes do Windows Event Log (System e Application)
 try {
     $startDate = (Get-Date).AddDays(-$Days)
-    $events = Get-WinEvent -FilterHashtable @{LogName='System','Application'; Level=1,2; StartTime=$startDate} -MaxEvents 20 -ErrorAction SilentlyContinue
+    $events = Get-WinEvent -FilterHashtable @{LogName='System','Application'; Level=1,2; StartTime=$startDate} -MaxEvents 5 -ErrorAction SilentlyContinue
     foreach ($evt in $events) {
         $diagReport.critical_events += @{
             time = $evt.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss")
