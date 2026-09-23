@@ -60,6 +60,58 @@ namespace UltronAgent
     // =========================================================================
     // PROGRAMA PRINCIPAL
     // =========================================================================
+    
+    public static class Logger
+    {
+        private static string logPath = @"C:\ProgramData\Ultron\agent.log";
+
+        static Logger()
+        {
+            try
+            {
+                if (!Directory.Exists(@"C:\ProgramData\Ultron"))
+                    Directory.CreateDirectory(@"C:\ProgramData\Ultron");
+            } catch {}
+        }
+
+        public static void Info(string msg, ConsoleColor color = ConsoleColor.Gray)
+        {
+            WriteLog("INFO", msg);
+            if (Environment.UserInteractive && !Program.DaemonMode && !Program.SilentMode)
+            {
+                try
+                {
+                    Console.ForegroundColor = color;
+                    Console.WriteLine(msg);
+                    Console.ResetColor();
+                } catch {}
+            }
+        }
+
+        public static void Error(string msg)
+        {
+            WriteLog("ERROR", msg);
+            if (Environment.UserInteractive && !Program.DaemonMode && !Program.SilentMode)
+            {
+                try
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine(msg);
+                    Console.ResetColor();
+                } catch {}
+            }
+        }
+
+        private static void WriteLog(string level, string msg)
+        {
+            try
+            {
+                string line = string.Format("{0:yyyy-MM-dd HH:mm:ss} [{1}] {2}{3}", DateTime.Now, level, msg, Environment.NewLine);
+                File.AppendAllText(logPath, line);
+            } catch {}
+        }
+    }
+
     class Program
     {
         public const string CurrentVersion = "2.2.0";
@@ -73,7 +125,14 @@ namespace UltronAgent
 
         static void Main(string[] args)
         {
-            try { Console.OutputEncoding = Encoding.UTF8; } catch { }
+            AppDomain.CurrentDomain.UnhandledException += (sender, e) => {
+                Logger.Error("Fatal Unhandled Exception: " + e.ExceptionObject.ToString());
+            };
+            
+            if (Environment.UserInteractive) {
+                try { Console.OutputEncoding = Encoding.UTF8; } catch { }
+            }
+
             ParseArguments(args);
 
             // 1. Execução no modo Windows Service
@@ -88,9 +147,7 @@ namespace UltronAgent
             {
                 if (!SilentMode)
                 {
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine("[!] Solicitando privilégios de Administrador para liberar o sistema...");
-                    Console.ResetColor();
+                    Logger.Info("[!] Solicitando privilégios de Administrador para liberar o sistema...", ConsoleColor.Yellow);
                 }
                 RestartAsAdmin(args);
                 return;
@@ -206,7 +263,7 @@ namespace UltronAgent
             }
             catch (Exception ex)
             {
-                try { Console.WriteLine("[-] Falha ao obter privilégios de Administrador: " + ex.Message); } catch { }
+                Logger.Error("[-] Falha ao obter privilégios de Administrador: " + ex.Message);
             }
         }
 
@@ -215,24 +272,16 @@ namespace UltronAgent
             if (SilentMode) return;
             try
             {
-                Console.ForegroundColor = ConsoleColor.Cyan;
-                Console.WriteLine("===============================================================");
-                Console.WriteLine("       🤖 [ULTRON] LAB AUTOMATION AUTONOMOUS AGENT v2.2.0        ");
-                Console.WriteLine("       Pense Rede Network Solutions - Laboratório de TI        ");
-                Console.WriteLine("===============================================================");
-                Console.ResetColor();
+                Logger.Info(@"===============================================================
+       [ULTRON] LAB AUTOMATION AUTONOMOUS AGENT v2.2.0        
+       Pense Rede Network Solutions - Laboratorio de TI        
+===============================================================", ConsoleColor.Cyan);
             } catch { }
         }
 
         static void Log(string msg, ConsoleColor color)
         {
-            if (SilentMode) return;
-            try
-            {
-                Console.ForegroundColor = color;
-                Console.WriteLine(msg);
-                Console.ResetColor();
-            } catch { }
+            Logger.Info(msg, color);
         }
 
         // =====================================================================
