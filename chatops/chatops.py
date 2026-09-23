@@ -422,7 +422,7 @@ class TrueConfChatOps:
                     ip = target.get("ip")
                 else:
                     self.user_sessions[user_id] = {"type": "wizard_limpar", "step": "ip"}
-                    return "🧹 **LIMPEZA PÓS-BANCADA (ENTREGA AO CLIENTE)**\n\nQual é o IP da máquina que você deseja desinstalar e limpar?\n\n[ 0 ] Cancelar"
+                    return "🧹 LIMPEZA PÓS-BANCADA (ENTREGA AO CLIENTE)\n\nQual é o IP da máquina que você deseja desinstalar e limpar?\n\n[ 0 ] Cancelar"
             return self._cmd_limpar(user_id, [ip])
 
         return None
@@ -627,18 +627,18 @@ class TrueConfChatOps:
                         self.bot.send_direct_message(resolved_target, f"📢 Mensagem de Nicolas Silva:\n\n{extra_msg}")
 
                     if file_sent:
-                        msg_feedback = f"\n\n📝 Recado anexado: *\"{extra_msg}\"*" if extra_msg else ""
-                        return f"🚀 **{versioned_filename} enviado com sucesso para @{resolved_target} no TrueConf!**{msg_feedback}"
+                        msg_feedback = f"\n\n📝 Recado anexado: \"{extra_msg}\"" if extra_msg else ""
+                        return f"🚀 {versioned_filename} enviado com sucesso para @{resolved_target} no TrueConf!{msg_feedback}"
                     else:
                         # Fallback resiliente: envia a mensagem e o link de download direto
                         srv_url = self._get_server_url()
-                        dm_text = f"📎 **{versioned_filename} (Atualizado) — Agente de Automação de Bancada**\n\n👉 Baixar direto: {srv_url}/download/UltronAgent.exe"
+                        dm_text = f"📎 {versioned_filename} (Atualizado) — Agente de Automação de Bancada\n\n👉 Baixar direto: {srv_url}/download/UltronAgent.exe"
                         if extra_msg:
                             dm_text += f"\n\n📢 Recado de Nicolas Silva:\n\"{extra_msg}\""
                         dm_sent = self.bot.send_direct_message(resolved_target, dm_text)
                         if dm_sent:
-                            msg_feedback = f"\n\n📝 Recado anexado: *\"{extra_msg}\"*" if extra_msg else ""
-                            return f"🚀 **{versioned_filename} e recado enviados com sucesso para @{resolved_target} no TrueConf!**{msg_feedback}"
+                            msg_feedback = f"\n\n📝 Recado anexado: \"{extra_msg}\"" if extra_msg else ""
+                            return f"🚀 {versioned_filename} e recado enviados com sucesso para @{resolved_target} no TrueConf!{msg_feedback}"
                         return f"⚠️ Não foi possível entregar para @{resolved_target}. Verifique se o usuário está ativo no TrueConf Server."
                 else:
                     return f"⚠️ Arquivo {versioned_filename} não foi encontrado no servidor para envio."
@@ -897,14 +897,14 @@ class TrueConfChatOps:
             user_str = f"\n{user_badge}" if user_badge else ""
 
             return (
-                f"🖥️ **Máquina {isolated_ip} ({host}) em Foco**{user_str}{any_str}\n\n"
+                f"🖥️ Máquina {isolated_ip} ({host}) em Foco{user_str}{any_str}\n\n"
                 f"📍 O que você deseja executar nela agora?\n"
-                f"• *'diagnóstico no {isolated_ip}'* (Saúde de discos S.M.A.R.T, CPU, RAM e drivers)\n"
-                f"• *'preparar {isolated_ip} para <cliente>'* (Esteira completa de softwares)\n"
-                f"• *'anydesk {isolated_ip}'* (Consultar/gerar ID de acesso remoto)\n"
-                f"• *'ativar {isolated_ip}'* (Licença digital MAS permanente)\n"
-                f"• *'reiniciar {isolated_ip}'* (Controle remoto de energia)\n"
-                f"• *'limpar {isolated_ip}'* (Desinstalação para entrega ao cliente)"
+                f"• 'diagnóstico no {isolated_ip}' (Saúde de discos S.M.A.R.T, CPU, RAM e drivers)\n"
+                f"• 'preparar {isolated_ip} para <cliente>' (Esteira completa de softwares)\n"
+                f"• 'anydesk {isolated_ip}' (Consultar/gerar ID de acesso remoto)\n"
+                f"• 'ativar {isolated_ip}' (Licença digital MAS permanente)\n"
+                f"• 'reiniciar {isolated_ip}' (Controle remoto de energia)\n"
+                f"• 'limpar {isolated_ip}' (Desinstalação para entrega ao cliente)"
             )
 
         # 4. Roteamento de comandos slash explícitos
@@ -1035,7 +1035,7 @@ class TrueConfChatOps:
 
     def _cmd_interactive_menu(self) -> str:
         return (
-            "🤖 **Central de Automação Ultron**\n\n"
+            "🤖 Central de Automação Ultron\n\n"
             "Como posso te ajudar agora? Você pode falar comigo em linguagem natural ou escolher uma opção:\n\n"
             "[ 1 ] 💻 Ver computadores na bancada\n"
             "[ 2 ] 🩺 Diagnóstico rápido de hardware & S.M.A.R.T\n"
@@ -1456,7 +1456,7 @@ class TrueConfChatOps:
     def _start_wizard_limpar(self, user_id: str, trace_id: str = None) -> str:
         self.user_sessions[user_id] = {"type": "wizard_limpar", "step": "ip"}
         return (
-            "🧹 **LIMPEZA PÓS-BANCADA (ENTREGA AO CLIENTE)**\n\n"
+            "🧹 LIMPEZA PÓS-BANCADA (ENTREGA AO CLIENTE)\n\n"
             "Digite o IP do computador que deseja desinstalar e limpar:\n"
             "(ex: 192.168.57.59 ou 57.48)\n\n"
             "[ 0 ] Cancelar e voltar ao Menu"
@@ -1487,8 +1487,8 @@ class TrueConfChatOps:
         threading.Thread(target=_bg_clean, daemon=True).start()
 
         return (
-            f"🧹 **Ordem de Limpeza Pós-Bancada Enviada**\n\n"
-            f"📍 Máquina Alvo: **{ip}**\n\n"
+            f"🧹 Ordem de Limpeza Pós-Bancada Enviada\n\n"
+            f"📍 Máquina Alvo: {ip}\n\n"
             f"O `UltronService`, a conta `penserede` e os arquivos temporários de automação estão sendo desinstalados e removidos da máquina.\n\n"
             f"✅ A máquina ficará 100% limpa para entrega ao cliente final."
         )
@@ -1560,13 +1560,13 @@ class TrueConfChatOps:
         anydesk_part = f" • AnyDesk: `{anydesk_id}`" if anydesk_id else ""
         
         user_badge = self._format_user_badge(d.get("logged_in_user"))
-        user_part = f" • **{user_badge}**" if user_badge else ""
+        user_part = f" • {user_badge}" if user_badge else ""
 
         if raw_host and raw_host != ip and not raw_host.startswith("192.168."):
             host_label = raw_host.replace(".penserede.local", "")
-            return f"• **{host_label}** ({ip}){user_part}{vendor_part}{anydesk_part}"
+            return f"• {host_label} ({ip}){user_part}{vendor_part}{anydesk_part}"
         else:
-            return f"• **{ip}**{user_part}{vendor_part}{anydesk_part}"
+            return f"• {ip}{user_part}{vendor_part}{anydesk_part}"
 
 
     def _cmd_bancada(self, user_id: str) -> str:
@@ -1611,10 +1611,10 @@ class TrueConfChatOps:
         winrm_ready = [d for d in cached if d.get("winrm_ready")]
         other_devices = [d for d in cached if not d.get("winrm_ready")]
 
-        lines = [f"🖥️ **Bancada Ultron** ({len(cached)} equipamentos detectados na rede)\n"]
+        lines = [f"🖥️ Bancada Ultron ({len(cached)} equipamentos detectados na rede)\n"]
 
         if winrm_ready:
-            lines.append(f"🟢 **Prontas para automação (WinRM ativo — {len(winrm_ready)}):**")
+            lines.append(f"🟢 Prontas para automação (WinRM ativo — {len(winrm_ready)}):")
             for d in winrm_ready[:8]:
                 lines.append(self._format_device_display(d))
             if len(winrm_ready) > 8:
@@ -1622,14 +1622,14 @@ class TrueConfChatOps:
             lines.append("")
 
         if other_devices:
-            lines.append(f"🟡 **Outros dispositivos conectados ({len(other_devices)}):**")
+            lines.append(f"🟡 Outros dispositivos conectados ({len(other_devices)}):")
             for d in other_devices[:4]:
                 lines.append(self._format_device_display(d))
             if len(other_devices) > 4:
                 lines.append(f"• ... e mais {len(other_devices) - 4} dispositivo(s).")
             lines.append("")
 
-        lines.append("💬 Você pode me pedir: *'diagnosticar 57.52'*, *'preparar 57.48 para White Group'* ou *'ativar Windows do 57.10'*.")
+        lines.append("💬 Você pode me pedir: 'diagnosticar 57.52', 'preparar 57.48 para White Group' ou 'ativar Windows do 57.10'.")
 
         return "\n".join(lines)
 
@@ -1645,13 +1645,13 @@ class TrueConfChatOps:
         if not target_ip:
             with_anydesk = [d for d in cached if d.get("anydesk_id")]
             if with_anydesk:
-                lines = [f"🔑 **AnyDesk dos Computadores Conectados** ({len(with_anydesk)} detectado(s)):\n"]
+                lines = [f"🔑 AnyDesk dos Computadores Conectados ({len(with_anydesk)} detectado(s)):\n"]
                 for d in with_anydesk:
                     ip = d.get("ip")
                     host = (d.get("hostname") or "PC").replace(".penserede.local", "")
                     any_id = d.get("anydesk_id")
-                    lines.append(f"• **{host}** ({ip}) — ID: `{any_id}` ([Conectar](anydesk:{any_id}))")
-                lines.append("\n💡 Para consultar uma máquina específica: *'anydesk 57.166'*")
+                    lines.append(f"• {host} ({ip}) — ID: `{any_id}` ([Conectar](anydesk:{any_id}))")
+                lines.append("\n💡 Para consultar uma máquina específica: 'anydesk 57.166'")
                 return "\n".join(lines)
 
             # Se nenhuma máquina tem AnyDesk em cache mas há apenas 1 máquina de bancada ativa
@@ -1661,10 +1661,10 @@ class TrueConfChatOps:
                 target_ip = target.get("ip")
             else:
                 return (
-                    "🔑 **AnyDesk — Acesso Remoto**\n\n"
+                    "🔑 AnyDesk — Acesso Remoto\n\n"
                     "Nenhum ID do AnyDesk foi registrado automaticamente na bancada ainda.\n\n"
                     "💡 Envie o IP da máquina para eu consultar diretamente nela:\n"
-                    "Exemplo: *'anydesk 57.166'* ou *'anydesk 192.168.57.63'*"
+                    "Exemplo: 'anydesk 57.166' ou 'anydesk 192.168.57.63'"
                 )
 
         # Busca dados do dispositivo
@@ -1687,8 +1687,8 @@ class TrueConfChatOps:
         if anydesk_id:
             self._last_user_ip[user_id] = target_ip
             return (
-                f"🔑 **AnyDesk — Máquina {target_ip}**\n\n"
-                f"💻 Host: **{hostname}**\n"
+                f"🔑 AnyDesk — Máquina {target_ip}\n\n"
+                f"💻 Host: {hostname}\n"
                 f"📍 ID: `{anydesk_id}`\n"
                 f"🔗 Link direto: anydesk:{anydesk_id}\n\n"
                 f"💡 Você pode clicar no link ou copiar o ID acima para conectar remotamente."
@@ -1696,9 +1696,9 @@ class TrueConfChatOps:
         else:
             self._last_user_ip[user_id] = target_ip
             return (
-                f"⚠️ **AnyDesk não detectado em {target_ip} ({hostname})**\n\n"
+                f"⚠️ AnyDesk não detectado em {target_ip} ({hostname})\n\n"
                 f"O AnyDesk ainda não foi instalado ou o serviço ainda não gerou um ID nesta máquina.\n\n"
-                f"💡 Para instalar automaticamente via Winget: *'instalar AnyDesk no {target_ip}'*"
+                f"💡 Para instalar automaticamente via Winget: 'instalar AnyDesk no {target_ip}'"
             )
 
     def _cmd_clientes(self) -> str:
@@ -1706,15 +1706,15 @@ class TrueConfChatOps:
         if not clients:
             return "🏢 Nenhum cliente cadastrado no sistema."
 
-        lines = [f"🏢 **Perfis de Clientes Cadastrados** ({len(clients)} empresas):\n"]
+        lines = [f"🏢 Perfis de Clientes Cadastrados ({len(clients)} empresas):\n"]
         for idx, c in enumerate(clients[:10], 1):
             dom = f" • AD: `{c.get('dominio')}`" if c.get("dominio") else ""
-            lines.append(f"{idx:02d}. **{c.get('nome')}** (`{c.get('id')}`){dom}")
+            lines.append(f"{idx:02d}. {c.get('nome')} (`{c.get('id')}`){dom}")
 
         if len(clients) > 10:
             lines.append(f"\n... e mais {len(clients) - 10} perfis configurados.")
 
-        lines.append("\n💬 Para iniciar a preparação: *'prepara o <IP> para <Cliente>'*")
+        lines.append("\n💬 Para iniciar a preparação: 'prepara o <IP> para <Cliente>'")
         return "\n".join(lines)
 
     def _cmd_chamados(self) -> str:
@@ -1722,11 +1722,11 @@ class TrueConfChatOps:
         if not tickets:
             return "📋 Nenhum chamado pendente no Milvus no momento. Tudo limpo por aqui!"
 
-        lines = [f"📋 **Chamados Abertos no Milvus** ({len(tickets)} pendentes):\n"]
+        lines = [f"📋 Chamados Abertos no Milvus ({len(tickets)} pendentes):\n"]
         for t in tickets[:6]:
             num = t.get("numero") or "S/N"
             lines.append(
-                f"• **#{num}** — {t.get('cliente')}\n"
+                f"• #{num} — {t.get('cliente')}\n"
                 f"  Assunto: {t.get('assunto')}\n"
                 f"  Técnico: {t.get('tecnico')}\n"
             )
@@ -1771,14 +1771,14 @@ class TrueConfChatOps:
         }
 
         return (
-            f"⚠️ **AVISO DE FORMATAÇÃO (MDT)**\n\n"
-            f"Você solicitou a formatação da máquina **{ip}**.\n\n"
-            f"🖥️ **Configurações Atuais:**\n"
-            f"• Hostname: **{hostname}**\n"
-            f"• Usuário Conectado: **{current_user}**\n"
+            f"⚠️ AVISO DE FORMATAÇÃO (MDT)\n\n"
+            f"Você solicitou a formatação da máquina {ip}.\n\n"
+            f"🖥️ Configurações Atuais:\n"
+            f"• Hostname: {hostname}\n"
+            f"• Usuário Conectado: {current_user}\n"
             f"• Processador: {cpu_name}\n"
             f"• Memória RAM: {ram_size}\n\n"
-            f"❗️ *Esta ação irá zerar completamente a máquina e apagar todos os dados!* ❗️\n\n"
+            f"❗️ Esta ação irá zerar completamente a máquina e apagar todos os dados! ❗️\n\n"
             f"Para confirmar, responda com `sim`. Para cancelar, digite `0`."
         )
 
@@ -2350,10 +2350,10 @@ class TrueConfChatOps:
         link_str = f"\n🔗 Portal Oficial: {info.get('support_url')}" if info.get("support_url") else ""
 
         return (
-            f"🏷️ **GARANTIA & SUPORTE OFICIAL OEM**\n\n"
-            f"💻 Fabricante: **{info.get('vendor')}** {model}\n"
+            f"🏷️ GARANTIA & SUPORTE OFICIAL OEM\n\n"
+            f"💻 Fabricante: {info.get('vendor')} {model}\n"
             f"🏷️ Serial / Service Tag: `{serial}`\n"
-            f"🛡️ Status: **{info.get('warranty_status')}**\n"
+            f"🛡️ Status: {info.get('warranty_status')}\n"
             f"📌 Nível de Cobertura: {info.get('support_level')}"
             f"{link_str}"
         )
@@ -2366,10 +2366,10 @@ class TrueConfChatOps:
         from core.public_tools import HaveIBeenPwnedService
         res = HaveIBeenPwnedService.is_password_pwned(pwd)
         icon = "🚨" if res.get("pwned") else "✅"
-        count_str = f"\n⚠️ Ocorrências em vazamentos públicos: **{res.get('breach_count')} vezes**" if res.get("pwned") else "\n🛡️ A senha é segura e nunca foi encontrada em vazamentos conhecidos."
+        count_str = f"\n⚠️ Ocorrências em vazamentos públicos: {res.get('breach_count')} vezes" if res.get("pwned") else "\n🛡️ A senha é segura e nunca foi encontrada em vazamentos conhecidos."
         return (
-            f"{icon} **AUDITORIA DE SEGURANÇA DE SENHA (HIBP)**\n\n"
-            f"🔑 Avaliação: **{res.get('rating')}**"
+            f"{icon} AUDITORIA DE SEGURANÇA DE SENHA (HIBP)\n\n"
+            f"🔑 Avaliação: {res.get('rating')}"
             f"{count_str}"
         )
 
@@ -2389,12 +2389,12 @@ class TrueConfChatOps:
                 sample = ", ".join(p.get("Name", p.get("Id", "")) for p in pkgs[:6])
                 more = f" e mais {len(pkgs)-6} programas" if len(pkgs) > 6 else ""
                 reply = (
-                    f"📦 **BACKUP DE SOFTWARES UNIGETUI CONCLUÍDO**\n\n"
-                    f"📍 Computador: **{target_ip}** ({res.get('hostname')})\n"
+                    f"📦 BACKUP DE SOFTWARES UNIGETUI CONCLUÍDO\n\n"
+                    f"📍 Computador: {target_ip} ({res.get('hostname')})\n"
                     f"📄 Arquivo: `{res.get('filename')}`\n"
-                    f"📊 Total catalogado: **{res.get('packages_count')} programas**\n\n"
+                    f"📊 Total catalogado: {res.get('packages_count')} programas\n\n"
                     f"📋 Principais softwares:\n• {sample}{more}\n\n"
-                    f"💡 Para reinstalar após a formatação: *'/restaurar_softwares {target_ip}'*"
+                    f"💡 Para reinstalar após a formatação: '/restaurar_softwares {target_ip}'"
                 )
             else:
                 reply = f"❌ Falha ao exportar softwares da máquina {target_ip}: {res.get('error')}"
@@ -2419,10 +2419,10 @@ class TrueConfChatOps:
             res = self.pkg_mgr.restore_machine_packages(target_ip, bundle_arg)
             if res.get("success"):
                 reply = (
-                    f"✅ **RESTAURAÇÃO DE SOFTWARES CONCLUÍDA**\n\n"
-                    f"📍 Computador: **{target_ip}**\n"
+                    f"✅ RESTAURAÇÃO DE SOFTWARES CONCLUÍDA\n\n"
+                    f"📍 Computador: {target_ip}\n"
                     f"📄 Bundle: `{res.get('bundle_file')}`\n"
-                    f"📦 Pacotes processados: **{res.get('packages_sent')} softwares**\n\n"
+                    f"📦 Pacotes processados: {res.get('packages_sent')} softwares\n\n"
                     f"Todos os programas do cliente foram restaurados na máquina via Winget/UniGetUI."
                 )
             else:
@@ -2447,8 +2447,8 @@ class TrueConfChatOps:
             res = self.pkg_mgr.upgrade_all_packages(target_ip)
             if res.get("success"):
                 reply = (
-                    f"🚀 **ATUALIZAÇÃO EM MASSA CONCLUÍDA**\n\n"
-                    f"📍 Computador: **{target_ip}**\n\n"
+                    f"🚀 ATUALIZAÇÃO EM MASSA CONCLUÍDA\n\n"
+                    f"📍 Computador: {target_ip}\n\n"
                     f"✅ Todos os softwares instalados na máquina foram atualizados para as versões mais recentes disponíveis via Winget/UniGetUI!"
                 )
             else:
@@ -2464,15 +2464,15 @@ class TrueConfChatOps:
         """Lista todos os backups de softwares de clientes salvos no laboratório"""
         bundles = self.pkg_mgr.list_saved_bundles()
         if not bundles:
-            return "📦 Nenhum backup de softwares UniGetUI salvo no laboratório ainda.\n\n💡 Use *'/backup_softwares <IP>'* para criar um."
+            return "📦 Nenhum backup de softwares UniGetUI salvo no laboratório ainda.\n\n💡 Use '/backup_softwares <IP>' para criar um."
 
-        lines = [f"📦 **Backups de Softwares UniGetUI Salvos** ({len(bundles)}):\n"]
+        lines = [f"📦 Backups de Softwares UniGetUI Salvos ({len(bundles)}):\n"]
         for b in bundles[:8]:
             lines.append(
-                f"• **{b.get('hostname')}** ({b.get('packages_count')} softwares)\n"
+                f"• {b.get('hostname')} ({b.get('packages_count')} softwares)\n"
                 f"  📄 `{b.get('filename')}` | 📅 {b.get('created_at')}\n"
             )
-        lines.append("💡 Para restaurar em uma máquina: *'/restaurar_softwares <IP> <arquivo>'*")
+        lines.append("💡 Para restaurar em uma máquina: '/restaurar_softwares <IP> <arquivo>'")
         return "\n".join(lines)
 
     def _cmd_buscar_software(self, user_id: str, args: List[str]) -> str:
@@ -2488,9 +2488,9 @@ class TrueConfChatOps:
             out = res.get("stdout", "").strip()
             if out:
                 reply = (
-                    f"🔍 **RESULTADOS DE BUSCA NO UNIGETUI — '{query.upper()}'**\n\n"
+                    f"🔍 RESULTADOS DE BUSCA NO UNIGETUI — '{query.upper()}'\n\n"
                     f"```\n{out}\n```\n\n"
-                    f"💡 Para instalar: *'/softwares {target_ip} {query}'*"
+                    f"💡 Para instalar: '/softwares {target_ip} {query}'"
                 )
             else:
                 reply = f"⚠️ Nenhum software encontrado no catálogo para '{query}'."
@@ -2641,7 +2641,7 @@ Você é o ULTRON, um assistente de IA integrado ao TrueConf da Pense Rede, proj
 
 Seu principal objetivo é:
 
-> **Entender a intenção do usuário em linguagem natural e, quando possível, executar a ação correspondente sem exigir comandos, palavras-chave ou sintaxes específicas.**
+> Entender a intenção do usuário em linguagem natural e, quando possível, executar a ação correspondente sem exigir comandos, palavras-chave ou sintaxes específicas.
 
 O usuário NÃO precisa saber quais comandos existem.
 O usuário NÃO precisa conhecer a estrutura interna do sistema.

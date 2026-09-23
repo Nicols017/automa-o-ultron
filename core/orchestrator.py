@@ -167,7 +167,7 @@ class LabOrchestrator:
             err_msg = f"❌ [ULTRON] Máquina {ip} ({bench_info['bench_name']}) inacessível via WinRM (porta 5985 fechada)."
             log(err_msg, level="error", stage=1, stage_name="Falha de Conectividade")
             if tech_user_id:
-                self.bot.send_direct_message(tech_user_id, f"⚠️ **Falha no Ultron:** {err_msg}")
+                self.bot.send_direct_message(tech_user_id, f"⚠️ Falha no Ultron: {err_msg}")
             if log_callback:
                 log_callback({"type": "error", "error": err_msg})
             return {"success": False, "ip": ip, "logs": logs, "error": err_msg}

@@ -441,12 +441,12 @@ def receive_agent_alert(alert: AgentAlert):
     
     icon = "🚨" if alert.type == "BSOD" else "🔥"
     msg = (
-        f"{icon} **ALERTA PROATIVO DE HARDWARE — ULTRON AGENT**\n\n"
-        f"📍 **Máquina:** {alert.hostname} ({alert.ip})\n"
-        f"🏷️ **Serial:** {alert.serial}\n"
-        f"⚠️ **Tipo de Ocorrência:** {alert.type}\n"
-        f"📋 **Detalhes:** {alert.details}\n\n"
-        f"💡 Sugestão: Inspecione os discos e a memória RAM com *'diagnóstico no {alert.ip}'*."
+        f"{icon} ALERTA PROATIVO DE HARDWARE — ULTRON AGENT\n\n"
+        f"📍 Máquina: {alert.hostname} ({alert.ip})\n"
+        f"🏷️ Serial: {alert.serial}\n"
+        f"⚠️ Tipo de Ocorrência: {alert.type}\n"
+        f"📋 Detalhes: {alert.details}\n\n"
+        f"💡 Sugestão: Inspecione os discos e a memória RAM com 'diagnóstico no {alert.ip}'."
     )
     bot.send_direct_message(tc_user, msg)
     return {"success": True, "message": "Alerta processado e notificado com sucesso"}
@@ -498,24 +498,24 @@ def agent_register(data: AgentRegistration, background_tasks: BackgroundTasks):
     user_str = f"{user_badge}\n" if user_badge else (f"👤 Usuário: `{data.logged_in_user}`\n" if data.logged_in_user else "")
 
     # Formata AnyDesk se presente
-    anydesk_str = f"🔑 AnyDesk ID: **{data.anydesk_id}** ([Abrir AnyDesk](anydesk:{data.anydesk_id}))\n" if data.anydesk_id else ""
+    anydesk_str = f"🔑 AnyDesk ID: {data.anydesk_id} ([Abrir AnyDesk](anydesk:{data.anydesk_id}))\n" if data.anydesk_id else ""
 
     # Notifica o técnico no TrueConf com formatação limpa
     user_header = f" — MÁQUINA DE {data.logged_in_user.upper()}" if data.logged_in_user else ""
     msg = (
-        f"💻 **ULTRON AGENT CONECTADO{user_header}**\n\n"
-        f"📍 IP: **{data.ip}**\n"
+        f"💻 ULTRON AGENT CONECTADO{user_header}\n\n"
+        f"📍 IP: {data.ip}\n"
         f"{user_str}"
         f"🏷️ Serial: `{data.serial}`\n"
-        f"💻 Host: **{data.computer_name}** ({data.manufacturer} {data.model})\n"
+        f"💻 Host: {data.computer_name} ({data.manufacturer} {data.model})\n"
         f"🧠 CPU: {data.cpu}\n"
         f"💾 RAM: {data.ram_gb} GB\n"
         f"{anydesk_str}"
-        f"🛡️ Serviço: **UltronService (SYSTEM)** Ativo & Autônomo\n\n"
+        f"🛡️ Serviço: UltronService (SYSTEM) Ativo & Autônomo\n\n"
         f"💡 Ações Rápidas:\n"
-        f"• *\"diagnóstico no {data.ip}\"*\n"
-        f"• *\"preparar {data.ip} para <cliente>\"*\n"
-        f"• *\"ativar {data.ip}\"*"
+        f"• \"diagnóstico no {data.ip}\"\n"
+        f"• \"preparar {data.ip} para <cliente>\"\n"
+        f"• \"ativar {data.ip}\""
     )
     tc_user = settings.get("trueconf", {}).get("default_tech_user_id", "nicolas.silva")
     bot.send_direct_message(tc_user, msg)

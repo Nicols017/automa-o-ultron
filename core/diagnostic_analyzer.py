@@ -105,7 +105,7 @@ class DiagnosticAnalyzer:
         text = re.sub(r"<\|[a-zA-Z0-9_-]+\|>", "", text)
 
         # 3. Remove blocos markdown externos redundantes como ```markdown ... ```
-        fence_match = re.match(r"^```(?:markdown|text)?\s*\n([\s\S]*?)\n```\s*$", text.strip(), flags=re.IGNORECASE)
+        fence_match = re.match(r"^```(?:markdown|text)?\s*\n([\s\S]?)\n```\s$", text.strip(), flags=re.IGNORECASE)
         if fence_match:
             text = fence_match.group(1)
 
@@ -162,56 +162,56 @@ class DiagnosticAnalyzer:
         has_query = any(w in p_lower for w in query_words)
         if (has_target and has_query) or any(w in p_lower for w in ["bancada", "bancda", "status bancada", "varredura", "scanner"]):
             if bench_info and "Nenhum" not in bench_info:
-                return f"🖥️ **Status Atual da Bancada**\n\n📍 {bench_info}\n\n💬 Você pode me pedir diagnósticos, esteiras de preparação ou ativações indicando o IP desejado."
+                return f"🖥️ Status Atual da Bancada\n\n📍 {bench_info}\n\n💬 Você pode me pedir diagnósticos, esteiras de preparação ou ativações indicando o IP desejado."
             else:
-                return "🔍 **Bancada Ultron**\n\nNão detectei máquinas com WinRM ativo na bancada no momento. Verifique se os computadores estão ligados e com o cabo de rede conectado."
+                return "🔍 Bancada Ultron\n\nNão detectei máquinas com WinRM ativo na bancada no momento. Verifique se os computadores estão ligados e com o cabo de rede conectado."
 
         # 4. Diagnóstico de Hardware, SMART, Saúde
         if any(w in p_lower for w in ["diag", "diagnostico", "diagnóstico", "smart", "saude", "saúde", "integridade", "disco", "hd", "ssd", "memoria", "memória", "estresse", "burnin", "burn-in"]):
             return (
-                "🩺 **Diagnóstico de Hardware & Integridade**\n\n"
+                "🩺 Diagnóstico de Hardware & Integridade\n\n"
                 "Consigo inspecionar a saúde dos discos (S.M.A.R.T), memória RAM, CPU e histórico de telas azuis (BSOD).\n\n"
-                "Para iniciar, basta me enviar: *'verifica a saúde do <IP>'* ou *'diagnóstico no <IP>'*."
+                "Para iniciar, basta me enviar: 'verifica a saúde do <IP>' ou 'diagnóstico no <IP>'."
             )
 
         # 5. Perguntas sobre Chamados / Milvus
         if any(w in p_lower for w in ["chamado", "chamados", "milvus", "ticket", "tickets", "ordem de serviço", "ordens de serviço", "minhas os"]):
             return (
-                "📋 **Chamados e Fila do Milvus**\n\n"
+                "📋 Chamados e Fila do Milvus\n\n"
                 "Consulto a fila de chamados pendentes do laboratório na Dashboard do Milvus.\n\n"
-                "Para ver os chamados abertos agora, basta me pedir: *'quais os chamados abertos?'* ou digitar `/chamados`."
+                "Para ver os chamados abertos agora, basta me pedir: 'quais os chamados abertos?' ou digitar `/chamados`."
             )
 
         # 6. Procedimentos de Preparação / Formatação
         if any(w in p_lower for w in ["como preparar", "como formatar", "preparacao", "preparação", "procedimento", "esteira", "passo a passo"]):
             return (
-                "🚀 **Procedimento de Esteira do Ultron**\n\n"
+                "🚀 Procedimento de Esteira do Ultron\n\n"
                 "1. Conecte o PC na rede e aplique a imagem Windows via MDT/PXE (ou use o One-Liner / Bootstrap).\n"
                 "2. O UltronAgent libera o WinRM e registra o IP no servidor automaticamente.\n"
-                "3. No chat, me peça: *'prepara a máquina <IP> para o <Cliente>'*.\n"
+                "3. No chat, me peça: 'prepara a máquina <IP> para o <Cliente>'.\n"
                 "4. Instalo os softwares do perfil, Agente Milvus, ativo Windows/Office, executo testes e te entrego o laudo PDF e ID do AnyDesk aqui."
             )
 
         # 7. Ativação Windows / Office (MAS)
         if any(w in p_lower for w in ["ativar", "ativacao", "ativação", "licenca", "licença", "office", "windows"]) or re.search(r"\b(mas|massgrave)\b", p_lower):
             return (
-                "🔑 **Ativação Windows & Office (MAS)**\n\n"
+                "🔑 Ativação Windows & Office (MAS)\n\n"
                 "Aplico a ativação permanente digital via MAS remotamente em qualquer máquina liberada da bancada.\n\n"
-                "Basta me pedir: *'ativa o Windows do <IP>'*."
+                "Basta me pedir: 'ativa o Windows do <IP>'."
             )
 
         # 8. Mensagens na Tela / Pop-up
         if any(w in p_lower for w in ["mensagem", "msg", "popup", "pop-up", "aviso na tela", "notificar"]):
             return (
-                "📢 **Envio de Mensagens na Tela**\n\n"
+                "📢 Envio de Mensagens na Tela\n\n"
                 "Posso exibir avisos e pop-ups na tela do usuário remotamente.\n\n"
-                "Basta me enviar: *'manda uma mensagem para o IP <IP> <seu texto>'*."
+                "Basta me enviar: 'manda uma mensagem para o IP <IP> <seu texto>'."
             )
 
         # 9. Download do Executável do Agente
         if any(w in p_lower for w in ["baixar", "download", "agente", "agent", "exe", "executavel"]):
             return (
-                "📥 **Ultron Agent (.EXE)**\n\n"
+                "📥 Ultron Agent (.EXE)\n\n"
                 "Você pode baixar o executável diretamente aqui no chat ou pelo link:\n"
                 "👉 http://192.168.57.43:7000/download/UltronAgent.exe\n\n"
                 "Execute como Administrador na máquina alvo para liberar o acesso com Zero-Prompt."
@@ -222,9 +222,9 @@ class DiagnosticAnalyzer:
             m_ip = re.search(r"\b((?:192\.168\.\d{1,3}\.\d{1,3}|57\.\d{1,3}|\d{1,3}\.\d{1,3}))\b", user_msg)
             ip_str = m_ip.group(1) if m_ip else "da bancada"
             return (
-                f"🔑 **AnyDesk / Acesso Remoto — {ip_str}**\n\n"
+                f"🔑 AnyDesk / Acesso Remoto — {ip_str}\n\n"
                 f"O Ultron captura e disponibiliza o ID do AnyDesk automaticamente em tempo real.\n\n"
-                f"💬 Digite: *'qual o anydesk do {ip_str}'* ou `/anydesk` para ver os links diretos de acesso."
+                f"💬 Digite: 'qual o anydesk do {ip_str}' ou `/anydesk` para ver os links diretos de acesso."
             )
 
         # 10. Resposta inteligente contextualizada
@@ -243,11 +243,11 @@ class DiagnosticAnalyzer:
 
         return (
             "Como posso te ajudar com os computadores da bancada agora?\n\n"
-            "• **Ver computadores na bancada:** *'quem tá na bancada?'* ou `/bancada`\n"
-            "• **Diagnóstico de hardware:** *'diagnóstico no <IP>'*\n"
-            "• **Preparação de esteira:** *'preparar <IP> para <Cliente>'*\n"
-            "• **Chamados abertos:** `/chamados`\n"
-            "• **Menu completo de opções:** `/ajuda`"
+            "• Ver computadores na bancada: 'quem tá na bancada?' ou `/bancada`\n"
+            "• Diagnóstico de hardware: 'diagnóstico no <IP>'\n"
+            "• Preparação de esteira: 'preparar <IP> para <Cliente>'\n"
+            "• Chamados abertos: `/chamados`\n"
+            "• Menu completo de opções: `/ajuda`"
         )
 
     # ------------------------------------------------------------------
