@@ -61,6 +61,20 @@ class LabOrchestrator:
 
         bench_info = self.switch_id.identify_bench(ip=ip)
         log(f"🔍 [ULTRON] Coletando telemetria de {ip} ({bench_info['bench_name']})...")
+        
+        log(f"🩺 [ULTRON] Rodando Motor de Auto-Cura de Hardware em {ip}...")
+        heal_res = self.winrm.run_script_file(ip, "AutoHeal-Hardware.ps1")
+        heal_data = {}
+        if heal_res.get("success") and heal_res.get("stdout"):
+            try:
+                h_out = heal_res["stdout"]
+                h_start = h_out.find("{")
+                h_end = h_out.rfind("}") + 1
+                if h_start != -1 and h_end != -1:
+                    heal_data = json.loads(h_out[h_start:h_end])
+            except Exception:
+                pass
+
         telemetry_res = self.winrm.run_script_file(ip, "Inspect-SystemLogs.ps1")
         
         telemetry_data = {}
@@ -72,6 +86,8 @@ class LabOrchestrator:
                 json_end = stdout.rfind("}") + 1
                 if json_start != -1 and json_end != -1:
                     telemetry_data = json.loads(stdout[json_start:json_end])
+                    if heal_data:
+                        telemetry_data["auto_heal_report"] = heal_data
             except Exception as e:
                 log(f"⚠️ Erro ao parsear JSON de telemetria: {e}", level="warning")
                 error_msg = f"Erro ao processar dados de telemetria da máquina: {e}"
