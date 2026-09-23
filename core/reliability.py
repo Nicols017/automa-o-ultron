@@ -356,19 +356,19 @@ class MessageBuilder:
         return re.sub(r"([_*`\[\]])", r"\\\1", text)
 
     def success(self, titulo: str, campos: dict[str, str], trace_id: str, emoji: str = "✅") -> str:
-        linhas = [f"{emoji} **{self._escape_md(titulo)}**", ""]
+        linhas = [f"{emoji} {self._escape_md(titulo)}", ""]
         for k, v in campos.items():
-            linhas.append(f"**{self._escape_md(k)}:** {self._escape_md(str(v))}")
+            linhas.append(f"{self._escape_md(k)}: {self._escape_md(str(v))}")
         msg = "\n".join(linhas)
         return self._validate_and_trim(msg, trace_id)
 
     def error(self, result: WinRMResult, trace_id: str) -> str:
         msg = (
-            f"❌ **Falha ao executar comando**\n\n"
-            f"**Host:** {result.host}\n"
-            f"**Comando:** `{result.command}`\n"
-            f"**Tentativas:** {result.attempts}\n"
-            f"**Erro:** {self._escape_md(result.error or 'desconhecido')}\n"
+            f"❌ Falha ao executar comando\n\n"
+            f"Host: {result.host}\n"
+            f"Comando: `{result.command}`\n"
+            f"Tentativas: {result.attempts}\n"
+            f"Erro: {self._escape_md(result.error or 'desconhecido')}\n"
         )
         return self._validate_and_trim(msg, trace_id)
 
