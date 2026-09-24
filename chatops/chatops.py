@@ -1815,9 +1815,9 @@ class TrueConfChatOps:
             # 3. Copia o WinPE e injeta no Recovery Environment do Windows
             Copy-Item -Path $wimPath -Destination "C:\\MDTBoot\\winre.wim" -Force
             
-            reagentc /disable 2>&1 | Out-Null
-            $reagent = reagentc /setreimage /path C:\\MDTBoot /target C:\\Windows 2>&1
-            reagentc /enable 2>&1 | Out-Null
+            cmd.exe /c "reagentc /disable >nul 2>nul"
+            $reagent = cmd.exe /c "reagentc /setreimage /path C:\MDTBoot /target C:\Windows 2>&1"
+            cmd.exe /c "reagentc /enable >nul 2>nul"
             
             if ($LASTEXITCODE -ne 0) {
                 Write-Output "ERRO: Falha ao injetar o MDT no WinRE. Retorno: $reagent"
@@ -1825,7 +1825,7 @@ class TrueConfChatOps:
             }
             
             # 4. Força o boot no MDT e reinicia (usando cmd /c para nao matar o powershell e o WinRM no meio)
-            reagentc /boottore 2>&1 | Out-Null
+            cmd.exe /c "reagentc /boottore >nul 2>nul"
             
             Write-Output "SUCESSO: O sistema MDT foi injetado com sucesso! A máquina já está reiniciando para formatar."
             Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList "cmd.exe /c ping 127.0.0.1 -n 5 > nul & shutdown /r /f /t 0" | Out-Null
