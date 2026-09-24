@@ -104,7 +104,35 @@ class LabOrchestrator:
             }
 
         log(f"🧠 [ULTRON] Processando diagnóstico com IA na RTX 5060 Ti...")
-        ai_verdict = self.analyzer.analyze_logs(telemetry_data)
+        
+        # Modo Agente Autônomo (Loop de Ferramentas)
+        try:
+            from core.tools import RunPowerShellTool
+            from core.agent_loop import AgenticLoop
+            
+            powershell_tool = RunPowerShellTool(self.winrm)
+            agent = AgenticLoop(self.analyzer, [powershell_tool])
+            
+            # Reconstrói os prompts da análise para o contexto do agente
+            system_prompt = (
+                "Você é o ULTRON, perito sênior em hardware de computadores e suporte de TI da Pense Rede.\n"
+                "Sua missão é emitir um laudo técnico claro e direto.\n"
+                "Diretrizes:\n"
+                "- Idioma: Português do Brasil (pt-BR).\n"
+                "- Escreva de forma simples e natural, em parágrafos curtos.\n"
+                "- Siga exatamente esta estrutura em texto corrido (utilize estas exatas palavras como início de frase, sem negrito, seguido de dois pontos e pule uma linha entre elas):\n\n"
+                "Diagnóstico:\n(Resumo do que foi encontrado)\n\n"
+                "Causa provável:\n(Causa do problema)\n\n"
+                "Ações recomendadas:\n(Passo a passo prático)\n\n"
+                "Veredito:\n(Aprovada para preparação ou requer manutenção)"
+            )
+            prompt = f"Analise a telemetria e logs de hardware da máquina alvo (IP: {ip}):\n\n--- DADOS DA MÁQUINA ---\n{json.dumps(telemetry_data, indent=2, ensure_ascii=False)}\n------------------------\nSe detectar problemas que possam ser resolvidos via WinRM (PowerShell), resolva-os antes de gerar o laudo final."
+            
+            # Inicia o loop agentic e captura o veredito final
+            ai_verdict = agent.run(prompt, system_prompt, log_callback=log)
+        except Exception as e:
+            log(f"⚠️ Erro no Modo Agente: {e}. Executando fallback normal.", level="warning")
+            ai_verdict = self.analyzer.analyze_logs(telemetry_data)
 
         # Consulta Memória Permanente (Obsidian) pelo MAC Address
         obsidian_history = ""
