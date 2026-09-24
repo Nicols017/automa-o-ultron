@@ -290,13 +290,13 @@ class LabOrchestrator:
 
         if combined_pkgs:
             log(f"📦 Preparando Chocolatey e instalando pacotes adicionais ({len(combined_pkgs)} itens)...", level="info", stage=5)
-            setup_choco = \"\"\"
+            setup_choco = """
             if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
                 Set-ExecutionPolicy Bypass -Scope Process -Force
                 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
                 Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
             }
-            \"\"\"
+            """
             self.winrm.run_powershell_code(ip, setup_choco)
 
             winget_to_choco = {
