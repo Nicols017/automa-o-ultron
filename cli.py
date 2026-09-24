@@ -5,9 +5,30 @@ from rich.live import Live
 from rich.layout import Layout
 import time
 import json
-import os
+import threading
+
+from core.network_scanner import NetworkScanner
 
 console = Console()
+
+# Estado global da bancada
+live_devices = []
+is_scanning = True
+
+def scanner_worker():
+    """Roda em background atualizando a lista de máquinas ativas na bancada"""
+    global live_devices, is_scanning
+    scanner = NetworkScanner()
+    while True:
+        try:
+            # Faz varredura na rede (isso leva alguns segundos)
+            devices = scanner.scan_network(max_threads=50, timeout=0.5)
+            live_devices = devices
+            is_scanning = False
+        except Exception:
+            pass
+        # Espera 10 segundos até a próxima varredura para não saturar a rede
+        time.sleep(10)
 
 def generate_dashboard() -> Layout:
     layout = Layout()
@@ -20,17 +41,25 @@ def generate_dashboard() -> Layout:
     layout["header"].update(Panel("[bold cyan]🤖 Ultron Lab Automation - Terminal Dashboard[/]", style="white on blue"))
     
     # Monta a tabela da bancada
-    table = Table(title="Máquinas na Bancada (Mock / Live)")
+    table_title = "Máquinas na Bancada (Live)" if not is_scanning else "Máquinas na Bancada (Varrendo a rede... 🔄)"
+    table = Table(title=table_title, expand=True)
     table.add_column("IP", justify="right", style="cyan", no_wrap=True)
-    table.add_column("Hostname", style="magenta")
+    table.add_column("Hostname / Bancada", style="magenta")
+    table.add_column("MAC / Vendor", style="yellow")
     table.add_column("Status WinRM", justify="center")
-    table.add_column("Última Ação")
 
-    # Exemplo estático (em prod, isso consumiria o DB ou core/network_scanner.py)
-    table.add_row("192.168.57.100", "PC-CLIENTE-01", "[green]Online[/]", "Auto-Cura Concluída")
-    table.add_row("192.168.57.101", "DESKTOP-ABC", "[red]Offline[/]", "Aguardando Boot")
+    if not live_devices and not is_scanning:
+        table.add_row("Nenhum", "Nenhuma máquina", "N/A", "[red]N/A[/]")
+    else:
+        for dev in live_devices:
+            ip = dev.get("ip", "Desconhecido")
+            host = f"{dev.get('hostname', '')} / {dev.get('bench_name', '')}"
+            mac_vendor = f"{dev.get('mac', '')} ({dev.get('vendor', '')})"
+            status = "[green]Online (Porta 5985)[/]" if dev.get("winrm_ready") else "[red]Offline / Fechada[/]"
+            
+            table.add_row(ip, host, mac_vendor, status)
     
-    layout["main"].update(Panel(table, title="[yellow]Status em Tempo Real[/]"))
+    layout["main"].update(Panel(table, title="[yellow]Monitoramento em Tempo Real[/]"))
     
     # Consumo de tokens
     cost = "$0.00"
@@ -43,16 +72,21 @@ def generate_dashboard() -> Layout:
     except:
         pass
         
-    layout["footer"].update(Panel(f"🧠 Custos IA (Sessão): {tokens} Tokens | {cost} | [green]Pronto para comandos.[/]", style="bold green"))
+    layout["footer"].update(Panel(f"🧠 Custos IA (Sessão): {tokens} Tokens | {cost} | [green]Serviço Operante.[/]", style="bold green"))
     
     return layout
 
 if __name__ == "__main__":
     console.clear()
-    with Live(generate_dashboard(), refresh_per_second=1) as live:
+    
+    # Inicia a thread de scanner em background para não travar a TUI
+    scan_thread = threading.Thread(target=scanner_worker, daemon=True)
+    scan_thread.start()
+
+    with Live(generate_dashboard(), refresh_per_second=2) as live:
         try:
             while True:
                 live.update(generate_dashboard())
-                time.sleep(2)
+                time.sleep(1)
         except KeyboardInterrupt:
             console.print("[red]Encerrando Ultron TUI...[/]")
