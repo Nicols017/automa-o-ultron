@@ -21,13 +21,13 @@ def scanner_worker():
     scanner = NetworkScanner()
     while True:
         try:
-            # Faz varredura na rede (isso leva alguns segundos)
-            devices = scanner.scan_network(max_threads=50, timeout=0.5)
+            # Faz varredura na rede com timeout maior para não pular máquinas lentas
+            devices = scanner.scan_network(max_threads=150, timeout=1.5)
             live_devices = devices
             is_scanning = False
         except Exception:
             pass
-        # Espera 10 segundos até a próxima varredura para não saturar a rede
+        # Espera 10 segundos até a próxima varredura
         time.sleep(10)
 
 def generate_dashboard() -> Layout:
