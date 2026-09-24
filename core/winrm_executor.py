@@ -86,8 +86,8 @@ class WinRMExecutor:
             auth=(user, pwd),
             transport="ntlm",
             server_cert_validation="ignore",
-            read_timeout_sec=130,
-            operation_timeout_sec=120
+            read_timeout_sec=1810,
+            operation_timeout_sec=1800
         )
 
     def _get_credential_candidates(self, ip: str, username: Optional[str] = None, password: Optional[str] = None) -> List[Tuple[str, str]]:
@@ -226,7 +226,7 @@ class WinRMExecutor:
                 def executor_fn(h: str, c: str, ts: float):
                     return self._execute_winrm_async(ip, session, minified, ts)
 
-                resilient = ResilientWinRM(executor=executor_fn, max_attempts=3, timeout_s=45.0)
+                resilient = ResilientWinRM(executor=executor_fn, max_attempts=3, timeout_s=1800.0)
                 
                 # Executa de forma síncrona aguardando o loop
                 try:
