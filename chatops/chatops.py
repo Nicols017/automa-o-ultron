@@ -921,25 +921,25 @@ class TrueConfChatOps:
             frozenset(["/chamados", "/milvus", "/tickets"]):
                 lambda: self._cmd_chamados(trace_id=trace_id),
             frozenset(["/preparar", "/iniciar", "/deploy"]):
-                lambda: self._cmd_preparar(user_id, parts[1:], trace_id=trace_id),
+                lambda: self._cmd_preparar(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_preparar(user_id),
             frozenset(["/formatar"]):
                 lambda: self._cmd_formatar(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_formatar(user_id),
             frozenset(["/diagnostico", "/diag", "/inspecionar", "/smart"]):
-                lambda: self._cmd_diagnostico(user_id, parts[1:], trace_id=trace_id),
+                lambda: self._cmd_diagnostico(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_diagnostico(user_id),
             frozenset(["/ativar", "/ativacao", "/mas"]):
-                lambda: self._cmd_ativar(user_id, parts[1:], trace_id=trace_id),
+                lambda: self._cmd_ativar(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_ativar(user_id),
             frozenset(["/backup", "/storage"]):
-                lambda: self._cmd_backup(user_id, parts[1:], trace_id=trace_id),
+                lambda: self._cmd_backup(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_backup(user_id),
             frozenset(["/dominio", "/domain", "/ad"]):
-                lambda: self._cmd_dominio(user_id, parts[1:], trace_id=trace_id),
+                lambda: self._cmd_dominio(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_dominio(user_id),
             frozenset(["/softwares", "/apps", "/instalar"]):
-                lambda: self._cmd_softwares(user_id, parts[1:], trace_id=trace_id),
+                lambda: self._cmd_softwares(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_softwares(user_id),
             frozenset(["/reiniciar", "/reboot"]):
-                lambda: self._cmd_power(user_id, parts[1:], "restart", trace_id=trace_id),
+                lambda: self._cmd_power(user_id, parts[1:], "restart", trace_id=trace_id) if len(parts) > 1 else self._start_wizard_power(user_id),
             frozenset(["/desligar", "/shutdown"]):
-                lambda: self._cmd_power(user_id, parts[1:], "shutdown", trace_id=trace_id),
+                lambda: self._cmd_power(user_id, parts[1:], "shutdown", trace_id=trace_id) if len(parts) > 1 else self._start_wizard_power(user_id),
             frozenset(["/msg", "/mensagem", "/notificar", "/alerta", "/aviso", "/popup"]):
-                lambda: self._cmd_message(user_id, parts[1:], trace_id=trace_id),
+                lambda: self._cmd_message(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_msg(user_id),
             frozenset(["/laudos", "/laudo", "/relatorios"]):
                 lambda: self._cmd_laudos(parts[1:], trace_id=trace_id),
             frozenset(["/download", "/agent", "/agente", "/exe", "/baixar"]):
@@ -969,7 +969,7 @@ class TrueConfChatOps:
             frozenset(["/bundles", "/backups_softwares", "/list_bundles"]):
                 lambda: self._cmd_list_bundles(trace_id=trace_id),
             frozenset(["/limpar", "/clean", "/limpeza", "/desinstalar"]):
-                lambda: self._cmd_limpar(user_id, parts[1:], trace_id=trace_id),
+                lambda: self._cmd_limpar(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_limpar(user_id),
         }
 
         for keywords, handler in routes.items():
