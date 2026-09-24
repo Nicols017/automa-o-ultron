@@ -7,6 +7,7 @@ import json
 import re
 import requests
 from typing import Dict, Any, Optional, List
+from core.cost_tracker import global_cost_tracker
 
 class DiagnosticAnalyzer:
     """Motor de inferência e análise de linguagem natural para o ecossistema Ultron."""
@@ -274,7 +275,14 @@ class DiagnosticAnalyzer:
 
         response = self.session.post(url, json=payload, headers=headers, timeout=self.request_timeout)
         if response.status_code == 200:
-            raw = response.json().get("response", "Resposta vazia recebida do modelo.")
+            data = response.json()
+            # Avaliação de uso (Ollama retorna prompt_eval_count e eval_count)
+            p_tokens = data.get("prompt_eval_count", 0)
+            c_tokens = data.get("eval_count", 0)
+            if p_tokens or c_tokens:
+                global_cost_tracker.track(self.model, p_tokens, c_tokens)
+                
+            raw = data.get("response", "Resposta vazia recebida do modelo.")
             return self._clean_llm_response(raw)
         else:
             try:
@@ -318,6 +326,11 @@ class DiagnosticAnalyzer:
         response = self.session.post(url, json=payload, headers=headers, timeout=self.request_timeout)
         if response.status_code == 200:
             data = response.json()
+            usage = data.get("usage", {})
+            p_tokens = usage.get("prompt_tokens", 0)
+            c_tokens = usage.get("completion_tokens", 0)
+            global_cost_tracker.track(self.model, p_tokens, c_tokens)
+            
             raw = data["choices"][0]["message"]["content"]
             return self._clean_llm_response(raw)
         else:
