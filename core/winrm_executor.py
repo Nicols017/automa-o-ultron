@@ -171,9 +171,9 @@ class WinRMExecutor:
                 chunk_sz = 1000
                 chunks = [b64_script[i:i+chunk_sz] for i in range(0, len(b64_script), chunk_sz)]
 
-                session.run_cmd("cmd.exe /c del /q %TEMP%\\ultron_task.b64 %TEMP%\\ultron_task.ps1 2>nul")
+                session.run_ps("Remove-Item -Path $env:TEMP\\ultron_task.b64 -ErrorAction SilentlyContinue")
                 for c in chunks:
-                    session.run_cmd(f'cmd.exe /c echo|set /p="{c}">>%TEMP%\\ultron_task.b64')
+                    session.run_ps(f"Add-Content -Path $env:TEMP\\ultron_task.b64 -Value '{c}' -NoNewline")
 
                 decode_exec = (
                     "$p=[System.IO.Path]::Combine($env:TEMP,'ultron_task.ps1');"
