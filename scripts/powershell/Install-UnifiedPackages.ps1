@@ -2,7 +2,7 @@ param (
     [string[]]$Packages = @(),
     [string]$BundleJsonPath = "",
     [string]$RawJsonContent = "",
-    [switch]$Interactive = $true
+    [bool]$Interactive = $false
 )
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -85,7 +85,7 @@ foreach ($pkgQuery in $targetPackages) {
     } catch {}
 
     $installed = $false
-    $displayMode = if ($Interactive) { "--interactive" } else { "--silent" }
+    $displayMode = "--silent"
 
     # 1. Se contém ponto (ex: Valve.Steam, Google.Chrome), tenta instalação direta por ID exato no Winget
     if ($clean -match "\.") {
