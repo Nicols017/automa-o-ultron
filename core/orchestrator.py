@@ -289,11 +289,50 @@ class LabOrchestrator:
                 combined_pkgs.append(clean_p)
 
         if combined_pkgs:
-            log(f"📦 Instalando pacotes adicionais via Winget ({len(combined_pkgs)} itens)...", level="info", stage=5)
+            log(f"📦 Preparando Chocolatey e instalando pacotes adicionais ({len(combined_pkgs)} itens)...", level="info", stage=5)
+            setup_choco = \"\"\"
+            if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+                Set-ExecutionPolicy Bypass -Scope Process -Force
+                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+                Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+            }
+            \"\"\"
+            self.winrm.run_powershell_code(ip, setup_choco)
+
+            winget_to_choco = {
+                "Google.Chrome": "googlechrome",
+                "Mozilla.Firefox": "firefox",
+                "AnyDeskSoftwareGmbH.AnyDesk": "anydesk",
+                "7zip.7zip": "7zip",
+                "RARLab.WinRAR": "winrar",
+                "Foxit.FoxitReader": "foxitreader",
+                "Notepad++.Notepad++": "notepadplusplus",
+                "Skillcaps.Lightshot": "lightshot",
+                "Microsoft.Teams": "microsoft-teams",
+                "OpenVPNTechnologies.OpenVPN": "openvpn",
+                "FileZilla.FileZillaClient": "filezilla",
+                "Devolutions.RemoteDesktopManager": "remotedesktopmanager",
+                "Postman.Postman": "postman",
+                "Git.Git": "git",
+                "Microsoft.VisualStudioCode": "vscode",
+                "TeamViewer.TeamViewer": "teamviewer",
+                "Adobe.Acrobat.Reader.64-bit": "adobereader",
+                "Microsoft.Office": "LOCAL_OFFICE"
+            }
+
             for pkg in combined_pkgs:
-                log(f"  -> Instalando {pkg}...", level="info", stage=5)
-                cmd = f"winget install --id {pkg} --exact --silent --accept-package-agreements --accept-source-agreements"
-                self.winrm.run_powershell_code(ip, cmd)
+                choco_pkg = winget_to_choco.get(pkg, pkg.lower())
+                
+                if choco_pkg == "LOCAL_OFFICE":
+                    log(f"  -> Instalando Pacote Pesado via Rede Local: {pkg}...", level="info", stage=5)
+                    office_cmd = "cmd.exe /c \"\\\\\\\\192.168.57.87\\\\DeploymentShare$\\\\Scripts\\\\InstalarOffice.bat\""
+                    self.winrm.run_powershell_code(ip, office_cmd)
+                elif "sqlserver" in choco_pkg or "visualstudio" in choco_pkg or "vegas" in choco_pkg:
+                    log(f"  -> Pulo intencional de app pesado via Choco: {pkg}", level="warning", stage=5)
+                else:
+                    log(f"  -> Instalando {choco_pkg} via Chocolatey...", level="info", stage=5)
+                    cmd = f"choco install {choco_pkg} -y --no-progress --force"
+                    self.winrm.run_powershell_code(ip, cmd)
 
         custom_scripts = profile.get("custom_scripts", [])
         for script_item in custom_scripts:
@@ -301,7 +340,14 @@ class LabOrchestrator:
             parts = script_item.split(" ", 1)
             s_name = parts[0]
             if len(parts) > 1:
-                self.winrm.run_powershell_code(ip, script_item)
+                script_path = os.path.join(self.winrm.scripts_dir, s_name)
+                if os.path.exists(script_path):
+                    with open(script_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    invoker = f"& {{\n{content}\n}} {parts[1]}"
+                    self.winrm.run_powershell_code(ip, invoker)
+                else:
+                    log(f"⚠️ Script customizado não encontrado: {s_name}", level="warning", stage=5)
             else:
                 self.winrm.run_script_file(ip, s_name)
 
