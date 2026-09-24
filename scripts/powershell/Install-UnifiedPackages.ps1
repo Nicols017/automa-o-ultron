@@ -76,7 +76,7 @@ foreach ($pkgQuery in $targetPackages) {
     # Em sessões WinRM (Sessão 0), o banco do Winget costuma estar vazio se não for inicializado.
     if ($clean -eq $targetPackages[0]) {
         Write-Host "    -> [Opcional] Atualizando fontes do Winget (Session 0 fix)..." -ForegroundColor Gray
-        Start-Process -FilePath $wingetExe -ArgumentList @("source", "update") -Wait -NoNewWindow -ErrorAction SilentlyContinue
+        Start-Process -FilePath $wingetExe -ArgumentList @("source", "update") -Wait -ErrorAction SilentlyContinue
     }
 
     # Emite aviso na tela da máquina física para o operador ver
@@ -91,12 +91,12 @@ foreach ($pkgQuery in $targetPackages) {
     if ($clean -match "\.") {
         Write-Host "    -> Tentando Winget por ID exato: $clean (Modo: $displayMode)" -ForegroundColor Gray
         $wArgs = @("install", "--id", $clean, "-e", $displayMode, "--accept-package-agreements", "--accept-source-agreements", "--force", "--scope", "machine")
-        $p = Start-Process -FilePath $wingetExe -ArgumentList $wArgs -Wait -NoNewWindow -PassThru -ErrorAction SilentlyContinue
+        $p = Start-Process -FilePath $wingetExe -ArgumentList $wArgs -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
         
         # Se falhou no modo interativo, tenta fallback no modo silencioso
         if ((-not $p -or ($p.ExitCode -ne 0 -and $p.ExitCode -ne -1978335189)) -and $Interactive) {
             $wArgsSilent = @("install", "--id", $clean, "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--force", "--scope", "machine")
-            $p = Start-Process -FilePath $wingetExe -ArgumentList $wArgsSilent -Wait -NoNewWindow -PassThru -ErrorAction SilentlyContinue
+            $p = Start-Process -FilePath $wingetExe -ArgumentList $wArgsSilent -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
         }
 
         if ($p -and ($p.ExitCode -eq 0 -or $p.ExitCode -eq -1978335189)) {
@@ -111,11 +111,11 @@ foreach ($pkgQuery in $targetPackages) {
     if (-not $installed) {
         Write-Host "    -> Buscando correspondência universal no catálogo Winget: '$clean'..." -ForegroundColor Gray
         $wArgs = @("install", "--name", $clean, $displayMode, "--accept-package-agreements", "--accept-source-agreements", "--force", "--scope", "machine")
-        $p = Start-Process -FilePath $wingetExe -ArgumentList $wArgs -Wait -NoNewWindow -PassThru -ErrorAction SilentlyContinue
+        $p = Start-Process -FilePath $wingetExe -ArgumentList $wArgs -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
 
         if ((-not $p -or ($p.ExitCode -ne 0 -and $p.ExitCode -ne -1978335189)) -and $Interactive) {
             $wArgsSilent = @("install", "--name", $clean, "--silent", "--accept-package-agreements", "--accept-source-agreements", "--force", "--scope", "machine")
-            $p = Start-Process -FilePath $wingetExe -ArgumentList $wArgsSilent -Wait -NoNewWindow -PassThru -ErrorAction SilentlyContinue
+            $p = Start-Process -FilePath $wingetExe -ArgumentList $wArgsSilent -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
         }
 
         if ($p -and ($p.ExitCode -eq 0 -or $p.ExitCode -eq -1978335189)) {
@@ -127,11 +127,11 @@ foreach ($pkgQuery in $targetPackages) {
 
         # 2.1 Fallback de Query livre no Winget
         $wArgsQuery = @("install", "-q", $clean, $displayMode, "--accept-package-agreements", "--accept-source-agreements", "--force", "--scope", "machine")
-        $p2 = Start-Process -FilePath $wingetExe -ArgumentList $wArgsQuery -Wait -NoNewWindow -PassThru -ErrorAction SilentlyContinue
+        $p2 = Start-Process -FilePath $wingetExe -ArgumentList $wArgsQuery -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
 
         if ((-not $p2 -or ($p2.ExitCode -ne 0 -and $p2.ExitCode -ne -1978335189)) -and $Interactive) {
             $wArgsQuerySilent = @("install", "-q", $clean, "--silent", "--accept-package-agreements", "--accept-source-agreements", "--force", "--scope", "machine")
-            $p2 = Start-Process -FilePath $wingetExe -ArgumentList $wArgsQuerySilent -Wait -NoNewWindow -PassThru -ErrorAction SilentlyContinue
+            $p2 = Start-Process -FilePath $wingetExe -ArgumentList $wArgsQuerySilent -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
         }
 
         if ($p2 -and ($p2.ExitCode -eq 0 -or $p2.ExitCode -eq -1978335189)) {
@@ -146,7 +146,7 @@ foreach ($pkgQuery in $targetPackages) {
     if (-not $installed -and $chocoAvailable) {
         Write-Host "    -> Tentando no catálogo Chocolatey: '$clean'..." -ForegroundColor Yellow
         $cArgs = @("install", $clean, "-y", "--no-progress")
-        $cp = Start-Process -FilePath "choco.exe" -ArgumentList $cArgs -Wait -NoNewWindow -PassThru -ErrorAction SilentlyContinue
+        $cp = Start-Process -FilePath "choco.exe" -ArgumentList $cArgs -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
         if ($cp -and $cp.ExitCode -eq 0) {
             Write-Host "    [OK] Instalado com sucesso via Chocolatey!" -ForegroundColor Green
             $successList += $clean
@@ -159,7 +159,7 @@ foreach ($pkgQuery in $targetPackages) {
     if (-not $installed -and $scoopAvailable) {
         Write-Host "    -> Tentando no catálogo Scoop: '$clean'..." -ForegroundColor Yellow
         $sArgs = @("install", $clean)
-        $sp = Start-Process -FilePath "scoop.exe" -ArgumentList $sArgs -Wait -NoNewWindow -PassThru -ErrorAction SilentlyContinue
+        $sp = Start-Process -FilePath "scoop.exe" -ArgumentList $sArgs -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
         if ($sp -and $sp.ExitCode -eq 0) {
             Write-Host "    [OK] Instalado com sucesso via Scoop!" -ForegroundColor Green
             $successList += $clean
