@@ -1473,7 +1473,7 @@ class TrueConfChatOps:
 
         # 1. Enfileira a tarefa reversa no AgentTaskManager (para caso o WinRM não esteja disponível)
         try:
-            from main import agent_task_mgr
+            from core.agent_runtime import agent_task_mgr
             agent_task_mgr.enqueue_task(ip, "CLEANUP_SYSTEM", task_type="cleanup")
         except Exception:
             pass
@@ -1836,7 +1836,7 @@ class TrueConfChatOps:
         """
 
         try:
-            from main import agent_task_mgr
+            from core.agent_runtime import agent_task_mgr
             agent_task_mgr.enqueue_task(ip, pxe_script, task_type="ps1")
         except Exception:
             pass
@@ -2201,7 +2201,7 @@ class TrueConfChatOps:
         # 1. Enfileira imediatamente no AgentTaskManager para caso o WinRM esteja offline/bloqueado
         agent_cmd = "shutdown /r /t 0 /f" if action == "restart" else "shutdown /s /t 0 /f"
         try:
-            from main import agent_task_mgr
+            from core.agent_runtime import agent_task_mgr
             agent_task_mgr.enqueue_task(ip, agent_cmd, task_type="cmd")
         except Exception:
             pass
@@ -2230,7 +2230,7 @@ class TrueConfChatOps:
         def _worker():
             # 1. Enfileira no AgentTaskManager para entrega garantida pelo UltronAgent
             try:
-                from main import agent_task_mgr
+                from core.agent_runtime import agent_task_mgr
                 msg_cmd = f"powershell.exe -ExecutionPolicy Bypass -NoProfile -Command \"Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('{msg_text}', 'Ultron — Suporte Pense Rede', 'OK', 'Information')\""
                 agent_task_mgr.enqueue_task(ip, msg_cmd, task_type="cmd")
             except Exception:
