@@ -888,16 +888,18 @@ def scan_bench_network(timeout: float = Query(0.3, description="Timeout de conex
     }
 
 @app.post("/api/v1/bench/diagnose")
-def diagnose_machine(req: DiagnosticRequest):
+def diagnose_machine(req: DiagnosticRequest, request: Request):
     """Executa varredura de hardware e análise de IA na máquina alvo sem alterar configurações"""
+    require_operator(request)
     result = orchestrator.run_diagnostics_only(req.ip)
     return result
 
 # --- Rotas de Ações Rápidas de Bancada ---
 
 @app.post("/api/v1/bench/action/backup")
-def execute_backup_action(req: BackupRequest):
+def execute_backup_action(req: BackupRequest, request: Request):
     """Executa o script de backup de perfil de usuário da máquina alvo para o Storage Macrium"""
+    require_operator(request)
     backup_server = settings.get("network", {}).get("backup_server_ip", "192.168.57.112")
     params = {
         "TargetServer": backup_server,
@@ -915,8 +917,9 @@ def execute_backup_action(req: BackupRequest):
     }
 
 @app.post("/api/v1/bench/action/power")
-def execute_power_action(req: PowerActionRequest):
+def execute_power_action(req: PowerActionRequest, request: Request):
     """Executa reinicialização ou desligamento remoto da máquina de bancada"""
+    require_operator(request)
     if req.action == "shutdown":
         cmd = "Stop-Computer -Force"
         action_name = "Desligamento"
@@ -934,8 +937,9 @@ def execute_power_action(req: PowerActionRequest):
     }
 
 @app.post("/api/v1/bench/action/rename")
-def execute_rename_action(req: RenameComputerRequest):
+def execute_rename_action(req: RenameComputerRequest, request: Request):
     """Altera o nome do computador (hostname) e reinicia opcionalmente"""
+    require_operator(request)
     clean_name = req.new_name.strip()
     if not clean_name:
         raise HTTPException(status_code=400, detail="Novo nome inválido")
@@ -955,8 +959,9 @@ def execute_rename_action(req: RenameComputerRequest):
     }
 
 @app.post("/api/v1/bench/action/activate")
-def execute_activation_action(req: ActivationRequest):
+def execute_activation_action(req: ActivationRequest, request: Request):
     """Executa a ativação automática do Windows e Office via Massgrave (MAS)"""
+    require_operator(request)
     mas_cmd = "irm https://get.activated.win | iex"
     result = orchestrator.winrm.run_powershell_code(req.ip, mas_cmd)
     return {
@@ -1161,8 +1166,9 @@ def _execute_pipeline_task(
     )
 
 @app.post("/api/v1/bench/run")
-def run_bench_pipeline(req: RunPipelineRequest, background_tasks: BackgroundTasks, async_mode: bool = True):
+def run_bench_pipeline(req: RunPipelineRequest, background_tasks: BackgroundTasks, request: Request, async_mode: bool = True):
     """Dispara a esteira completa de preparação da máquina (softwares, domínio, burn-in e laudo)"""
+    require_operator(request)
     dom_dict = req.domain_config.model_dump() if req.domain_config else None
     if async_mode:
         background_tasks.add_task(
@@ -1197,10 +1203,12 @@ def run_bench_pipeline(req: RunPipelineRequest, background_tasks: BackgroundTask
         return result
 
 @app.post("/api/v1/mdt/completed")
-def mdt_completed(data: MDTNotification, background_tasks: BackgroundTasks):
+def mdt_completed(data: MDTNotification, background_tasks: BackgroundTasks, request: Request):
     """
-    Webhook chamado pelo script Notify-Ultron.ps1 ao final da Task Sequence do MDT
+    Webhook chamado pelo script Notify-Ultron.ps1 ao final da Task Sequence do MDT.
+    Exige a mesma credencial do agente associado ao serial.
     """
+    AgentAuthenticator().authenticate(request, expected_agent=data.serial)
     print(f"🤖 [ULTRON] Webhook MDT recebido para o PC: {data.computer_name} ({data.ip}) - Serial: {data.serial}")
     
     # 1. Notifica o técnico no privado (ou técnico responsável) via TrueConf
