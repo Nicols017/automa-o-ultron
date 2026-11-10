@@ -11,6 +11,8 @@ on:
       - "tests/test_chatops_safety.py"
       - "tests/test_agent_auth.py"
       - "tests/test_backup_gate.py"
+      - "tests/test_macrium_verifier.py"
+      - "verifier/**"
       - "tests/test_agent_protocol_contract.py"
       - "agent/UltronAgent.cs"
       - ".github/workflows/ultron-safety.yml"
@@ -33,7 +35,7 @@ jobs:
         run: python -m pip install "fastapi>=0.110,<1"
       - name: Check syntax of modified Python modules
         run: |
-          python -m compileall -q main.py chatops/chatops.py core/agent_runtime.py core/agent_task_manager.py core/orchestrator.py core/agent_auth.py core/backup_gate.py
+          python -m compileall -q main.py chatops/chatops.py core/agent_runtime.py core/agent_task_manager.py core/orchestrator.py core/agent_auth.py core/backup_gate.py verifier/macrium_verify.py
       - name: Run offline safety tests (no network or production access)
         run: |
           python -m unittest discover -s tests -p 'test_readonly_diagnostics.py' -v
@@ -41,4 +43,5 @@ jobs:
           python -m unittest discover -s tests -p 'test_chatops_safety.py' -v
           python -m unittest discover -s tests -p 'test_agent_auth.py' -v
           python -m unittest discover -s tests -p 'test_backup_gate.py' -v
+          python -m unittest discover -s tests -p 'test_macrium_verifier.py' -v
           python -m unittest discover -s tests -p 'test_agent_protocol_contract.py' -v
