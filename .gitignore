@@ -44,3 +44,13 @@ reports/output/*.pdf
 
 # Persistent agent task database (contains commands and execution outputs)
 data/*.sqlite3*
+
+# Macrium verifier private inputs, evidence, logs, and disk images
+verifier/private/
+verifier/audit/
+*.mrimg
+*.mrbak
+*verifier.key
+*agent-credentials.json
+macrium-evidence-*.json
+mrverify-*.log
