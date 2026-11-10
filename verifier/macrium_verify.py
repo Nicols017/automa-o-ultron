@@ -96,6 +96,7 @@ def verify_and_attest(
     mrverify_executable: Path = Path(MRVERIFY_EXE),
     runner: Callable[..., Any] = subprocess.run,
     now: Callable[[], float] = time.time,
+    image_resolver: Callable[[str], Path] = Path,
 ) -> Path:
     """Verify using real MRVerify.exe and sign only after success.
 
@@ -107,7 +108,7 @@ def verify_and_attest(
     if not verifier_id or not re.fullmatch(r"[A-Za-z0-9_.-]{3,128}", verifier_id):
         raise VerificationError("Identificador do verificador inválido.")
     entry = _trusted_manifest_entry(inventory_file, serial, allowed_share)
-    image = Path(entry["storage_path"])
+    image = image_resolver(entry["storage_path"])
 
     # The CLI additionally mandates the Windows platform, where UNC paths
     # behave as real network files. Tests use a fake runner and fake filesystem.
