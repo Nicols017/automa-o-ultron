@@ -45,7 +45,7 @@ from core.public_tools import (
     TechWisdomService
 )
 from core.agent_builder import agent_builder
-from core.agent_task_manager import AgentTaskManager
+from core.agent_runtime import agent_task_mgr
 
 app = FastAPI(
     title="Ultron Lab Automation Server",
@@ -105,9 +105,6 @@ network_scanner = NetworkScanner()
 orchestrator = LabOrchestrator()
 package_mgr = UnifiedPackageManager(winrm_executor=orchestrator.winrm)
 settings = profile_mgr.get_settings()
-
-# Fila durável compartilhada entre reinicializações do servidor.
-agent_task_mgr = AgentTaskManager()
 
 tc_cfg = settings.get("trueconf", {})
 bot = TrueConfBot(
