@@ -538,7 +538,7 @@ namespace UltronAgent
                     ip, Environment.MachineName, serial, anydeskId, EscapeJson(loggedUser), CurrentVersion
                 );
 
-                HttpPost(ServerUrl + "/api/v1/agent/heartbeat", json, 4000);
+                AgentPost(ServerUrl + "/api/v1/agent/heartbeat", json, 4000);
             }
             catch { }
         }
@@ -548,7 +548,7 @@ namespace UltronAgent
             string serial = GetBiosSerial();
             string endpoint = string.Format("{0}/api/v1/agent/tasks/{1}", ServerUrl, Uri.EscapeDataString(serial));
 
-            string responseJson = HttpGet(endpoint, 4000);
+            string responseJson = AgentGet(endpoint, 4000);
             if (string.IsNullOrEmpty(responseJson) || !responseJson.Contains("\"task_id\""))
                 return;
 
@@ -569,7 +569,7 @@ namespace UltronAgent
                     "{{\"task_id\":\"{0}\",\"exit_code\":0,\"stdout\":\"Desinstalacao iniciada; conclusao ainda nao verificada.\",\"stderr\":\"\",\"status\":\"STARTED\"}}",
                     EscapeJson(taskId)
                 );
-                string cleanupAck = HttpPost(
+                string cleanupAck = AgentPost(
                     string.Format("{0}/api/v1/agent/tasks/{1}/result", ServerUrl, taskId),
                     cleanupPayload, 5000
                 );
@@ -634,7 +634,7 @@ namespace UltronAgent
                 taskId, exitCode, EscapeJson(stdout), EscapeJson(stderr), exitCode == 0 ? "SUCCESS" : "ERROR"
             );
 
-            HttpPost(string.Format("{0}/api/v1/agent/tasks/{1}/result", ServerUrl, taskId), resultPayload, 10000);
+            AgentPost(string.Format("{0}/api/v1/agent/tasks/{1}/result", ServerUrl, taskId), resultPayload, 10000);
         }
 
         private static void CheckForNewBsods()
@@ -657,7 +657,7 @@ namespace UltronAgent
                         "{{\"type\":\"BSOD\",\"ip\":\"{0}\",\"serial\":\"{1}\",\"hostname\":\"{2}\",\"details\":\"Tela Azul recente detectada: {3} ({4:dd/MM/yyyy HH:mm})\"}}",
                         GetLocalIPAddress(), GetBiosSerial(), Environment.MachineName, filename, fi.LastWriteTime
                     );
-                    HttpPost(ServerUrl + "/api/v1/agent/alert", alertJson, 5000);
+                    AgentPost(ServerUrl + "/api/v1/agent/alert", alertJson, 5000);
                 }
             }
         }
@@ -666,6 +666,9 @@ namespace UltronAgent
         {
             try
             {
+                // OTA sobre HTTP permite troca do executável em trânsito.
+                if (!ServerUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                    return;
                 string versionJson = HttpGet(ServerUrl + "/api/v1/agent/version", 4000);
                 if (string.IsNullOrEmpty(versionJson)) return;
 
@@ -779,7 +782,7 @@ namespace UltronAgent
             string loggedUser = DetectLoggedInUser();
 
             string json = string.Format(
-                "{{\"serial\":\"{0}\",\"ip\":\"{1}\",\"computer_name\":\"{2}\",\"manufacturer\":\"{3}\",\"model\":\"{4}\",\"cpu\":\"{5}\",\"ram_gb\":{6},\"mac\":\"{7}\",\"client_id\":\"{8}\",\"disks\":[{9}],\"anydesk_id\":\"{10}\",\"logged_in_user\":\"{11}\",\"agent_version\":\"{12}\",\"status\":\"READY_FOR_PIPELINE\",\"winrm_ready\":true,\"auth_user\":\"penserede\",\"auth_pass\":\"@a123456\"}}",
+                "{{\"serial\":\"{0}\",\"ip\":\"{1}\",\"computer_name\":\"{2}\",\"manufacturer\":\"{3}\",\"model\":\"{4}\",\"cpu\":\"{5}\",\"ram_gb\":{6},\"mac\":\"{7}\",\"client_id\":\"{8}\",\"disks\":[{9}],\"anydesk_id\":\"{10}\",\"logged_in_user\":\"{11}\",\"agent_version\":\"{12}\",\"status\":\"READY_FOR_PIPELINE\",\"winrm_ready\":true}}",
                 EscapeJson(serial), ip, EscapeJson(hostname), EscapeJson(manufacturer), EscapeJson(model),
                 EscapeJson(cpu), ramGb.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture),
                 mac, ClientId, string.Join(",", diskJsonList.ToArray()), anydeskId, EscapeJson(loggedUser), CurrentVersion
@@ -913,32 +916,13 @@ namespace UltronAgent
 
         public static void RegisterAtServer(string json)
         {
-            Log("[*] [3/3] Registrando máquina no Ultron Server...", ConsoleColor.Yellow);
-            string[] endpoints = new string[] {
-                ServerUrl + "/api/v1/agent/register",
-                ServerUrl + "/api/v1/mdt/completed"
-            };
-
-            bool success = false;
-            foreach (string endpoint in endpoints)
-            {
-                try
-                {
-                    string res = HttpPost(endpoint, json, 6000);
-                    if (!string.IsNullOrEmpty(res))
-                    {
-                        Log(string.Format("    [OK] Registrado com sucesso no Ultron Server ({0})", endpoint), ConsoleColor.Green);
-                        success = true;
-                        break;
-                    }
-                }
-                catch { }
-            }
-
-            if (!success)
-            {
-                Log("    [!] Aviso: Servidor Ultron temporariamente inacessível. O serviço local continuará tentando em segundo plano.", ConsoleColor.Yellow);
-            }
+            // Registro exige token pré-provisionado e HTTPS.
+            string endpoint = ServerUrl + "/api/v1/agent/register";
+            string res = AgentPost(endpoint, json, 6000);
+            if (!string.IsNullOrEmpty(res) && res.Contains("\"success\":true"))
+                Log("    [OK] UltronAgent registrado com autenticacao por dispositivo.", ConsoleColor.Green);
+            else
+                Log("    [!] Registro não confirmado. Verifique HTTPS e credencial individual.", ConsoleColor.Yellow);
         }
 
         // =====================================================================
@@ -1014,6 +998,69 @@ namespace UltronAgent
             }
             catch { }
             return "00:00:00:00:00:00";
+        }
+
+        private static string ReadAgentToken()
+        {
+            try
+            {
+                // Provisionar ACL: SYSTEM/Administradores apenas, nunca no binário.
+                string path = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                    "Ultron", "agent.token");
+                if (!File.Exists(path)) return null;
+                string token = File.ReadAllText(path, Encoding.UTF8).Trim();
+                return token.Length >= 32 ? token : null;
+            }
+            catch { return null; }
+        }
+
+        private static string AgentRequest(string url, string method, string jsonBody, int timeoutMs)
+        {
+            try
+            {
+                Uri uri;
+                if (!Uri.TryCreate(url, UriKind.Absolute, out uri) ||
+                    uri.Scheme != Uri.UriSchemeHttps)
+                {
+                    // Não envie credenciais nem aceite comandos sobre HTTP.
+                    return null;
+                }
+
+                string token = ReadAgentToken();
+                string serial = GetBiosSerial();
+                if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(serial)) return null;
+
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(uri);
+                req.Method = method;
+                req.Timeout = timeoutMs;
+                req.Headers[HttpRequestHeader.Authorization] = "Bearer " + token;
+                req.Headers["X-Ultron-Agent-ID"] = serial;
+
+                if (method == "POST")
+                {
+                    byte[] bytes = Encoding.UTF8.GetBytes(jsonBody ?? "");
+                    req.ContentType = "application/json; charset=utf-8";
+                    req.ContentLength = bytes.Length;
+                    using (Stream output = req.GetRequestStream())
+                        output.Write(bytes, 0, bytes.Length);
+                }
+
+                using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
+                using (StreamReader sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
+                    return sr.ReadToEnd();
+            }
+            catch { return null; }
+        }
+
+        private static string AgentGet(string url, int timeoutMs)
+        {
+            return AgentRequest(url, "GET", null, timeoutMs);
+        }
+
+        private static string AgentPost(string url, string jsonBody, int timeoutMs)
+        {
+            return AgentRequest(url, "POST", jsonBody, timeoutMs);
         }
 
         public static string HttpGet(string url, int timeoutMs)
