@@ -46,6 +46,7 @@ from core.public_tools import (
 )
 from core.agent_builder import agent_builder
 from core.agent_runtime import agent_task_mgr
+from core.agent_auth import AgentAuthenticator, require_operator
 
 app = FastAPI(
     title="Ultron Lab Automation Server",
@@ -247,8 +248,9 @@ class AgentRegistration(BaseModel):
     status: Optional[str] = Field("READY_FOR_PIPELINE", description="Status do Agente")
     winrm_ready: Optional[bool] = Field(True, description="Se WinRM foi desbloqueado")
     agent_version: Optional[str] = Field("2.0.0", description="Versão do UltronAgent.exe")
-    auth_user: Optional[str] = Field("penserede", description="Usuário de automação local provisionado")
-    auth_pass: Optional[str] = Field("@a123456", description="Senha da conta de automação local")
+    # Credenciais WinRM não devem ser enviadas ou provisionadas neste webhook.
+    auth_user: Optional[str] = Field(None, description="Legado: ignorado pelo servidor")
+    auth_pass: Optional[str] = Field(None, description="Legado: ignorado pelo servidor")
 
 class AgentHeartbeat(BaseModel):
     ip: str = Field(..., description="Endereço IP da máquina")
@@ -334,16 +336,20 @@ def get_agent_version():
     }
 
 @app.get("/api/v1/agent/tasks/{target_id}")
-def get_agent_pending_tasks(target_id: str):
-    """Permite ao UltronAgent consultar tarefas pendentes via canal reverso HTTP"""
+def get_agent_pending_tasks(target_id: str, request: Request):
+    """Entrega tarefas somente ao agente autenticado para este serial."""
+    AgentAuthenticator().authenticate(request, expected_agent=target_id)
     task = agent_task_mgr.get_pending_task(target_id)
     if task:
         return task
     return {"status": "no_tasks"}
 
 @app.post("/api/v1/agent/tasks/{task_id}/result")
-def submit_agent_task_result(task_id: str, result: AgentTaskResult):
-    """Recebe o resultado da execução da tarefa enviada pelo UltronAgent"""
+def submit_agent_task_result(task_id: str, result: AgentTaskResult, request: Request):
+    """Aceita resultados apenas do agente dono da tarefa."""
+    agent_id = AgentAuthenticator().authenticate(request)
+    if not agent_task_mgr.agent_can_access_task(agent_id, task_id):
+        raise HTTPException(status_code=403, detail="Agente não autorizado para esta tarefa.")
     try:
         agent_task_mgr.store_result(task_id, result.model_dump())
     except KeyError:
@@ -353,8 +359,9 @@ def submit_agent_task_result(task_id: str, result: AgentTaskResult):
     return {"success": True, "message": f"Resultado da tarefa {task_id} armazenado com sucesso"}
 
 @app.post("/api/v1/agent/alert")
-def receive_agent_alert(alert: AgentAlert):
-    """Recebe alertas críticos de hardware (BSOD, S.M.A.R.T, Superaquecimento) e notifica o TrueConf"""
+def receive_agent_alert(alert: AgentAlert, request: Request):
+    """Recebe alertas autenticados e encaminha ao TrueConf."""
+    AgentAuthenticator().authenticate(request, expected_agent=alert.serial)
     tc_user = settings.get("trueconf", {}).get("default_tech_user_id", "nicolas.silva")
     
     icon = "🚨" if alert.type == "BSOD" else "🔥"
@@ -370,27 +377,21 @@ def receive_agent_alert(alert: AgentAlert):
     return {"success": True, "message": "Alerta processado e notificado com sucesso"}
 
 @app.post("/api/v1/agent/cleanup/{target_id}")
-def enqueue_agent_cleanup(target_id: str):
-    """Enfileira comando de auto-limpeza e desinstalação para uma máquina entregue"""
-    task_id = agent_task_mgr.enqueue_task(target_id, "CLEANUP_SYSTEM", task_type="cleanup")
-    return {
-        "success": True,
-        "task_id": task_id,
-        "message": f"Ordem de auto-limpeza e desinstalação enfileirada para {target_id}."
-    }
+def enqueue_agent_cleanup(target_id: str, request: Request):
+    """Bloqueado até existir autorização de operador e fluxo auditável."""
+    require_operator(request)
+    raise HTTPException(status_code=423, detail="Limpeza remota desabilitada até homologação.")
 
 @app.post("/api/v1/agent/register")
-def agent_register(data: AgentRegistration, background_tasks: BackgroundTasks):
-    """Webhook chamado pelo UltronAgent.exe após liberar a máquina e coletar hardware"""
+def agent_register(data: AgentRegistration, background_tasks: BackgroundTasks, request: Request):
+    """Registro somente de dispositivo pré-provisionado, sobre HTTPS."""
+    AgentAuthenticator().authenticate(request, expected_agent=data.serial)
     print(f"🤖 [ULTRON AGENT] Máquina registrada: {data.computer_name} ({data.ip}) - Serial: {data.serial} - RAM: {data.ram_gb} GB")
     agent_task_mgr.bind_identity(data.serial, data.ip)
     
-    # Salva credenciais de automação zero-prompt no WinRMExecutor e no ChatOps
-    auth_user = data.auth_user or "penserede"
-    auth_pass = data.auth_pass or "@a123456"
-    orchestrator.winrm.set_host_credentials(data.ip, auth_user, auth_pass)
+    # O registro não aceita senhas WinRM transmitidas pelo agente.
+    # Credenciais devem ser provisionadas por canal administrativo independente.
     if bot and bot.chatops:
-        bot.chatops.winrm.set_host_credentials(data.ip, auth_user, auth_pass)
         # Atualiza o cache local de dispositivos no ChatOps imediatamente
         new_dev = {
             "ip": data.ip,
@@ -447,8 +448,9 @@ def agent_register(data: AgentRegistration, background_tasks: BackgroundTasks):
     }
 
 @app.post("/api/v1/agent/heartbeat")
-def agent_heartbeat(data: AgentHeartbeat):
-    """Heartbeat periódico do UltronAgent.exe em segundo plano"""
+def agent_heartbeat(data: AgentHeartbeat, request: Request):
+    """Heartbeat somente de agente autenticado."""
+    AgentAuthenticator().authenticate(request, expected_agent=data.serial)
     if data.serial and data.ip:
         agent_task_mgr.bind_identity(data.serial, data.ip)
     # Atualiza cache do ChatOps se serial ou IP vier no heartbeat
