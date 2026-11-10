@@ -45,6 +45,7 @@ from core.public_tools import (
     TechWisdomService
 )
 from core.agent_builder import agent_builder
+from core.agent_task_manager import AgentTaskManager
 
 app = FastAPI(
     title="Ultron Lab Automation Server",
@@ -105,48 +106,7 @@ orchestrator = LabOrchestrator()
 package_mgr = UnifiedPackageManager(winrm_executor=orchestrator.winrm)
 settings = profile_mgr.get_settings()
 
-# Inicializa Gerenciador de Tarefas Reversas do UltronAgent
-class AgentTaskManager:
-    def __init__(self):
-        self._queues: Dict[str, List[Dict[str, Any]]] = {}
-        self._results: Dict[str, Dict[str, Any]] = {}
-        self._lock = threading.Lock()
-
-    def enqueue_task(self, target_identifier: str, command: str, task_type: str = "powershell", task_id: Optional[str] = None) -> str:
-        if not task_id:
-            task_id = f"task_{uuid.uuid4().hex[:8]}"
-        task = {
-            "task_id": task_id,
-            "command": command,
-            "type": task_type,
-            "created_at": time.time(),
-            "target": target_identifier
-        }
-        with self._lock:
-            key = target_identifier.strip().lower()
-            if key not in self._queues:
-                self._queues[key] = []
-            self._queues[key].append(task)
-        return task_id
-
-    def get_pending_task(self, target_identifier: str) -> Optional[Dict[str, Any]]:
-        with self._lock:
-            for k in [target_identifier.strip().lower(), target_identifier.strip()]:
-                if k in self._queues and self._queues[k]:
-                    return self._queues[k].pop(0)
-        return None
-
-    def store_result(self, task_id: str, result: Dict[str, Any]):
-        with self._lock:
-            self._results[task_id] = {
-                **result,
-                "completed_at": time.time()
-            }
-
-    def get_result(self, task_id: str) -> Optional[Dict[str, Any]]:
-        with self._lock:
-            return self._results.get(task_id)
-
+# Fila durável compartilhada entre reinicializações do servidor.
 agent_task_mgr = AgentTaskManager()
 
 tc_cfg = settings.get("trueconf", {})
@@ -316,50 +276,6 @@ class AgentAlert(BaseModel):
     hostname: Optional[str] = Field("", description="Hostname")
     details: str = Field(..., description="Detalhes técnicos do alerta")
 
-# --- Gerenciador de Fila de Tarefas Reversas (Reverse Task Queue) ---
-class AgentTaskManager:
-    def __init__(self):
-        self._queues: Dict[str, List[Dict[str, Any]]] = {}
-        self._results: Dict[str, Dict[str, Any]] = {}
-        self._lock = threading.Lock()
-
-    def enqueue_task(self, target_identifier: str, command: str, task_type: str = "powershell", task_id: Optional[str] = None) -> str:
-        if not task_id:
-            task_id = f"task_{uuid.uuid4().hex[:8]}"
-        task = {
-            "task_id": task_id,
-            "command": command,
-            "type": task_type,
-            "created_at": time.time(),
-            "target": target_identifier
-        }
-        with self._lock:
-            key = target_identifier.strip().lower()
-            if key not in self._queues:
-                self._queues[key] = []
-            self._queues[key].append(task)
-        return task_id
-
-    def get_pending_task(self, target_identifier: str) -> Optional[Dict[str, Any]]:
-        with self._lock:
-            for k in [target_identifier.strip().lower(), target_identifier.strip()]:
-                if k in self._queues and self._queues[k]:
-                    return self._queues[k].pop(0)
-        return None
-
-    def store_result(self, task_id: str, result: Dict[str, Any]):
-        with self._lock:
-            self._results[task_id] = {
-                **result,
-                "completed_at": time.time()
-            }
-
-    def get_result(self, task_id: str) -> Optional[Dict[str, Any]]:
-        with self._lock:
-            return self._results.get(task_id)
-
-agent_task_mgr = AgentTaskManager()
-
 # --- Rotas da Interface Web & Downloads ---
 
 @app.get("/", response_class=HTMLResponse)
@@ -431,7 +347,12 @@ def get_agent_pending_tasks(target_id: str):
 @app.post("/api/v1/agent/tasks/{task_id}/result")
 def submit_agent_task_result(task_id: str, result: AgentTaskResult):
     """Recebe o resultado da execução da tarefa enviada pelo UltronAgent"""
-    agent_task_mgr.store_result(task_id, result.model_dump())
+    try:
+        agent_task_mgr.store_result(task_id, result.model_dump())
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Tarefa desconhecida.")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     return {"success": True, "message": f"Resultado da tarefa {task_id} armazenado com sucesso"}
 
 @app.post("/api/v1/agent/alert")
@@ -465,6 +386,7 @@ def enqueue_agent_cleanup(target_id: str):
 def agent_register(data: AgentRegistration, background_tasks: BackgroundTasks):
     """Webhook chamado pelo UltronAgent.exe após liberar a máquina e coletar hardware"""
     print(f"🤖 [ULTRON AGENT] Máquina registrada: {data.computer_name} ({data.ip}) - Serial: {data.serial} - RAM: {data.ram_gb} GB")
+    agent_task_mgr.bind_identity(data.serial, data.ip)
     
     # Salva credenciais de automação zero-prompt no WinRMExecutor e no ChatOps
     auth_user = data.auth_user or "penserede"
@@ -530,6 +452,8 @@ def agent_register(data: AgentRegistration, background_tasks: BackgroundTasks):
 @app.post("/api/v1/agent/heartbeat")
 def agent_heartbeat(data: AgentHeartbeat):
     """Heartbeat periódico do UltronAgent.exe em segundo plano"""
+    if data.serial and data.ip:
+        agent_task_mgr.bind_identity(data.serial, data.ip)
     # Atualiza cache do ChatOps se serial ou IP vier no heartbeat
     if bot and bot.chatops and data.ip:
         for dev in bot.chatops._cached_devices:
