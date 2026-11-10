@@ -149,6 +149,30 @@ class AgentTaskManager:
                 "created_at": row["created_at"],
             }
 
+    def agent_can_access_task(self, serial: str, task_id: str) -> bool:
+        """Authorize result submission by the device owning the target.
+
+        A task addressed by IP is visible only to the authenticated serial
+        currently mapped to that IP. A serial-bound task is always scoped.
+        """
+        try:
+            key = self._normalize(serial)
+        except ValueError:
+            return False
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT target FROM agent_tasks WHERE task_id = ?", (task_id,)
+            ).fetchone()
+            if row is None:
+                return False
+            if row["target"] == key:
+                return True
+            match = conn.execute(
+                "SELECT 1 FROM agent_identity WHERE serial = ? AND last_ip = ?",
+                (key, row["target"])
+            ).fetchone()
+            return match is not None
+
     def store_result(self, task_id: str, result: Dict[str, Any]) -> None:
         if not isinstance(result, dict) or result.get("task_id") != task_id:
             raise ValueError("O ID da tarefa no resultado não corresponde à URL.")
