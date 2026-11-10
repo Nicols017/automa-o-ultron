@@ -11,6 +11,7 @@ on:
       - "tests/test_chatops_safety.py"
       - "tests/test_agent_auth.py"
       - "tests/test_backup_gate.py"
+      - "tests/test_agent_protocol_contract.py"
       - "agent/UltronAgent.cs"
       - ".github/workflows/ultron-safety.yml"
   workflow_dispatch:
@@ -40,3 +41,4 @@ jobs:
           python -m unittest discover -s tests -p 'test_chatops_safety.py' -v
           python -m unittest discover -s tests -p 'test_agent_auth.py' -v
           python -m unittest discover -s tests -p 'test_backup_gate.py' -v
+          python -m unittest discover -s tests -p 'test_agent_protocol_contract.py' -v
