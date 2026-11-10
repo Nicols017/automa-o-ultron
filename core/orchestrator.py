@@ -62,19 +62,7 @@ class LabOrchestrator:
         bench_info = self.switch_id.identify_bench(ip=ip)
         log(f"🔍 [ULTRON] Coletando telemetria de {ip} ({bench_info['bench_name']})...")
         
-        log(f"🩺 [ULTRON] Rodando Motor de Auto-Cura de Hardware em {ip}...")
-        heal_res = self.winrm.run_script_file(ip, "AutoHeal-Hardware.ps1")
-        heal_data = {}
-        if heal_res.get("success") and heal_res.get("stdout"):
-            try:
-                h_out = heal_res["stdout"]
-                h_start = h_out.find("{")
-                h_end = h_out.rfind("}") + 1
-                if h_start != -1 and h_end != -1:
-                    heal_data = json.loads(h_out[h_start:h_end])
-            except Exception:
-                pass
-
+        # Diagnósticos são somente leitura. Reparos exigem uma operação separada e autorizada.
         telemetry_res = self.winrm.run_script_file(ip, "Inspect-SystemLogs.ps1")
         
         telemetry_data = {}
@@ -85,9 +73,10 @@ class LabOrchestrator:
                 json_start = stdout.find("{")
                 json_end = stdout.rfind("}") + 1
                 if json_start != -1 and json_end != -1:
-                    telemetry_data = json.loads(stdout[json_start:json_end])
-                    if heal_data:
-                        telemetry_data["auto_heal_report"] = heal_data
+                    parsed = json.loads(stdout[json_start:json_end])
+                    if not isinstance(parsed, dict):
+                        raise ValueError("A telemetria retornada não é um objeto JSON.")
+                    telemetry_data = parsed
             except Exception as e:
                 log(f"⚠️ Erro ao parsear JSON de telemetria: {e}", level="warning")
                 error_msg = f"Erro ao processar dados de telemetria da máquina: {e}"
@@ -103,36 +92,18 @@ class LabOrchestrator:
                 "ai_diagnosis": ""
             }
 
-        log(f"🧠 [ULTRON] Processando diagnóstico com IA na RTX 5060 Ti...")
-        
-        # Modo Agente Autônomo (Loop de Ferramentas)
+        log("🧠 [ULTRON] Gerando diagnóstico a partir da telemetria (sem execução remota pela IA)...")
         try:
-            from core.tools import RunPowerShellTool
-            from core.agent_loop import AgenticLoop
-            
-            powershell_tool = RunPowerShellTool(self.winrm)
-            agent = AgenticLoop(self.analyzer, [powershell_tool])
-            
-            # Reconstrói os prompts da análise para o contexto do agente
-            system_prompt = (
-                "Você é o ULTRON, perito sênior em hardware de computadores e suporte de TI da Pense Rede.\n"
-                "Sua missão é emitir um laudo técnico claro e direto.\n"
-                "Diretrizes:\n"
-                "- Idioma: Português do Brasil (pt-BR).\n"
-                "- Escreva de forma simples e natural, em parágrafos curtos.\n"
-                "- Siga exatamente esta estrutura em texto corrido (utilize estas exatas palavras como início de frase, sem negrito, seguido de dois pontos e pule uma linha entre elas):\n\n"
-                "Diagnóstico:\n(Resumo do que foi encontrado)\n\n"
-                "Causa provável:\n(Causa do problema)\n\n"
-                "Ações recomendadas:\n(Passo a passo prático)\n\n"
-                "Veredito:\n(Aprovada para preparação ou requer manutenção)"
-            )
-            prompt = f"Analise a telemetria e logs de hardware da máquina alvo (IP: {ip}):\n\n--- DADOS DA MÁQUINA ---\n{json.dumps(telemetry_data, indent=2, ensure_ascii=False)}\n------------------------\nSe detectar problemas que possam ser resolvidos via WinRM (PowerShell), resolva-os antes de gerar o laudo final."
-            
-            # Inicia o loop agentic e captura o veredito final
-            ai_verdict = agent.run(prompt, system_prompt, log_callback=log)
-        except Exception as e:
-            log(f"⚠️ Erro no Modo Agente: {e}. Executando fallback normal.", level="warning")
             ai_verdict = self.analyzer.analyze_logs(telemetry_data)
+        except Exception:
+            log("⚠️ Não foi possível gerar o parecer de IA.", level="warning")
+            return {
+                "ip": ip,
+                "success": False,
+                "error": "Falha ao gerar parecer de diagnóstico.",
+                "telemetry": telemetry_data,
+                "ai_diagnosis": ""
+            }
 
         # Consulta Memória Permanente (Obsidian) pelo MAC Address
         obsidian_history = ""
@@ -226,6 +197,12 @@ class LabOrchestrator:
             stage_name="Inspeção de Hardware"
         )
         diag_result = self.run_diagnostics_only(ip, log_callback=log_callback)
+        if not diag_result.get("success"):
+            err_msg = diag_result.get("error") or "Diagnóstico não pôde ser concluído."
+            log(f"❌ [ULTRON] Preparação interrompida: {err_msg}", level="error", stage=2, stage_name="Falha de Diagnóstico")
+            if log_callback:
+                log_callback({"type": "error", "error": err_msg})
+            return {"success": False, "ip": ip, "logs": logs, "error": err_msg}
         telemetry = diag_result["telemetry"]
         log(f"💻 Hostname: {telemetry.get('computer_name')} | Serial: {telemetry.get('serial_number')}", level="info", stage=2)
 
