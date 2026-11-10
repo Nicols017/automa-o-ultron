@@ -563,7 +563,23 @@ namespace UltronAgent
             // Se for comando especial de auto-limpeza
             if (taskType.Equals("cleanup", StringComparison.OrdinalIgnoreCase) || command.Equals("CLEANUP_SYSTEM", StringComparison.OrdinalIgnoreCase))
             {
-                HttpPost(string.Format("{0}/api/v1/agent/tasks/{1}/result", ServerUrl, taskId), "{\"status\":\"COMPLETED\",\"output\":\"Sistema desinstalado com sucesso.\"}", 5000);
+                // Confirma apenas o INÍCIO da limpeza; a desinstalação ainda não terminou.
+                // Nunca afirme sucesso antes de verificar a conclusão da operação.
+                string cleanupPayload = string.Format(
+                    "{{\\\"task_id\\\":\\\"{0}\\\",\\\"exit_code\\\":0,\\\"stdout\\\":\\\"Desinstalacao iniciada; conclusao ainda nao verificada.\\\",\\\"stderr\\\":\\\"\\\",\\\"status\\\":\\\"STARTED\\\"}}",
+                    EscapeJson(taskId)
+                );
+                string cleanupAck = HttpPost(
+                    string.Format("{0}/api/v1/agent/tasks/{1}/result", ServerUrl, taskId),
+                    cleanupPayload, 5000
+                );
+                // Se não houver confirmação do servidor, não prossiga com uma
+                // operação irreversível sem que exista trilha de auditoria.
+                if (string.IsNullOrEmpty(cleanupAck) || !cleanupAck.Contains("\\"success\\":true"))
+                {
+                    Logger.Error("Servidor nao confirmou o inicio da limpeza. Operacao cancelada.");
+                    return;
+                }
                 UninstallAndCleanSystem();
                 return;
             }
