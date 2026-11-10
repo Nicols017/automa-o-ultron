@@ -1464,34 +1464,14 @@ class TrueConfChatOps:
         )
 
     def _cmd_limpar(self, user_id: str, args: List[str]) -> str:
-        if not args:
-            return self._start_wizard_limpar(user_id)
-
-        target = args[0].strip()
-        ip = self._extract_target_ip(target) or target
-        self._last_user_ip[user_id] = ip
-
-        # 1. Enfileira a tarefa reversa no AgentTaskManager (para caso o WinRM não esteja disponível)
-        try:
-            from core.agent_runtime import agent_task_mgr
-            agent_task_mgr.enqueue_task(ip, "CLEANUP_SYSTEM", task_type="cleanup")
-        except Exception:
-            pass
-
-        # 2. Tenta executar diretamente via WinRM se a máquina estiver online
-        def _bg_clean():
-            try:
-                self.winrm.run_command(ip, "cmd.exe /c sc stop UltronService & sc delete UltronService & net user penserede /delete 2>nul & rmdir /s /q \"%ProgramFiles%\\UltronAgent\" 2>nul", timeout_sec=20)
-            except Exception:
-                pass
-
-        threading.Thread(target=_bg_clean, daemon=True).start()
-
+        """Bloqueia desinstalação até autenticação forte e auditoria por dispositivo."""
+        target = args[0].strip() if args else "não informado"
+        # Não tente WinRM nem enfileire comandos de limpeza em API sem autenticação.
         return (
-            f"🧹 Ordem de Limpeza Pós-Bancada Enviada\n\n"
-            f"📍 Máquina Alvo: {ip}\n\n"
-            f"O `UltronService`, a conta `penserede` e os arquivos temporários de automação estão sendo desinstalados e removidos da máquina.\n\n"
-            f"✅ A máquina ficará 100% limpa para entrega ao cliente final."
+            "🛡️ LIMPEZA PÓS-BANCADA BLOQUEADA\\n\\n"
+            f"Máquina solicitada: {target}\\n"
+            "A desinstalação remota exige agente autenticado e registro de "
+            "execução confirmado. Nenhuma alteração foi feita na máquina."
         )
 
     @staticmethod
@@ -1735,141 +1715,24 @@ class TrueConfChatOps:
         return "\n".join(lines)
 
     def _cmd_formatar(self, user_id: str, args: List[str], trace_id: str = None) -> str:
-        trace_id = trace_id or new_trace_id()
-        if not args:
-            return self.msg_builder.error(WinRMResult(ok=False, host="N/A", command="/formatar", error="Uso: /formatar <IP>"), trace_id)
-
-        ip = args[0]
-        self._last_user_ip[user_id] = ip
-        log.info("task_started", trace_id, ip=ip, action="formatar_mdt_confirm")
-
-        # Busca dados WMI antes de prosseguir
-        self._ensure_orchestrator()
-        ps_code = r"""
-        $sys = Get-CimInstance Win32_ComputerSystem
-        $cpu = (Get-CimInstance Win32_Processor)[0].Name
-        $ram = [math]::Round($sys.TotalPhysicalMemory / 1GB)
-        $user = $sys.UserName
-        if (-not $user) { $user = "Nenhum usuário logado" }
-        Write-Output "$($sys.Name)|$user|$cpu|${ram}GB"
-        """
-        res = self.orchestrator.winrm.run_powershell_code(ip, ps_code)
-        
-        if not res.get("success"):
-            return self.msg_builder.error(WinRMResult(ok=False, host=ip, command="FormatarMDT", error="Falha ao conectar via WinRM para obter dados da máquina. Verifique se ela está ligada e online."), trace_id)
-        
-        out = (res.get("stdout") or "").strip().split("|")
-        hostname = out[0] if len(out) > 0 else "Desconhecido"
-        current_user = out[1] if len(out) > 1 else "Desconhecido"
-        cpu_name = out[2] if len(out) > 2 else "Desconhecido"
-        ram_size = out[3] if len(out) > 3 else "Desconhecida"
-
-        self.user_sessions[user_id] = {
-            "type": "wizard_formatar_confirm",
-            "ip": ip,
-            "hostname": hostname,
-            "trace_id": trace_id
-        }
-
+        """Não inicia wizard de formatação sem comprovação de backup verificado."""
+        ip = args[0] if args else "não informado"
         return (
-            f"⚠️ AVISO DE FORMATAÇÃO (MDT)\n\n"
-            f"Você solicitou a formatação da máquina {ip}.\n\n"
-            f"🖥️ Configurações Atuais:\n"
-            f"• Hostname: {hostname}\n"
-            f"• Usuário Conectado: {current_user}\n"
-            f"• Processador: {cpu_name}\n"
-            f"• Memória RAM: {ram_size}\n\n"
-            f"❗️ Esta ação irá zerar completamente a máquina e apagar todos os dados! ❗️\n\n"
-            f"Para confirmar, responda com `sim`. Para cancelar, digite `0`."
+            "🛡️ FORMATAÇÃO MDT BLOQUEADA\\n\\n"
+            f"Máquina solicitada: {ip}\\n"
+            "É obrigatório validar um backup Macrium Reflect 8 íntegro, "
+            "associado ao serial do equipamento e ao destino de armazenamento, "
+            "antes de qualquer operação destrutiva. Nenhuma ação foi executada."
         )
 
     def _execute_formatar(self, user_id: str, ip: str, trace_id: str = None):
-        trace_id = trace_id or new_trace_id()
-        log.info("task_started", trace_id, ip=ip, action="formatar_mdt_execute")
-
-        pxe_script = """
-        $ProgressPreference = 'SilentlyContinue'
-        $ErrorActionPreference = 'Stop'
-        try {
-            # Limpa conexoes previas se houver (sem falhar o script se nao existir)
-            try { net use "\\\\192.168.57.87\\DeploymentShare$" /delete 2>&1 | Out-Null } catch {}
-            
-            # 1. Conecta no servidor MDT
-            $net = net use "\\\\192.168.57.87\\DeploymentShare$" /user:192.168.57.87\\Administrador "@a123456" 2>&1
-            if ($LASTEXITCODE -ne 0) {
-                Write-Output "ERRO: Falha ao mapear MDT ($net)"
-                exit 1
-            }
-            
-            $wimPath = "\\\\192.168.57.87\\DeploymentShare$\\Boot\\LiteTouchPE_x64.wim"
-            if (-not (Test-Path $wimPath)) {
-                Write-Output "ERRO: O arquivo LiteTouchPE_x64.wim não foi encontrado no MDT."
-                exit 1
-            }
-            
-            # 2. Prepara o diretorio de Boot do MDT no C:
-            if (-not (Test-Path "C:\\MDTBoot")) {
-                New-Item -ItemType Directory -Path "C:\\MDTBoot" | Out-Null
-            }
-            
-            # 3. Copia o WinPE e injeta no Recovery Environment do Windows
-            Copy-Item -Path $wimPath -Destination "C:\\MDTBoot\\winre.wim" -Force
-            
-            cmd.exe /c "reagentc /disable >nul 2>nul"
-            $reagent = cmd.exe /c "reagentc /setreimage /path C:\MDTBoot /target C:\Windows 2>&1"
-            cmd.exe /c "reagentc /enable >nul 2>nul"
-            
-            if ($LASTEXITCODE -ne 0) {
-                Write-Output "ERRO: Falha ao injetar o MDT no WinRE. Retorno: $reagent"
-                exit 1
-            }
-            
-            # 4. Força o boot no MDT e reinicia (usando cmd /c para nao matar o powershell e o WinRM no meio)
-            cmd.exe /c "reagentc /boottore >nul 2>nul"
-            
-            Write-Output "SUCESSO: O sistema MDT foi injetado com sucesso! A máquina já está reiniciando para formatar."
-            Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList "cmd.exe /c ping 127.0.0.1 -n 5 > nul & shutdown /r /f /t 0" | Out-Null
-        } catch {
-            Write-Output "ERRO: $($_.Exception.Message)"
-            exit 1
-        }
-        """
-
-        try:
-            from core.agent_runtime import agent_task_mgr
-            agent_task_mgr.enqueue_task(ip, pxe_script, task_type="ps1")
-        except Exception:
-            pass
-
-        def _worker():
-            self._ensure_orchestrator()
-            res = self.orchestrator.winrm.run_powershell_code(ip, pxe_script)
-            
-            stdout = res.get("stdout", "")
-            if res.get("success") or "SUCESSO:" in stdout:
-                reply = self.msg_builder.success(
-                    "Formatação MDT Iniciada",
-                    {"Alvo": ip, "Status": "LiteTouch injetado com sucesso! A máquina vai reiniciar no ambiente de deployment em instantes."},
-                    trace_id
-                )
-            else:
-                err_msg = "Falha desconhecida no LiteTouch."
-                for line in stdout.splitlines():
-                    if line.startswith("ERRO:"):
-                        err_msg = line.replace("ERRO:", "").strip()
-                        break
-                
-                if err_msg == "Falha desconhecida no LiteTouch.":
-                    err_msg += f" | STDOUT: {stdout} | STDERR: {res.get('stderr')}"
-                        
-                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="FormatarMDT", error=err_msg), trace_id)
-            
-            self.bot.send_direct_message(user_id, reply)
-
-        import threading
-        threading.Thread(target=_worker, daemon=True).start()
-
-        return f"🔄 Iniciando formatação automática em {ip} via MDT LiteTouch. Aguarde a confirmação..."
+        """Duplo bloqueio: o caminho legado de confirmação também é protegido."""
+        return (
+            "🛡️ FORMATAÇÃO MDT BLOQUEADA\\n\\n"
+            f"Máquina solicitada: {ip}\\n"
+            "Falta prova de backup Macrium validado. A reinicialização e o "
+            "encaminhamento para o MDT não foram disparados."
+        )
 
 
     def _cmd_preparar(self, user_id: str, args: List[str], trace_id: str = None) -> str:
@@ -2187,75 +2050,83 @@ class TrueConfChatOps:
         return self.msg_builder.success("Instalação Iniciada", {"Alvo": ip, "Pacotes": ", ".join(resolved_pkgs)}, trace_id, emoji="📦")
 
     def _cmd_power(self, user_id: str, args: List[str], action: str, trace_id: str = None) -> str:
+        """Uma solicitação, um transporte: WinRM (sem fallback após tentativa)."""
         trace_id = trace_id or new_trace_id()
         if not args:
-            return self.msg_builder.error(WinRMResult(ok=False, host="N/A", command=action, error=f"Uso: /{action} <IP>"), trace_id)
-        
-        ip  = args[0]
+            return self.msg_builder.error(
+                WinRMResult(ok=False, host="N/A", command=action,
+                            error=f"Uso: /{action} <IP>"), trace_id
+            )
+        if action not in ("restart", "shutdown"):
+            return self.msg_builder.error(
+                WinRMResult(ok=False, host=args[0], command=action,
+                            error="Ação de energia não reconhecida."), trace_id
+            )
+
+        ip = args[0]
         self._last_user_ip[user_id] = ip
         cmd = "Restart-Computer -Force" if action == "restart" else "Stop-Computer -Force"
-        act = "reiniciada" if action == "restart" else "desligada"
-
         log.info("task_started", trace_id, ip=ip, action=f"power_{action}")
 
-        # 1. Enfileira imediatamente no AgentTaskManager para caso o WinRM esteja offline/bloqueado
-        agent_cmd = "shutdown /r /t 0 /f" if action == "restart" else "shutdown /s /t 0 /f"
-        try:
-            from core.agent_runtime import agent_task_mgr
-            agent_task_mgr.enqueue_task(ip, agent_cmd, task_type="cmd")
-        except Exception:
-            pass
-
-        # 2. Executa via WinRM para efeito imediato
+        # Nunca enfileirar a mesma operação que será tentada via WinRM:
+        # timeout/resposta perdida NÃO prova que a ação falhou.
         try:
             res = self.winrm.run_powershell_code(ip, cmd)
-            stderr = (res.get("stderr") or "").lower()
-            if res.get("success") or "sendo desligado" in stderr or "shutting down" in stderr or "restartcomputerfailed" in stderr:
-                return self.msg_builder.success("CONTROLE DE ENERGIA", {"Host": ip, "Ação": f"Máquina {act} com sucesso"}, trace_id, emoji="🔌")
-            elif res.get("auth_failed"):
-                srv_url = self._get_server_url()
-                return self.msg_builder.success("CONTROLE DE ENERGIA (Fallback Agent)", {"Host": ip, "Ação": f"Ordem de {act} enviada para o UltronAgent em segundo plano", "Dica": f"Caso não execute, instale o agente: {srv_url}/download"}, trace_id, emoji="🔌")
-            else:
-                return self.msg_builder.success("CONTROLE DE ENERGIA (Fallback Agent)", {"Host": ip, "Ação": f"Ordem de {act} enviada para o UltronAgent (SYSTEM) em segundo plano"}, trace_id, emoji="🔌")
+            if res.get("success"):
+                return self.msg_builder.success(
+                    "CONTROLE DE ENERGIA",
+                    {"Host": ip, "Status": "Comando aceito pelo WinRM; confirmar no equipamento."},
+                    trace_id, emoji="🔌"
+                )
+            error = res.get("stderr") or "Sem confirmação de execução."
         except Exception:
-            return self.msg_builder.success("CONTROLE DE ENERGIA", {"Host": ip, "Ação": f"Ordem para {act} enviada via UltronAgent"}, trace_id, emoji="🔌")
+            error = "Sem confirmação de execução após tentativa WinRM."
+
+        return self.msg_builder.error(
+            WinRMResult(ok=False, host=ip, command=action,
+                        error=error + " Não houve reenvio automático pelo agente."),
+            trace_id
+        )
 
     def _cmd_message(self, user_id: str, args: List[str]) -> str:
+        """Mensagem enviada somente por WinRM; sem duplicidade com o agente."""
         if len(args) < 2:
-            return "⚠️ Uso: /msg <IP> <mensagem>\nExemplo: /msg 192.168.57.25 Máquina pronta para entrega"
+            return "⚠️ Uso: /msg <IP> <mensagem>\\nExemplo: /msg 192.168.57.25 Máquina pronta"
         ip = args[0]
         self._last_user_ip[user_id] = ip
         msg_text = " ".join(args[1:])
 
         def _worker():
-            # 1. Enfileira no AgentTaskManager para entrega garantida pelo UltronAgent
             try:
-                from core.agent_runtime import agent_task_mgr
-                msg_cmd = f"powershell.exe -ExecutionPolicy Bypass -NoProfile -Command \"Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('{msg_text}', 'Ultron — Suporte Pense Rede', 'OK', 'Information')\""
-                agent_task_mgr.enqueue_task(ip, msg_cmd, task_type="cmd")
+                res = self.winrm.run_script_file(
+                    ip, "Show-UserMessage.ps1",
+                    params={
+                        "Message": msg_text,
+                        "Title": "Ultron — Suporte Pense Rede",
+                        "Icon": "Information"
+                    }
+                )
+                if res.get("success"):
+                    reply = (
+                        f"📢 MENSAGEM PROCESSADA PELO WINRM\\n\\n"
+                        f"📍 Destino: {ip}\\n💬 Mensagem: {msg_text}"
+                    )
+                else:
+                    reply = (
+                        f"⚠️ NÃO FOI POSSÍVEL CONFIRMAR A ENTREGA\\n\\n"
+                        f"📍 Destino: {ip}\\n"
+                        "Não houve reenvio automático pelo agente."
+                    )
             except Exception:
-                pass
-
-            # 2. Tenta via WinRM
-            res = self.winrm.run_script_file(
-                ip,
-                "Show-UserMessage.ps1",
-                params={
-                    "Message": msg_text,
-                    "Title": "Ultron — Suporte Pense Rede",
-                    "Icon": "Information"
-                }
-            )
-            if res.get("success"):
-                reply = f"📢 MENSAGEM EXIBIDA COM SUCESSO\n\n📍 Destino: {ip}\n💬 Mensagem: \"{msg_text}\""
-            else:
-                reply = f"📢 MENSAGEM DESPACHADA\n\n📍 Destino: {ip}\n💬 Mensagem: \"{msg_text}\"\n✅ A mensagem será exibida na tela do computador pelo UltronAgent."
-
+                reply = (
+                    f"⚠️ FALHA DE COMUNICAÇÃO COM {ip}\\n"
+                    "A mensagem não foi reenviada por outro canal."
+                )
             if self.bot:
                 self.bot.send_direct_message(user_id, reply)
 
         threading.Thread(target=_worker, daemon=True).start()
-        return f"📢 Enviando mensagem para a tela do usuário em {ip}..."
+        return f"📢 Solicitando exibição da mensagem por WinRM em {ip}..."
 
     def _cmd_laudos(self, args: List[str]) -> str:
         from reports.report_generator import ReportGenerator
