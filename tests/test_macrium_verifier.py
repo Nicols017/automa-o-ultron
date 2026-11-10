@@ -25,6 +25,8 @@ class MacriumVerifierTests(unittest.TestCase):
         self.exe.write_bytes(b"MOCK-NOT-EXECUTED")
         self.key = self.root / "verifier.key"
         self.key.write_bytes(b"z" * 64)
+        if os.name == "posix":
+            self.key.chmod(0o600)
         self.share = r"\\192.0.2.112\Backups"
         self.unc = self.share + r"\client\test.mrimg"
         self.inventory = self.root / "devices.json"
