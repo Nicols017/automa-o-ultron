@@ -9,6 +9,7 @@ import os
 import sqlite3
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -31,11 +32,19 @@ class AgentTaskManager:
         os.makedirs(parent, mode=0o700, exist_ok=True)
         self._initialize()
 
+    @contextmanager
     def _connect(self):
         conn = sqlite3.connect(self.database_path, timeout=15, isolation_level=None)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout=15000")
-        return conn
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout=15000")
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def _initialize(self):
         with self._connect() as conn:
