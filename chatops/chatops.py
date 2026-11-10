@@ -1463,13 +1463,13 @@ class TrueConfChatOps:
             "[ 0 ] Cancelar e voltar ao Menu"
         )
 
-    def _cmd_limpar(self, user_id: str, args: List[str]) -> str:
+    def _cmd_limpar(self, user_id: str, args: List[str], trace_id: str = None) -> str:
         """Bloqueia desinstalação até autenticação forte e auditoria por dispositivo."""
         target = args[0].strip() if args else "não informado"
         # Não tente WinRM nem enfileire comandos de limpeza em API sem autenticação.
         return (
-            "🛡️ LIMPEZA PÓS-BANCADA BLOQUEADA\\n\\n"
-            f"Máquina solicitada: {target}\\n"
+            "🛡️ LIMPEZA PÓS-BANCADA BLOQUEADA\n\n"
+            f"Máquina solicitada: {target}\n"
             "A desinstalação remota exige agente autenticado e registro de "
             "execução confirmado. Nenhuma alteração foi feita na máquina."
         )
@@ -1718,8 +1718,8 @@ class TrueConfChatOps:
         """Não inicia wizard de formatação sem comprovação de backup verificado."""
         ip = args[0] if args else "não informado"
         return (
-            "🛡️ FORMATAÇÃO MDT BLOQUEADA\\n\\n"
-            f"Máquina solicitada: {ip}\\n"
+            "🛡️ FORMATAÇÃO MDT BLOQUEADA\n\n"
+            f"Máquina solicitada: {ip}\n"
             "É obrigatório validar um backup Macrium Reflect 8 íntegro, "
             "associado ao serial do equipamento e ao destino de armazenamento, "
             "antes de qualquer operação destrutiva. Nenhuma ação foi executada."
@@ -1728,8 +1728,8 @@ class TrueConfChatOps:
     def _execute_formatar(self, user_id: str, ip: str, trace_id: str = None):
         """Duplo bloqueio: o caminho legado de confirmação também é protegido."""
         return (
-            "🛡️ FORMATAÇÃO MDT BLOQUEADA\\n\\n"
-            f"Máquina solicitada: {ip}\\n"
+            "🛡️ FORMATAÇÃO MDT BLOQUEADA\n\n"
+            f"Máquina solicitada: {ip}\n"
             "Falta prova de backup Macrium validado. A reinicialização e o "
             "encaminhamento para o MDT não foram disparados."
         )
@@ -2091,7 +2091,7 @@ class TrueConfChatOps:
     def _cmd_message(self, user_id: str, args: List[str]) -> str:
         """Mensagem enviada somente por WinRM; sem duplicidade com o agente."""
         if len(args) < 2:
-            return "⚠️ Uso: /msg <IP> <mensagem>\\nExemplo: /msg 192.168.57.25 Máquina pronta"
+            return "⚠️ Uso: /msg <IP> <mensagem>\nExemplo: /msg 192.168.57.25 Máquina pronta"
         ip = args[0]
         self._last_user_ip[user_id] = ip
         msg_text = " ".join(args[1:])
@@ -2108,18 +2108,18 @@ class TrueConfChatOps:
                 )
                 if res.get("success"):
                     reply = (
-                        f"📢 MENSAGEM PROCESSADA PELO WINRM\\n\\n"
-                        f"📍 Destino: {ip}\\n💬 Mensagem: {msg_text}"
+                        f"📢 MENSAGEM PROCESSADA PELO WINRM\n\n"
+                        f"📍 Destino: {ip}\n💬 Mensagem: {msg_text}"
                     )
                 else:
                     reply = (
-                        f"⚠️ NÃO FOI POSSÍVEL CONFIRMAR A ENTREGA\\n\\n"
-                        f"📍 Destino: {ip}\\n"
+                        f"⚠️ NÃO FOI POSSÍVEL CONFIRMAR A ENTREGA\n\n"
+                        f"📍 Destino: {ip}\n"
                         "Não houve reenvio automático pelo agente."
                     )
             except Exception:
                 reply = (
-                    f"⚠️ FALHA DE COMUNICAÇÃO COM {ip}\\n"
+                    f"⚠️ FALHA DE COMUNICAÇÃO COM {ip}\n"
                     "A mensagem não foi reenviada por outro canal."
                 )
             if self.bot:
