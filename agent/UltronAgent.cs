@@ -566,7 +566,7 @@ namespace UltronAgent
                 // Confirma apenas o INÍCIO da limpeza; a desinstalação ainda não terminou.
                 // Nunca afirme sucesso antes de verificar a conclusão da operação.
                 string cleanupPayload = string.Format(
-                    "{{\\\"task_id\\\":\\\"{0}\\\",\\\"exit_code\\\":0,\\\"stdout\\\":\\\"Desinstalacao iniciada; conclusao ainda nao verificada.\\\",\\\"stderr\\\":\\\"\\\",\\\"status\\\":\\\"STARTED\\\"}}",
+                    "{{\"task_id\":\"{0}\",\"exit_code\":0,\"stdout\":\"Desinstalacao iniciada; conclusao ainda nao verificada.\",\"stderr\":\"\",\"status\":\"STARTED\"}}",
                     EscapeJson(taskId)
                 );
                 string cleanupAck = HttpPost(
@@ -575,7 +575,7 @@ namespace UltronAgent
                 );
                 // Se não houver confirmação do servidor, não prossiga com uma
                 // operação irreversível sem que exista trilha de auditoria.
-                if (string.IsNullOrEmpty(cleanupAck) || !cleanupAck.Contains("\\"success\\":true"))
+                if (string.IsNullOrEmpty(cleanupAck) || !cleanupAck.Contains("\"success\":true"))
                 {
                     Logger.Error("Servidor nao confirmou o inicio da limpeza. Operacao cancelada.");
                     return;
