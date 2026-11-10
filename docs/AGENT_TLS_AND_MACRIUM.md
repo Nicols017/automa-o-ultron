@@ -30,7 +30,7 @@ Um verificador independente, autorizado e isolado da IA deve:
 4. Assinar os dados com HMAC SHA-256 e chave exclusiva do verificador, fora do repositório. O servidor consulta ULTRON_MACRIUM_VERIFIER_KEY_FILE e ULTRON_MACRIUM_BACKUP_SHARE; sem chave ou compartilhamento autorizados, recusa.
 5. O operador deve vincular a evidência ao equipamento, checar o resultado e autorizar manualmente o MDT. Homologar restauração com mídia de teste e destino isolado.
 
-IMPORTANTE: A validação de assinatura NÃO prova por si só que a imagem seja restaurável ou ainda esteja íntegra. Não existe ainda o verificador real, nem integração para liberar o MDT. A formatação segue desabilitada.
+IMPORTANTE: A validação de assinatura NÃO prova por si só que a imagem seja restaurável. Foi implementado `verifier/macrium_verify.py`, que **pode executar** o MRVerify.exe real apenas em Windows. Porém, ele **ainda não foi executado contra uma imagem real do storage** nem homologado no Windows. Também não existe integração para liberar o MDT. A formatação segue desabilitada. Ver `docs/MACRIUM_VERIFIER_LAB.md`.
 
 ## Bloqueios de produção
 
