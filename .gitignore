@@ -41,3 +41,6 @@ wheels/
 
 # Generated Reports
 reports/output/*.pdf
+
+# Persistent agent task database (contains commands and execution outputs)
+data/*.sqlite3*
