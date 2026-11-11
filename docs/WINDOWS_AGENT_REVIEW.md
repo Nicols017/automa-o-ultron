@@ -31,7 +31,7 @@ URL passada no console nao persistia para o servico.
   valida hash/ACL e pode falhar nas precondicoes, mas nao instala.
   O script exige ACL da configuracao restrita a SYSTEM/Administradores,
   para o servico com espera limitada, guarda backup unico, copia, configura e
-  verifica Running. Nao executamos esse instalador nesta revisao.
+  verifica Running. Nao executamos esse instalador contra servicos reais; apenas com comandos simulados.
 - Instalacao continua como LocalSystem: privilégio alto, preservado para tarefas
   existentes. Migrar para conta restrita exige inventario de tarefas e homologacao.
 - WinRM: uma identidade explicita, ou cache por host, ou padrao configurado.
@@ -81,14 +81,19 @@ Nao alteramos Jarvis, WDS, DHCP, FOG, dominios ou servicos reais.
 Os .exe versionados sao antigos, **nao representam este fonte**. Download HTTP
 do agente retorna 503 por padrao; ULTRON_AGENT_DOWNLOAD_ENABLED=true somente
 depois de pacote recompilado/revisado e validacao de compatibilidade. Nao houve
-publicacao de binario. O builder legado ainda nao possui manifesto de proveniencia:
-nao usar mtime/tamanho como garantia de correspondencia. OTA de agentes antigos
+publicacao de binario. O servidor valida manifest.json (schema, versao, commit, SHA256 do fonte UTF8/LF
+normalizado e do executavel). Nao compila nem copia binarios na inicializacao;
+nao existe fallback ao exe legado, mesmo com mesmo tamanho/data. Manifesto nao
+e assinatura digital: obter pacote/hash por canal confiavel continua obrigatorio. OTA de agentes antigos
 tambem requer controle operacional; este patch nao atualiza maquinas existentes.
 
 Rollback: guardar versao/configuracao/ACL e hash anteriores; parar somente
 UltronService em laboratorio autorizado, restaurar pacote e arquivos, verificar
-registro/heartbeat. O backup do instalador e local e nao restaura automaticamente
-o servico se a copia/inicio falhar; falha exige intervencao. Nunca reverter para
+registro/heartbeat. O instalador prepara e confere copia antes de parar o servico. Em falha de
+copia/inicio tenta restaurar o executavel anterior e reiniciar somente se antes
+estava Running. Instalacao nova que falha tenta remover o servico criado.
+Rollback e best-effort: falha gera aviso e exige intervencao; backup e preservado.
+Caminho/conta de servico existente divergentes exigem migracao manual revisada. Nunca reverter para
 HTTP sem token nem reativar conta/senha compartilhada. Nao ha rollback de WinRM
 neste patch porque a nova instalacao nao o modifica. Desinstalador antigo ainda
 tem limpeza de regras Ultron: nao executar sem inventario e autorizacao.
@@ -107,3 +112,30 @@ com autorizacao futura. NAO foram testados em maquinas reais.
 Fontes:
 - [Microsoft: seguranca do WinRM](https://learn.microsoft.com/en-us/powershell/scripting/learn/remoting/winrmsecurity)
 - [Microsoft: troubleshooting remoto](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_remote_troubleshooting)
+
+
+## Segunda revisao: diagnostico e pacote verificavel
+- UltronAgent --diagnose le somente server.url, presenca do token, identidade BIOS
+  e estado local do WinRM. Nao eleva, grava logs, registra ou conecta a rede.
+  Retorna JSON sem URL, serial, token ou texto de excecao. Saida 0: precondicoes
+  locais presentes; 2: falta configuracao/credencial ou identidade precisa revisao.
+  PRESENT_UNVERIFIED nao comprova serial unico nem cadastro valido.
+  network_checked=false e registration_checked=false sao intencionais;
+  autenticacao/TLS e conectividade reais continuam exigindo laboratorio autorizado.
+  WinRM Stopped nao torna o agente automaticamente invalido.
+- agent/build_agent.ps1 gera pacote em agent/dist por padrao (fora do Git),
+  exige fontes commitados, compila snapshot e emite manifest.json. Nao instala
+  nem copia para downloads. ULTRON_AGENT_PACKAGE_DIR aponta para o pacote
+  revisado quando futuramente autorizado. ULTRON_AGENT_DOWNLOAD_ENABLED continua
+  desabilitado por padrao; o manifesto sozinho nao libera distribuicao.
+- Binario de revisao ainda e SEM assinatura digital. Nao existe certificado de
+  assinatura provisionado neste trabalho. CI compila/verifica apenas no runner
+  temporario; nao faz upload de executavel nem release/deploy.
+- Testes Python de adulteracao/versao/hash/commit rodam em Linux e Windows.
+  Avaliador C# recebe dados ficticios; nao chama o Main do agente.
+  Sete cenarios do instalador usam comandos de sistema substituidos por funcoes
+  falsas: WhatIf, atualizacao, hash alterado, copia parcial, falha de inicio,
+  instalacao nova e falha de inicio em instalacao nova. Executados em processo
+  Windows PowerShell 5.1 separado; nao usar esse harness por dot-sourcing.
+- Continuam pendentes VMs descartaveis para SCM/ACL/GPO reais, Windows PT/EN,
+  dominio/workgroup, rede publica/privada e validacao de tarefas privilegiadas.

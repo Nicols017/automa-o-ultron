@@ -32,6 +32,7 @@ on:
       - "agent/UltronAgent.cs"
       - ".github/workflows/ultron-safety.yml"
       - "agent/**"
+      - "tests/**"
       - "scripts/powershell/Bootstrap-Ultron.ps1"
       - "tests/test_windows_agent_review.py"
   workflow_dispatch:
@@ -106,3 +107,24 @@ jobs:
             [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors.Count) { throw ($errors | Out-String) }
           }
+
+      - name: Verify package integrity offline
+        run: python -m unittest discover -s tests -p 'test_agent_package.py' -v
+      - name: Test pure C# diagnostics and mocked Windows installation
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /r:agent-review-test.exe /out:diagnostic-tests.exe .\tests\AgentDiagnosticsTests.cs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & .\diagnostic-tests.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & powershell.exe -NoProfile -NonInteractive -File .\tests\Test-AgentInstallerOffline.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build and validate review package only inside CI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & .\agent\build_agent.ps1 -OutputDirectory "$env:RUNNER_TEMP/ultron-agent-package"
+          $env:ULTRON_AGENT_PACKAGE_DIR = "$env:RUNNER_TEMP/ultron-agent-package"
+          python -c "from core.agent_builder import AgentBuilder; print(AgentBuilder().get_latest_agent_binary())"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -1,152 +1,85 @@
-"""
-Ultron Agent Auto-Builder & Version Synchronizer
-Garante que o executável UltronAgent.exe seja automaticamente recompilado
-sempre que o código C# (UltronAgent.cs) for alterado, evitando a entrega de versões defasadas.
-"""
+"""Verify explicitly built Windows packages. Never compile or publish on startup.
 
+A manifest binds source/version/binary hashes; it is not a digital signature.
+The package directory must be populated through a trusted release process.
+"""
+import hashlib
+import json
 import os
 import re
-import shutil
-import subprocess
-import logging
-from typing import Dict, Any, Optional
+from pathlib import Path
+from typing import Optional
 
-logger = logging.getLogger("ultron_agent_builder")
 
-CSC_PATHS = [
-    r"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe",
-    r"C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe"
-]
+class AgentPackageError(ValueError):
+    pass
+
 
 class AgentBuilder:
-    def __init__(self, base_dir: Optional[str] = None):
-        self.base_dir = base_dir or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.agent_cs_path = os.path.join(self.base_dir, "agent", "UltronAgent.cs")
-        self.agent_exe_path = os.path.join(self.base_dir, "agent", "UltronAgent.exe")
-        self.downloads_dir = os.path.join(self.base_dir, "static", "downloads")
-        self.static_exe_path = os.path.join(self.downloads_dir, "UltronAgent.exe")
-        os.makedirs(self.downloads_dir, exist_ok=True)
+    def __init__(self, base_dir: Optional[str] = None, package_dir: Optional[str] = None):
+        self.base_dir = Path(base_dir or Path(__file__).resolve().parents[1])
+        self.agent_cs_path = self.base_dir / "agent" / "UltronAgent.cs"
+        self.package_dir = Path(package_dir or os.environ.get(
+            "ULTRON_AGENT_PACKAGE_DIR", self.base_dir / "agent" / "dist"))
 
-    def find_compiler(self) -> Optional[str]:
-        for p in CSC_PATHS:
-            if os.path.exists(p):
-                return p
-        return shutil.which("csc.exe")
+    @staticmethod
+    def _sha256(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
-    def get_source_version(self) -> str:
-        """Extrai a versão declarada em CurrentVersion dentro do UltronAgent.cs"""
-        if not os.path.exists(self.agent_cs_path):
-            return "2.2.0"
+    def _source_sha256(self):
+        # Git checkout uses CRLF on Windows and LF on Linux.
+        text = self.agent_cs_path.read_text(encoding="utf-8")
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def get_source_version(self):
+        source = self.agent_cs_path.read_text(encoding="utf-8")
+        match = re.search(r'public\s+const\s+string\s+CurrentVersion\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"', source)
+        if not match:
+            raise AgentPackageError("Versao do fonte ausente ou invalida.")
+        return match.group(1)
+
+    def get_latest_agent_binary(self):
         try:
-            with open(self.agent_cs_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            m = re.search(r'public\s+const\s+string\s+CurrentVersion\s*=\s*"([^"]+)"', content)
-            if m:
-                return m.group(1)
-        except Exception as e:
-            logger.warning(f"Erro ao ler versão de UltronAgent.cs: {e}")
-        return "2.2.0"
+            manifest = json.loads((self.package_dir / "manifest.json").read_text(encoding="utf-8-sig"))
+            binary = self.package_dir / "UltronAgent.exe"
+            if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
+                raise ValueError("Manifesto invalido")
+            if manifest.get("version") != self.get_source_version():
+                raise ValueError("Versao divergente")
+            for key in ("source_sha256", "binary_sha256"):
+                if not re.fullmatch(r"[a-fA-F0-9]{64}", str(manifest.get(key, ""))):
+                    raise ValueError("Hash invalido")
+            if manifest["source_sha256"].lower() != self._source_sha256():
+                raise ValueError("Fonte divergente")
+            if manifest["binary_sha256"].lower() != self._sha256(binary):
+                raise ValueError("Binario divergente")
+            if not re.fullmatch(r"[a-fA-F0-9]{40}", str(manifest.get("commit", ""))):
+                raise ValueError("Commit ausente")
+            if binary.stat().st_size == 0:
+                raise ValueError("Binario vazio")
+            return dict(version=manifest["version"], file_path=str(binary),
+                        filename="UltronAgent_v" + manifest["version"] + ".exe",
+                        size_bytes=binary.stat().st_size,
+                        sha256=manifest["binary_sha256"].lower(), commit=manifest["commit"])
+        except (OSError, ValueError, TypeError, KeyError):
+            raise AgentPackageError("Pacote ausente ou divergente; gere e homologue um pacote revisado.") from None
 
-    def needs_compilation(self) -> bool:
-        """Verifica se o código fonte C# é mais recente que o executável compilado"""
-        if not os.path.exists(self.agent_cs_path):
+    def needs_compilation(self):
+        # Compatibility with callers; no timestamps or fallback to legacy executables.
+        try:
+            self.get_latest_agent_binary()
             return False
-        if not os.path.exists(self.agent_exe_path):
+        except AgentPackageError:
             return True
-        cs_mtime = os.path.getmtime(self.agent_cs_path)
-        exe_mtime = os.path.getmtime(self.agent_exe_path)
-        return cs_mtime > exe_mtime
 
-    def compile(self, force: bool = False) -> Dict[str, Any]:
-        """Recompila o UltronAgent.cs para UltronAgent.exe e atualiza os diretórios de distribuição"""
-        # Se não for compilar, pelo menos garante que o static_exe_path seja a versão mais recente
-        if not force and not self.needs_compilation():
-            version = self.get_source_version()
-            if os.path.exists(self.agent_exe_path):
-                if not os.path.exists(self.static_exe_path) or os.path.getsize(self.agent_exe_path) != os.path.getsize(self.static_exe_path):
-                    shutil.copy2(self.agent_exe_path, self.static_exe_path)
-                    
-                versioned_exe = os.path.join(self.downloads_dir, f"UltronAgent_v{version}.exe")
-                if not os.path.exists(versioned_exe) or os.path.getsize(self.agent_exe_path) != os.path.getsize(versioned_exe):
-                    shutil.copy2(self.agent_exe_path, versioned_exe)
-            return {
-                "success": True,
-                "recompiled": False,
-                "version": version,
-                "exe_path": self.agent_exe_path,
-                "message": f"Executável UltronAgent.exe já está atualizado (v{version})."
-            }
-
-        compiler = self.find_compiler()
-        if not compiler:
-            # Em servidores Linux (sem csc.exe), apenas copiamos o executável pré-compilado (se houver)
-            version = self.get_source_version()
-            if os.path.exists(self.agent_exe_path):
-                if not os.path.exists(self.static_exe_path) or os.path.getsize(self.agent_exe_path) != os.path.getsize(self.static_exe_path):
-                    shutil.copy2(self.agent_exe_path, self.static_exe_path)
-                    
-                versioned_exe = os.path.join(self.downloads_dir, f"UltronAgent_v{version}.exe")
-                if not os.path.exists(versioned_exe) or os.path.getsize(self.agent_exe_path) != os.path.getsize(versioned_exe):
-                    shutil.copy2(self.agent_exe_path, versioned_exe)
-            return {
-                "success": False,
-                "error": "Compilador C# (csc.exe) não encontrado no sistema. Usando binário pré-compilado."
-            }
-
-        logger.info(f"🔨 Compilando UltronAgent.cs com {compiler}...")
-        cmd = [
-            compiler,
-            "/target:exe",
-            "/platform:anycpu",
-            "/optimize+",
-            "/r:System.Management.dll",
-            "/r:System.ServiceProcess.dll",
-            "/r:System.Drawing.dll",
-            "/r:System.Windows.Forms.dll",
-            f"/out:{self.agent_exe_path}",
-            self.agent_cs_path
-        ]
-
+    def compile(self, force=False):
+        # Compatibility shim: explicit build_agent.ps1 is the only build entry point.
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-            if proc.returncode != 0:
-                logger.error(f"Erro na compilação do C#: {proc.stderr or proc.stdout}")
-                return {
-                    "success": False,
-                    "error": f"Falha na compilação: {proc.stderr or proc.stdout}"
-                }
+            info = self.get_latest_agent_binary()
+            return dict(success=True, recompiled=False, **info)
+        except AgentPackageError:
+            return dict(success=False, recompiled=False,
+                        error="Compilacao automatica removida; use agent/build_agent.ps1.")
 
-            # Copia para static/downloads/UltronAgent.exe
-            shutil.copy2(self.agent_exe_path, self.static_exe_path)
-
-            version = self.get_source_version()
-            versioned_exe = os.path.join(self.downloads_dir, f"UltronAgent_v{version}.exe")
-            shutil.copy2(self.agent_exe_path, versioned_exe)
-
-            logger.info(f"✅ UltronAgent v{version} compilado e publicado com sucesso!")
-            return {
-                "success": True,
-                "recompiled": True,
-                "version": version,
-                "exe_path": self.agent_exe_path,
-                "versioned_exe": versioned_exe,
-                "size_bytes": os.path.getsize(self.agent_exe_path)
-            }
-        except Exception as e:
-            logger.error(f"Exceção ao compilar UltronAgent: {e}")
-            return {"success": False, "error": str(e)}
-
-    def get_latest_agent_binary(self) -> Dict[str, Any]:
-        """Garante a compilação mais recente e retorna os caminhos e versão do executável pronto"""
-        self.compile(force=False)
-        version = self.get_source_version()
-        file_path = self.agent_exe_path if os.path.exists(self.agent_exe_path) else self.static_exe_path
-        size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
-        return {
-            "version": version,
-            "file_path": file_path,
-            "filename": f"UltronAgent_v{version}.exe",
-            "size_bytes": size
-        }
 
 agent_builder = AgentBuilder()

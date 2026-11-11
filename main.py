@@ -29,7 +29,7 @@ from core.network_scanner import NetworkScanner
 from core.orchestrator import LabOrchestrator
 from core.package_manager import UnifiedPackageManager
 from chatops.bot import TrueConfBot
-from core.agent_builder import agent_builder
+from core.agent_builder import agent_builder, AgentPackageError
 from core.agent_runtime import agent_task_mgr
 from core.agent_auth import AgentAuthenticator, require_operator
 from core.trueconf_webhook_auth import require_trueconf_webhook
@@ -63,11 +63,7 @@ bot = TrueConfBot(
 
 @app.on_event("startup")
 async def startup_event():
-    # Garante que o UltronAgent.exe esteja sempre sincronizado com o código C#
-    try:
-        agent_builder.compile()
-    except Exception as e:
-        print(f"⚠️ Aviso na compilação do UltronAgent: {e}")
+    # Windows packages are built explicitly in CI, never on server startup.
 
     if bot.bot_password or bot.api_token:
         bot.start_polling(interval_sec=3)
@@ -238,7 +234,11 @@ def download_ultron_agent():
     """Entrega o executável nativo do Agente Ultron garantindo que esteja sempre na compilação mais recente"""
     if os.environ.get("ULTRON_AGENT_DOWNLOAD_ENABLED") != "true":
         raise HTTPException(status_code=503, detail="Distribuicao suspensa ate homologacao do pacote Windows revisado.")
-    bin_info = agent_builder.get_latest_agent_binary()
+    try:
+        bin_info = agent_builder.get_latest_agent_binary()
+    except AgentPackageError:
+        raise HTTPException(status_code=503, detail="Pacote Windows ausente ou nao validado.")
+
     exe_path = bin_info["file_path"]
     filename = bin_info["filename"]
     if os.path.exists(exe_path):

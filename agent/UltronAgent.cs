@@ -112,6 +112,28 @@ namespace UltronAgent
         }
     }
 
+
+    // Pure evaluator: receives observations; never touches services, files or network.
+    public static class AgentDiagnostics
+    {
+        public static string Evaluate(string url, bool tokenValid, string identity, string winrmStatus)
+        {
+            Uri server;
+            bool urlValid = Uri.TryCreate(url, UriKind.Absolute, out server) &&
+                server.Scheme == Uri.UriSchemeHttps && server.UserInfo.Length == 0 &&
+                server.AbsolutePath == "/" && server.Query.Length == 0 && server.Fragment.Length == 0;
+            bool identityValid = !string.IsNullOrWhiteSpace(identity) &&
+                !identity.StartsWith("SERIAL-", StringComparison.OrdinalIgnoreCase);
+            string status = (winrmStatus == "Running" || winrmStatus == "Stopped") ? winrmStatus : "UNKNOWN";
+            // No URL, serial, file contents, exception message or token is returned.
+            return "{\"mode\":\"local-readonly\",\"network_checked\":false," +
+                "\"registration_checked\":false,\"url\":\"" + (urlValid ? "OK" : "HTTPS_ORIGIN_REQUIRED") + "\"," +
+                "\"token\":\"" + (tokenValid ? "PRESENT" : "MISSING_OR_UNREADABLE") + "\"," +
+                "\"identity\":\"" + (identityValid ? "PRESENT_UNVERIFIED" : "REVIEW_REQUIRED") + "\"," +
+                "\"winrm_native\":\"" + status + "\",\"agent_is_separate\":true}";
+        }
+    }
+
     class Program
     {
         public const string CurrentVersion = "2.3.0";
@@ -131,6 +153,13 @@ namespace UltronAgent
             
             if (Environment.UserInteractive) {
                 try { Console.OutputEncoding = Encoding.UTF8; } catch { }
+            }
+
+            if (Array.Exists(args, delegate(string arg) { return arg.Equals("--diagnose", StringComparison.OrdinalIgnoreCase); }))
+            {
+                // Must run before logging, elevation, registration or service dispatch.
+                PrintLocalDiagnostics();
+                return;
             }
 
             string configPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Ultron", "server.url");
@@ -221,6 +250,25 @@ namespace UltronAgent
                     catch { }
                 }
             }
+        }
+
+        private static void PrintLocalDiagnostics()
+        {
+            string url = "";
+            try
+            {
+                string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Ultron", "server.url");
+                url = File.ReadAllText(path).Trim();
+            }
+            catch { }
+            string nativeStatus = "UNKNOWN";
+            try { using (ServiceController service = new ServiceController("WinRM")) nativeStatus = service.Status.ToString(); }
+            catch { }
+            string report = AgentDiagnostics.Evaluate(url, ReadAgentToken() != null, GetBiosSerial(), nativeStatus);
+            Console.WriteLine(report);
+            // WinRM is optional for the agent; its status must not fail agent preflight.
+            Environment.ExitCode = report.Contains("HTTPS_ORIGIN_REQUIRED") ||
+                report.Contains("MISSING_OR_UNREADABLE") || report.Contains("REVIEW_REQUIRED") ? 2 : 0;
         }
 
         static void ParseArguments(string[] args)
