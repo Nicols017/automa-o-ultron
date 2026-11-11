@@ -48,6 +48,7 @@ from core.agent_builder import agent_builder
 from core.agent_runtime import agent_task_mgr
 from core.agent_auth import AgentAuthenticator, require_operator
 from core.macrium_remote import macrium_jobs, MacriumBridgeError
+from core.preformat_files_backup import file_backup_jobs, FileBackupError
 
 app = FastAPI(
     title="Ultron Lab Automation Server",
@@ -902,23 +903,29 @@ def diagnose_machine(req: DiagnosticRequest, request: Request):
 
 @app.post("/api/v1/bench/action/backup")
 def execute_backup_action(req: BackupRequest, request: Request):
-    """Executa o script de backup de perfil de usuário da máquina alvo para o Storage Macrium"""
+    """Inicia cópia de arquivos do usuário via WinRM, não uma imagem Macrium."""
     require_operator(request)
-    backup_server = settings.get("network", {}).get("backup_server_ip", "192.168.57.112")
-    params = {
-        "TargetServer": backup_server,
-        "ClientName": req.client_name,
-        "TicketNumber": req.ticket_number or "",
-        "SourceDrive": req.source_drive or "C:"
-    }
-    result = orchestrator.winrm.run_script_file(req.ip, "Backup-UserData.ps1", params=params)
-    return {
-        "success": result["success"],
-        "ip": req.ip,
-        "backup_server": backup_server,
-        "stdout": result.get("stdout", ""),
-        "stderr": result.get("stderr", "")
-    }
+    if req.source_drive not in ("C:", None, ""):
+        raise HTTPException(status_code=400, detail="Apenas C: é suportado nesta fase.")
+    try:
+        job = file_backup_jobs.start(
+            req.ip, req.client_name,
+            (req.ticket_number or "").strip(),
+        )
+    except FileBackupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return job
+
+
+@app.get("/api/v1/bench/action/backup/{job_id}")
+def get_backup_action(job_id: str, request: Request):
+    """Status da cópia: sucesso NÃO libera operação destrutiva no MDT."""
+    require_operator(request)
+    job = file_backup_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada neste processo.")
+    return job
+
 
 @app.post("/api/v1/bench/action/verify-macrium")
 def start_macrium_verification(req: MacriumVerifyRequest, request: Request):
