@@ -930,6 +930,10 @@ class TrueConfChatOps:
                 lambda: self._cmd_ativar(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_ativar(user_id),
             frozenset(["/backup", "/storage"]):
                 lambda: self._cmd_backup(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_backup(user_id),
+            frozenset(["/verificar_backup", "/verificar_macrium"]):
+                lambda: self._cmd_verify_macrium(user_id, parts[1:], trace_id=trace_id),
+            frozenset(["/status_verificacao", "/status_macrium"]):
+                lambda: self._cmd_macrium_status(user_id, parts[1:]),
             frozenset(["/dominio", "/domain", "/ad"]):
                 lambda: self._cmd_dominio(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_dominio(user_id),
             frozenset(["/softwares", "/apps", "/instalar"]):
@@ -1874,6 +1878,81 @@ class TrueConfChatOps:
 
         threading.Thread(target=_worker, daemon=True).start()
         return self.msg_builder.success("Ativação em Andamento", {"Alvo": ip, "Status": "Executando MAS"}, trace_id, emoji="🔑")
+
+    def _cmd_verify_macrium(self, user_id: str, args: List[str], trace_id: str = None) -> str:
+        """Aciona verificação Macrium read-only apenas para técnicos autorizados."""
+        from core.macrium_remote import macrium_jobs, MacriumBridgeError
+        allowed = {
+            x.strip().lower().lstrip("@")
+            for x in os.environ.get("ULTRON_MACRIUM_ALLOWED_TRUECONF_USERS", "").split(",")
+            if x.strip()
+        }
+        actor = (user_id or "").strip().lower().lstrip("@")
+        if not allowed or actor not in allowed:
+            return "⛔ Você não está autorizado a verificar backups pelo Ultron."
+        if not args:
+            return (
+                "Uso: /verificar_backup <caminho_completo.mrimg>\n"
+                "Exemplo: /verificar_backup \\\\servidor\\Backups\\Chamado\\imagem.mrimg\n"
+                "A imagem será apenas verificada, sem reparo ou restauração."
+            )
+
+        image_path = " ".join(args).strip().strip('"')
+        def notify(job):
+            if not self.bot:
+                return
+            if job["status"] == "SUCCESS":
+                result = job["result"]
+                message = (
+                    "✅ MACRIUM — IMAGEM VERIFICADA\n\n"
+                    f"Imagem: {job['image_path']}\n"
+                    f"Verificador: {job['host']}\n"
+                    f"Log no Windows: {result.get('log_path')}\n"
+                    "MRVerify retornou sucesso. Restauração NÃO testada. "
+                    "Formatação MDT permanece bloqueada."
+                )
+            else:
+                message = (
+                    "❌ MACRIUM — VERIFICAÇÃO NÃO CONFIRMADA\n\n"
+                    f"Imagem: {job['image_path']}\n"
+                    f"Motivo: {job.get('result', {}).get('reason', 'Falha desconhecida')}\n"
+                    "Nenhuma formatação foi autorizada."
+                )
+            self.bot.send_direct_message(user_id, message)
+
+        try:
+            job = macrium_jobs.start(image_path, on_done=notify)
+        except MacriumBridgeError as exc:
+            return f"⚠️ Verificação não iniciada: {exc}"
+        return (
+            "🔎 Verificação Macrium solicitada\n\n"
+            f"Imagem: {image_path}\n"
+            f"Job: {job['job_id']}\n"
+            "O Ultron avisará quando houver resultado. "
+            "Não executaremos formatação ou restauração."
+        )
+
+    def _cmd_macrium_status(self, user_id: str, args: List[str]) -> str:
+        from core.macrium_remote import macrium_jobs
+        allowed = {
+            x.strip().lower().lstrip("@")
+            for x in os.environ.get("ULTRON_MACRIUM_ALLOWED_TRUECONF_USERS", "").split(",")
+            if x.strip()
+        }
+        actor = (user_id or "").strip().lower().lstrip("@")
+        if not allowed or actor not in allowed:
+            return "⛔ Acesso à verificação Macrium não autorizado."
+        if not args:
+            return "Uso: /status_verificacao <job_id>"
+        job = macrium_jobs.get(args[0])
+        if not job:
+            return "⚠️ Job desconhecido. Após reinício do Ultron, consulte os logs do Windows."
+        state = job["status"]
+        if state == "SUCCESS":
+            return f"✅ Macrium Verify: SUCESSO — {job['image_path']} (MDT continua bloqueado)"
+        if state == "ERROR":
+            return f"❌ Macrium Verify: FALHA — {job.get('result', {}).get('reason', '')}"
+        return f"🔎 Macrium Verify: {state} — {job['image_path']}"
 
     def _cmd_backup(self, user_id: str, args: List[str], trace_id: str = None) -> str:
         trace_id = trace_id or new_trace_id()
