@@ -1,6 +1,6 @@
 """
 Ultron Automation Server - Pense Rede Lab
-Ponto de entrada principal da aplicação FastAPI, Web Dashboard e orquestração de bancada.
+Ponto de entrada da API FastAPI do Ultron, com automações e integração TrueConf.
 """
 
 import os
@@ -19,10 +19,8 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 if sys.stderr and hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
-import asyncio
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Query, Request
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -56,51 +54,8 @@ app = FastAPI(
     version="1.4.0"
 )
 
-# Diretórios base
+# Diretorio base para scripts, laudos e binarios utilizados pelas automacoes.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, "static")
-TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
-
-# Monta arquivos estáticos
-if os.path.exists(STATIC_DIR):
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-# Gerenciador de conexões WebSocket para Log Streaming
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: Dict[str, List[WebSocket]] = {}
-        self.loop: Optional[asyncio.AbstractEventLoop] = None
-
-    def set_loop(self, loop: asyncio.AbstractEventLoop):
-        self.loop = loop
-
-    async def connect(self, session_id: str, websocket: WebSocket):
-        await websocket.accept()
-        if session_id not in self.active_connections:
-            self.active_connections[session_id] = []
-        self.active_connections[session_id].append(websocket)
-
-    def disconnect(self, session_id: str, websocket: WebSocket):
-        if session_id in self.active_connections:
-            if websocket in self.active_connections[session_id]:
-                self.active_connections[session_id].remove(websocket)
-            if not self.active_connections[session_id]:
-                del self.active_connections[session_id]
-
-    async def send_event_async(self, session_id: str, event: dict):
-        if session_id in self.active_connections:
-            for connection in list(self.active_connections[session_id]):
-                try:
-                    await connection.send_json(event)
-                except Exception:
-                    pass
-
-    def send_event(self, session_id: str, event: dict):
-        """Dispara eventos em tempo real a partir de threads síncronas do pipeline"""
-        if session_id in self.active_connections and self.loop and self.loop.is_running():
-            asyncio.run_coroutine_threadsafe(self.send_event_async(session_id, event), self.loop)
-
-manager = ConnectionManager()
 
 # Instancia componentes principais
 profile_mgr = ProfileManager()
@@ -126,7 +81,6 @@ async def startup_event():
     except Exception as e:
         print(f"⚠️ Aviso na compilação do UltronAgent: {e}")
 
-    manager.set_loop(asyncio.get_running_loop())
     if bot.bot_password or bot.api_token:
         bot.start_polling(interval_sec=3)
 
@@ -164,7 +118,6 @@ class RunPipelineRequest(BaseModel):
     technician_name: Optional[str] = Field("Nicolas Silva", description="Nome do técnico responsável")
     skip_burnin: Optional[bool] = Field(False, description="Se True, pula o teste de estresse térmico")
     custom_packages: Optional[List[str]] = Field(default_factory=list, description="Softwares adicionais selecionados via Winget")
-    session_id: Optional[str] = Field(None, description="ID da sessão do WebSocket para streaming em tempo real")
     domain_config: Optional[DomainJoinRequest] = Field(None, description="Configurações dinâmicas de domínio e rede")
 
 class DiagnosticRequest(BaseModel):
@@ -280,22 +233,11 @@ class AgentAlert(BaseModel):
     hostname: Optional[str] = Field("", description="Hostname")
     details: str = Field(..., description="Detalhes técnicos do alerta")
 
-# --- Rotas da Interface Web & Downloads ---
-
-@app.get("/", response_class=HTMLResponse)
-@app.get("/dashboard", response_class=HTMLResponse)
-def get_dashboard():
-    """Entrega a interface web visual do Ultron Lab Dashboard com proteção anti-cache"""
-    template_path = os.path.join(TEMPLATES_DIR, "index.html")
-    if os.path.exists(template_path):
-        with open(template_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        resp = HTMLResponse(content=content)
-        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        resp.headers["Pragma"] = "no-cache"
-        resp.headers["Expires"] = "0"
-        return resp
-    return HTMLResponse(content="<h2>Ultron Lab Automation Server Online</h2>")
+# O painel web foi removido: a interface do tecnico e o TrueConf.
+@app.get("/")
+def service_status():
+    """Resposta minima de saude da API, sem frontend ou dashboard."""
+    return {"service": "ultron", "status": "online", "interface": "trueconf"}
 
 @app.get("/download/UltronAgent.exe")
 @app.get("/download/UltronAgent.exe.")
@@ -472,26 +414,6 @@ def agent_heartbeat(data: AgentHeartbeat, request: Request):
     return {"status": "ok", "server_time": time.time(), "ip": data.ip}
 
 
-# --- WebSocket Log Stream ---
-
-@app.websocket("/ws/pipeline/{session_id}")
-async def websocket_pipeline_endpoint(websocket: WebSocket, session_id: str):
-    """Endpoint WebSocket para recepção de logs e status da esteira em tempo real"""
-    await manager.connect(session_id, websocket)
-    try:
-        await websocket.send_json({
-            "type": "connected",
-            "session_id": session_id,
-            "message": "🔌 Conectado ao Ultron Realtime Log Streamer"
-        })
-        while True:
-            # Mantém conexão aberta e escuta possíveis comandos
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        manager.disconnect(session_id, websocket)
-    except Exception:
-        manager.disconnect(session_id, websocket)
-
 # --- Rotas da API ---
 
 @app.get("/api/v1/info")
@@ -502,15 +424,13 @@ def read_root():
         "company": "Pense Rede",
         "lab": "Hardware & Bench Automation",
         "endpoints": {
-            "dashboard": "/dashboard",
             "clients": "/api/v1/clients",
             "scan": "/api/v1/bench/scan",
             "run": "/api/v1/bench/run",
             "diagnose": "/api/v1/bench/diagnose",
             "mdt_webhook": "/api/v1/mdt/completed",
             "reports": "/api/v1/reports/list",
-            "infra_status": "/api/v1/infra/status",
-            "ws_pipeline": "/ws/pipeline/{session_id}"
+            "infra_status": "/api/v1/infra/status"
         }
     }
 
@@ -1182,10 +1102,8 @@ def _execute_pipeline_task(
     technician_name: Optional[str],
     skip_burnin: bool,
     custom_packages: Optional[List[str]],
-    session_id: Optional[str],
     domain_config: Optional[dict] = None
 ):
-    callback = (lambda evt: manager.send_event(session_id, evt)) if session_id else None
     return orchestrator.run_pipeline(
         ip=ip,
         client_id=client_id,
@@ -1194,7 +1112,7 @@ def _execute_pipeline_task(
         skip_burnin=skip_burnin,
         custom_packages=custom_packages,
         domain_config=domain_config,
-        log_callback=callback
+        log_callback=None
     )
 
 @app.post("/api/v1/bench/run")
@@ -1211,15 +1129,13 @@ def run_bench_pipeline(req: RunPipelineRequest, background_tasks: BackgroundTask
             technician_name=req.technician_name,
             skip_burnin=req.skip_burnin,
             custom_packages=req.custom_packages or [],
-            session_id=req.session_id,
             domain_config=dom_dict
         )
         return {
             "status": "queued",
             "message": f"Esteira de automação iniciada em segundo plano para {req.ip}",
             "client_id": req.client_id,
-            "ip": req.ip,
-            "session_id": req.session_id
+            "ip": req.ip
         }
     else:
         result = _execute_pipeline_task(
