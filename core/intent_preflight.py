@@ -44,7 +44,7 @@ def preflight_request(message: str) -> PreflightDecision:
     text = _normalize(raw)
     # Do not match words embedded in filenames, package names or hostnames.
     backup = _has(text, r"\b(?:backup|backups|copia de seguranca|salvar dados|imagem do disco)\b")
-    imaging = _has(text, r"\b(?:fog|clonezilla|macrium|imagem|clonagem|clonar|restaurar|restaure|restauracao)\b")
+    imaging = _has(text, r"\b(?:fog|clonezilla|macrium|imagem|clonagem|clonar|restaur[a-z]*)\b")
     formatting = _has(text, r"\b(?:format[a-z]*|reformat[a-z]*|zerar|apagar tudo|reinstal[a-z]*|wipe)\b")
     restart = _has(text, r"\b(?:reinici[a-z]*|reboot|restart|deslig[a-z]*|shutdown)\b")
     negated = _has(text, r"\b(?:nao|nunca|jamais)\s+(?:(?:quero|pode|deve|faca|faz|vai|precisa)\s+)?(?:format[a-z]*|reinici[a-z]*|deslig[a-z]*|faca backup|realiz[a-z]* backup|apaga[a-z]*|restaur[a-z]*|execute|executar)\b")
