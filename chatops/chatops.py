@@ -930,6 +930,8 @@ class TrueConfChatOps:
                 lambda: self._cmd_ativar(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_ativar(user_id),
             frozenset(["/backup", "/storage"]):
                 lambda: self._cmd_backup(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_backup(user_id),
+            frozenset(["/status_backup", "/consultar_backup"]):
+                lambda: self._cmd_status_backup(user_id, parts[1:]),
             frozenset(["/verificar_backup", "/verificar_macrium"]):
                 lambda: self._cmd_verify_macrium(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/status_verificacao", "/status_macrium"]):
@@ -1264,13 +1266,23 @@ class TrueConfChatOps:
             self.user_sessions.pop(user_id, None)
             return self._cmd_ativar(user_id, [ip])
 
-        # 8. Wizard de Backup
+        # 8. Wizard de Backup de arquivos
         if wtype == "wizard_backup":
-            ip = self._extract_target_ip(text)
-            if not ip:
-                return "⚠️ Endereço IP inválido. Por favor, digite um IP válido (ex: 57.48) ou 0 para cancelar."
-            self.user_sessions.pop(user_id, None)
-            return self._cmd_backup(user_id, [ip])
+            step = session.get("step", "ip")
+            if step == "ip":
+                ip = self._extract_target_ip(text)
+                if not ip:
+                    return "⚠️ Endereço IP inválido; informe o IP do Windows ou 0 para cancelar."
+                session["ip"] = ip
+                session["step"] = "client"
+                return "💾 Qual é o nome do cliente? (ex.: TIMENOW)"
+            if step == "client":
+                session["client"] = text.strip()
+                session["step"] = "ticket"
+                return "💾 Informe o número do chamado (somente dígitos)."
+            if step == "ticket":
+                self.user_sessions.pop(user_id, None)
+                return self._cmd_backup(user_id, [session["ip"], session["client"], text.strip()])
 
         # 9. Wizard de Domínio
         if wtype == "wizard_dominio":
@@ -1425,9 +1437,10 @@ class TrueConfChatOps:
     def _start_wizard_backup(self, user_id: str, trace_id: str = None) -> str:
         self.user_sessions[user_id] = {"type": "wizard_backup", "step": "ip"}
         return (
-            "💾 BACKUP DE DADOS PARA O STORAGE\n\n"
+            "💾 BACKUP AUTOMÁTICO DE ARQUIVOS PARA O STORAGE\n\n"
             "Digite o IP do computador de origem:\n"
             "(ex: 192.168.57.59)\n\n"
+            "Será solicitado o cliente e o chamado. Backup de pastas, não imagem do disco.\n"
             "[ 0 ] Cancelar e voltar ao Menu"
         )
 
@@ -1955,30 +1968,90 @@ class TrueConfChatOps:
         return f"🔎 Macrium Verify: {state} — {job['image_path']}"
 
     def _cmd_backup(self, user_id: str, args: List[str], trace_id: str = None) -> str:
-        trace_id = trace_id or new_trace_id()
-        if not args:
-            return self.msg_builder.error(WinRMResult(ok=False, host="N/A", command="/backup", error="Uso: /backup <IP>"), trace_id)
-        ip = args[0]
+        """Copia pastas de usuario sob demanda, sem autorizar MDT."""
+        from core.preformat_files_backup import file_backup_jobs, FileBackupError
+        allowed = {
+            x.strip().lower().lstrip("@")
+            for x in os.environ.get("ULTRON_BACKUP_ALLOWED_TRUECONF_USERS", "").split(",")
+            if x.strip()
+        }
+        actor = (user_id or "").strip().lower().lstrip("@")
+        if not allowed or actor not in allowed:
+            return "⛔ Você não está autorizado a iniciar backups pelo Ultron."
+        if len(args) < 3:
+            return (
+                "💾 Uso: /backup <IP> <cliente> <chamado>\n"
+                "Exemplo: /backup 192.168.57.50 TIMENOW 12282\n"
+                "Copia arquivos selecionados do usuário, não gera imagem completa do disco."
+            )
+        ip = self._extract_target_ip(args[0])
+        if not ip:
+            return "⚠️ Endereço IP inválido. Informe o IP da estação Windows."
+        client = " ".join(args[1:-1]).strip()
+        ticket = args[-1].strip()
         self._last_user_ip[user_id] = ip
 
-        def _worker():
-            log.info("task_started", trace_id, ip=ip, action="fazer_backup")
-            res = self.winrm.run_script_file(ip, "Backup-UserData.ps1")
-            if res.get("auth_failed"):
-                srv_url = self._get_server_url()
-                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Backup", error=f"Acesso negado. Baixe o agente: {srv_url}/download/UltronAgent.exe"), trace_id)
-                if self.bot: self.bot.send_direct_message(user_id, reply)
+        def on_done(job):
+            if not self.bot:
                 return
-
-            if res["success"]:
-                reply = self.msg_builder.success("BACKUP CONCLUÍDO", {"Host": ip, "Status": "Dados do perfil salvos no Storage"}, trace_id, emoji="💾")
+            if job["status"] == "SUCCESS":
+                data = job["result"]
+                message = (
+                    "✅ BACKUP DE ARQUIVOS CONCLUÍDO\n\n"
+                    f"Computador: {ip}\n"
+                    f"Cliente/chamado: {client} / {ticket}\n"
+                    f"Destino: {data['destination']}\n"
+                    f"Arquivos no destino: {data['files_at_destination']}\n"
+                    "Tipo: pastas selecionadas do usuário (Robocopy).\n"
+                    "⚠️ NÃO é imagem Macrium nem permite formatação MDT automática."
+                )
             else:
-                reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Backup", error=res.get('stderr') or 'Erro WinRM'), trace_id)
-            if self.bot:
-                self.bot.send_direct_message(user_id, reply)
+                message = (
+                    "❌ BACKUP DE ARQUIVOS NÃO CONFIRMADO\n\n"
+                    f"Computador: {ip}\n"
+                    f"Cliente/chamado: {client} / {ticket}\n"
+                    f"Erro: {job.get('result', {}).get('reason', 'Erro desconhecido')}\n"
+                    "NÃO formate este computador com base nesta tentativa."
+                )
+            self.bot.send_direct_message(user_id, message)
 
-        threading.Thread(target=_worker, daemon=True).start()
-        return self.msg_builder.success("Backup em Andamento", {"Alvo": ip, "Destino": "Storage Central"}, trace_id, emoji="💾")
+        try:
+            job = file_backup_jobs.start(ip, client, ticket, on_done=on_done)
+        except FileBackupError as exc:
+            return f"⚠️ Backup não iniciado: {exc}"
+        return (
+            "💾 BACKUP DE ARQUIVOS SOLICITADO\n\n"
+            f"Origem: {ip}\n"
+            f"Cliente: {client}\n"
+            f"Chamado: {ticket}\n"
+            f"ID da tarefa: {job['job_id']}\n"
+            "O Ultron informará o resultado. Formatação permanece bloqueada."
+        )
+
+    def _cmd_status_backup(self, user_id: str, args: List[str]) -> str:
+        from core.preformat_files_backup import file_backup_jobs
+        allowed = {
+            x.strip().lower().lstrip("@")
+            for x in os.environ.get("ULTRON_BACKUP_ALLOWED_TRUECONF_USERS", "").split(",")
+            if x.strip()
+        }
+        actor = (user_id or "").strip().lower().lstrip("@")
+        if not allowed or actor not in allowed:
+            return "⛔ Acesso à consulta de backups não autorizado."
+        if not args:
+            return "Uso: /status_backup files_<id>"
+        job = file_backup_jobs.get(args[0])
+        if job is None:
+            return "⚠️ Tarefa não encontrada neste processo; consulte a pasta no storage."
+        if job["status"] == "SUCCESS":
+            data = job["result"]
+            return (
+                f"✅ Backup de ARQUIVOS concluído: {data['destination']}\n"
+                "Não é imagem completa nem autoriza formatação."
+            )
+        if job["status"] == "ERROR":
+            return f"❌ Backup falhou: {job['result'].get('reason', 'Falha não identificada')}"
+        return f"💾 Backup {job['status']}: {job['source_ip']} (não formate ainda)."
 
     def _cmd_dominio(self, user_id: str, args: List[str]) -> str:
         if len(args) < 2:
