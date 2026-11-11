@@ -69,6 +69,15 @@ def preflight_request(message: str) -> PreflightDecision:
             "Se quiser consultar o equipamento ou planejar uma tarefa, posso ajudar sem alterá-lo.",
         )
 
+    # A question about validation must never be misread as a fresh backup.
+    if backup and _has(text, r"\b(?:verific[a-z]*|confir[a-z]*|valid[a-z]*|chec[a-z]*|integridade|status)\b"):
+        return PreflightDecision(
+            "blocked",
+            "Você pediu para consultar ou verificar um backup, não para criar outro. "
+            "Se a tarefa foi iniciada pelo Ultron, consulte /status_backup <id>. "
+            "Nenhuma cópia foi iniciada.",
+        )
+
     # A single message must not chain a backup and destruction. Capturing a
     # user backup and formatting are TWO independently authorized operations.
     if backup and formatting:
@@ -85,10 +94,10 @@ def preflight_request(message: str) -> PreflightDecision:
     wants_image_action = _has(
         text,
         r"\b(?:faz[a-z]*|cria[a-z]*|gera[a-z]*|tira|captura[a-z]*|inicia[a-z]*|"
-        r"realiza[a-z]*|executa[a-z]*|restaura[a-z]*|recupera[a-z]*|"
+        r"realiza[a-z]*|executa[a-z]*|restaur[a-z]*|recupera[a-z]*|"
         r"quero|preciso|solicito|salva[a-z]*)\b",
     )
-    if imaging and wants_image_action and (backup or formatting or _has(text, r"\b(?:fog|clonezilla|imagem|restaur[a-z]*)\b")):
+    if imaging and (wants_image_action or (backup and _has(text, r"\bimagem\b"))) and (backup or formatting or _has(text, r"\b(?:fog|clonezilla|imagem|restaur[a-z]*)\b")):
         return PreflightDecision(
             "blocked",
             "O backup/restauração de imagem pelo FOG ainda não está integrado ao Ultron. "
