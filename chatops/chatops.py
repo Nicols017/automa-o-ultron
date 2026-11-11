@@ -840,6 +840,15 @@ class TrueConfChatOps:
         if user_id in self.user_sessions:
             return self._handle_wizard_step(user_id, self.user_sessions[user_id], text)
 
+        # Preflight sem efeitos colaterais: perguntas não acionam scripts,
+        # pedidos de imagem FOG indisponível não viram backup Robocopy.
+        from core.intent_preflight import preflight_request
+        interpretation = preflight_request(text)
+        if interpretation.kind == "explanatory":
+            return self._handle_ai_conversation(user_id, text)
+        if interpretation.kind == "blocked":
+            return interpretation.reply
+
         # 1.1 Controle Mestre / Agendamento exclusivo para Nicolas Silva
         master_reply = self._handle_master_intent(user_id, text, norm_text)
         if master_reply:
