@@ -852,6 +852,11 @@ class TrueConfChatOps:
         if interpretation.kind == "blocked":
             return interpretation.reply
 
+        # Semantic routing is opt-in; the model only proposes a typed plan.
+        if os.environ.get("ULTRON_SEMANTIC_ROUTER_ENABLED", "").lower() in ("1", "true"):
+            if not text.startswith("/"):
+                return self._semantic_route_message(user_id, text)
+
         # 1.1 Controle Mestre / Agendamento exclusivo para Nicolas Silva
         master_reply = self._handle_master_intent(user_id, text, norm_text)
         if master_reply:
@@ -2008,6 +2013,59 @@ class TrueConfChatOps:
             )
         answer += "\nMemória não concede autorização para executar operações."
         return answer
+
+    def _semantic_route_message(self, user_id: str, text: str) -> str:
+        """Opt-in natural-language routing with mandatory deterministic policy."""
+        from core.structured_intent import analyze_message, decide_action, IntentPlanError
+        allowed = {
+            value.strip().lower().lstrip("@")
+            for value in os.environ.get("ULTRON_SEMANTIC_ALLOWED_TRUECONF_USERS", "").split(",")
+            if value.strip()
+        }
+        actor = (user_id or "").strip().lower().lstrip("@")
+        if actor not in allowed:
+            return (
+                "⚠️ O roteador semântico ainda está em homologação para este técnico. "
+                "Não executei nenhuma operação."
+            )
+        try:
+            self._ensure_orchestrator()
+            target = self._last_user_ip.get(user_id)
+            if not target:
+                try:
+                    target = self.operational_memory.target(user_id)
+                except Exception:
+                    target = None
+            plan = analyze_message(
+                text,
+                self.orchestrator.analyzer.generate,
+                trusted_target=target,
+            )
+            policy = decide_action(
+                plan, text,
+                read_only_enabled=(
+                    os.environ.get("ULTRON_SEMANTIC_READONLY_ENABLED", "").lower()
+                    in ("true", "1")
+                ),
+                allowed_subnet=os.environ.get("ULTRON_SEMANTIC_ALLOWED_SUBNET"),
+            )
+        except (IntentPlanError, ValueError):
+            return (
+                "🤔 Não consegui interpretar esse pedido com segurança. "
+                "Pode indicar a ação e o IP do computador? Nada foi executado."
+            )
+        except Exception:
+            logger.exception("Roteador semântico falhou; execução negada.")
+            return "⚠️ Interpretação indisponível. Nenhum comando foi executado."
+
+        if policy.kind == "explain":
+            return self._handle_ai_conversation(user_id, text)
+        if policy.kind == "allow_readonly":
+            if policy.action == "diagnose":
+                return self._cmd_diagnostico(user_id, [plan.target_ip])
+            if policy.action == "list_hosts":
+                return self._cmd_bancada(user_id)
+        return "🧠 " + policy.reason
 
     def _cmd_interpretar(self, user_id: str, args: List[str]) -> str:
         """Modo somente leitura para testar interpretacao com IA estruturada."""
