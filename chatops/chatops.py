@@ -351,19 +351,17 @@ class TrueConfChatOps:
                     return "🔌 DESLIGAR COMPUTADOR\n\nQual é o IP da máquina que você deseja desligar?\n\n[ 0 ] Cancelar"
             return self._cmd_power(user_id, [ip], "shutdown")
 
-        # 7. Backup
-        if any(kw in norm_text for kw in ["backup", "salvar dados", "copiar perfil", "fazer backup", "storage"]):
+        # 7. Backup solicitado em linguagem natural. Nunca presumir o alvo.
+        if (any(kw in norm_text for kw in ["backup", "salvar dados", "copiar perfil", "fazer backup", "storage"])
+                and not any(norm_text.startswith(word) for word in ["como ", "explica ", "o que e ", "o que é "])):
             ip = self._extract_target_ip(text)
             if not ip:
-                cached = self._get_cached_devices()
-                winrm_devs = [d for d in cached if d.get("winrm_ready")]
-                target = winrm_devs[0] if len(winrm_devs) == 1 else (cached[0] if len(cached) == 1 else None)
-                if target:
-                    ip = target.get("ip")
-                else:
-                    self.user_sessions[user_id] = {"type": "wizard_backup"}
-                    return "💾 BACKUP DE USUÁRIO\n\nQual é o IP da máquina que você deseja fazer o backup?\n\n[ 0 ] Cancelar"
-            return self._cmd_backup(user_id, [ip])
+                return self._start_wizard_backup(user_id)
+            self.user_sessions[user_id] = {"type": "wizard_backup", "step": "client", "ip": ip}
+            return (
+                f"💾 Backup de arquivos da máquina {ip}.\n"
+                "Qual é o nome do cliente? Depois pedirei o número do chamado."
+            )
 
         # 8. Consulta / Varredura de Bancada e Detecção de IPs / Máquinas Disponíveis
         ip_terms = ["ip", "ips", "maquina", "maquinas", "máquina", "máquinas", "pc", "pcs", "computador", "computadores", "dispositivo", "dispositivos", "equipamento", "equipamentos"]
