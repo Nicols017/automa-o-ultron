@@ -88,6 +88,7 @@ class LabOrchestrator:
                 "ip": ip,
                 "success": False,
                 "error": error_msg or "Dados de telemetria não puderam ser extraídos da máquina.",
+                "outcome": telemetry_res.get("outcome", "CONFIRMED_FAILURE"),
                 "telemetry": {},
                 "ai_diagnosis": ""
             }

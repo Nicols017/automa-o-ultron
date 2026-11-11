@@ -118,3 +118,7 @@ WinRM e nativo do Windows; UltronAgent e separado. Consulte [revisao e migracao]
 ## Consolidacao do projeto
 
 Consulte [correcoes gerais e proximas prioridades](docs/PROJECT_CONSOLIDATION.md). TrueConf agora exige usuarios explicitamente autorizados, identidade do SDK e TLS validado; configure o ambiente antes de homologar. Corpus de entendimento: 45 frases, com novos casos sinteticos de negacoes e exemplos.
+
+## Acompanhamento de tarefas
+
+Diagnosticos, instalacoes de softwares e backups de arquivos passam a ter historico persistente: /tarefas, /tarefa <ID> e /status_backup <ID>. Veja [estados, migracao e limites](docs/UNIFIED_TASKS.md). Reinicio deixa tarefas inacabadas como UNKNOWN e nunca as reexecuta automaticamente.

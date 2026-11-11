@@ -31,6 +31,7 @@ from core.public_tools import (
 )
 from core.reliability import IntentRouter, MessageBuilder, TraceLogger, new_trace_id, DEFAULT_INTENTS, log, WinRMResult
 from core.operational_memory import OperationalMemory
+from core.task_registry import task_registry, TaskRegistryError
 from core.trueconf_transport import trueconf_request
 
 def _clean_chat_text(s: str) -> str:
@@ -83,6 +84,7 @@ class TrueConfChatOps:
         self.operational_memory = OperationalMemory()
         self._pending_message_target: Dict[str, str] = {}
         self.active_jobs: Dict[str, Any] = {}
+        self.task_registry = task_registry
 
         # Cache de varredura de bancada para resposta instantânea
         self._cached_devices: List[Dict[str, Any]] = []
@@ -933,6 +935,8 @@ class TrueConfChatOps:
         norm_token = _normalize_token(first_token)
 
         routes = {
+            frozenset(["/tarefas", "/tarefa", "/status_tarefa"]):
+                lambda: self._cmd_tarefas(user_id, parts[1:]),
             frozenset(["/bancada", "/status", "/maquinas", "/lab", "/hosts"]):
                 lambda: self._cmd_bancada(user_id),
             frozenset(["/clientes", "/perfis", "/empresas"]):
@@ -1081,6 +1085,7 @@ class TrueConfChatOps:
             "[ 12 ] 📄 Ver laudos técnicos emitidos\n"
             "[ 13 ] 📥 Baixar o UltronAgent.exe\n"
             "[ 14 ] 🧹 Limpeza pós-bancada (Entrega ao Cliente)\n\n"
+            "Acompanhe com /tarefas ou /tarefa <ID>.\n\n"
             "💬 Basta digitar o número correspondente (ex: 1, 4, 11) ou me dizer o que você precisa!"
         )
 
@@ -1822,11 +1827,12 @@ class TrueConfChatOps:
         self._last_user_ip[user_id] = ip
         self._ensure_orchestrator()
 
-        def _worker():
+        def _worker(job_id):
             log.info("task_started", trace_id, ip=ip, action="diagnostico_hardware")
             try:
-                diag = self.orchestrator.run_diagnostics_only(ip=ip)
-                if not diag.get("success", True) or diag.get("error"):
+                diag = self.task_registry.execute(user_id, job_id,
+                    lambda: self.orchestrator.run_diagnostics_only(ip=ip))
+                if diag.get("success") is not True or diag.get("error"):
                     err = diag.get("error", "Host inacessível via WinRM na porta 5985.")
                     
                     if "401" in err or "credentials" in err.lower() or "unauthorized" in err.lower() or "acesso negado" in err.lower() or "rejected" in err.lower():
@@ -1884,10 +1890,13 @@ class TrueConfChatOps:
                 reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Diagnostico", error=str(e)), trace_id)
 
             if self.bot:
-                self.bot.send_direct_message(user_id, reply)
+                self.bot.send_direct_message(user_id, f"{reply}\nID da tarefa: {job_id}")
 
-        threading.Thread(target=_worker, daemon=True).start()
-        return self.msg_builder.success("Coletando Telemetria...", {"Alvo": ip, "Ação": "Análise S.M.A.R.T em andamento"}, trace_id, emoji="🔍")
+        try:
+            job = self._queue_tracked_worker(user_id, ip, "diagnose", _worker)
+        except TaskRegistryError as exc:
+            return f"Diagnostico nao iniciado: {exc}"
+        return self.msg_builder.success("Coletando Telemetria...", {"Alvo": ip, "ID": job["job_id"], "Ação": "Consulte /tarefa <ID>"}, trace_id, emoji="🔍")
 
     def _cmd_ativar(self, user_id: str, args: List[str], trace_id: str = None) -> str:
         trace_id = trace_id or new_trace_id()
@@ -1997,11 +2006,62 @@ class TrueConfChatOps:
         except Exception as exc:
             logger.warning("Memória operacional indisponível: %s", type(exc).__name__)
 
+    def _queue_tracked_worker(self, user_id, ip, action, worker):
+        try:
+            job = self.task_registry.create(user_id, ip, action)
+        except TaskRegistryError:
+            raise
+        except Exception:
+            raise TaskRegistryError("Registro indisponivel; nenhuma tarefa iniciada.") from None
+        def guarded():
+            try:
+                worker(job["job_id"])
+                current = self.task_registry.get(user_id, job["job_id"])
+                if current and current["status"] in ("QUEUED", "RUNNING"):
+                    status = "ERROR" if current["status"] == "QUEUED" else "UNKNOWN"
+                    self.task_registry.finish(user_id, job["job_id"], status,
+                        "NOT_STARTED" if status == "ERROR" else "NONE")
+            except Exception:
+                current = self.task_registry.get(user_id, job["job_id"])
+                status = "ERROR" if current and current["status"] == "QUEUED" else "UNKNOWN"
+                self.task_registry.finish(user_id, job["job_id"], status,
+                    "NOT_STARTED" if status == "ERROR" else "NONE")
+                logger.warning("Tarefa terminou sem resposta completa; consulte seu ID.")
+        try:
+            threading.Thread(target=guarded, daemon=True).start()
+        except Exception:
+            self.task_registry.finish(user_id, job["job_id"], "ERROR", "NOT_STARTED")
+            raise TaskRegistryError("Nao foi possivel iniciar a tarefa.") from None
+        return job
+
+    def _cmd_tarefas(self, user_id: str, args: List[str]) -> str:
+        try:
+            if args:
+                job = self.task_registry.get(user_id, args[0])
+                jobs = [job] if job else []
+            else:
+                jobs = self.task_registry.recent(user_id)
+        except Exception:
+            return "Historico de tarefas indisponivel; nenhuma operacao foi iniciada."
+        if not jobs:
+            return "Nenhuma tarefa encontrada para voce."
+        lines = ["SUAS TAREFAS"]
+        for job in jobs:
+            lines.append(f"{job['job_id']} | {job['action']} | {job['target_ip']} | {job['status']}")
+            if job["status"] == "UNKNOWN":
+                lines.append("Resultado desconhecido: confira o equipamento antes de solicitar nova execucao.")
+            elif job["evidence"] == "EXECUTOR_REPORTED_SUCCESS":
+                lines.append("Ferramenta informou sucesso; isso nao substitui verificacao independente.")
+            elif job["evidence"] == "BACKUP_REPORT_VALIDATED":
+                lines.append("Relatorio de copia de arquivos validado; nao e imagem nem autoriza formatacao.")
+        return "\n".join(lines)
+
     def _cmd_contexto(self, user_id: str) -> str:
         """Informa ao técnico somente o proprio contexto; nao executa nada."""
         try:
             target = self.operational_memory.target(user_id)
-            last = self.operational_memory.latest_job(user_id)
+            jobs = self.task_registry.recent(user_id, limit=1)
+            last = jobs[0] if jobs else self.operational_memory.latest_job(user_id)
         except Exception:
             return "⚠️ Contexto operacional indisponível. Nenhuma ação foi executada."
         if not target and not last:
@@ -2168,7 +2228,7 @@ class TrueConfChatOps:
             self.bot.send_direct_message(user_id, message)
 
         try:
-            job = file_backup_jobs.start(ip, client, ticket, on_done=on_done)
+            job = file_backup_jobs.start(ip, client, ticket, on_done=on_done, owner=user_id)
         except FileBackupError as exc:
             return f"⚠️ Backup não iniciado: {exc}"
         self._remember_explicit_target(user_id, ip)
@@ -2202,18 +2262,8 @@ class TrueConfChatOps:
             return "⛔ Acesso à consulta de backups não autorizado."
         if not args:
             return "Uso: /status_backup files_<id>"
-        job = file_backup_jobs.get(args[0])
-        if job is None:
-            return "⚠️ Tarefa não encontrada neste processo; consulte a pasta no storage."
-        if job["status"] == "SUCCESS":
-            data = job["result"]
-            return (
-                f"✅ Backup de ARQUIVOS concluído: {data['destination']}\n"
-                "Não é imagem completa nem autoriza formatação."
-            )
-        if job["status"] == "ERROR":
-            return f"❌ Backup falhou: {job['result'].get('reason', 'Falha não identificada')}"
-        return f"💾 Backup {job['status']}: {job['source_ip']} (não formate ainda)."
+        # Owner-filtered metadata survives restart. Never infer image verification.
+        return self._cmd_tarefas(user_id, args)
 
     def _cmd_dominio(self, user_id: str, args: List[str]) -> str:
         if len(args) < 2:
@@ -2320,14 +2370,11 @@ class TrueConfChatOps:
             "event": cancel_event
         }
 
-        def _worker():
+        def _worker(job_id):
             try:
                 log.info("task_started", trace_id, ip=ip, action="instalar_software", packages=resolved_pkgs)
-                res = self.winrm.run_script_file(
-                    ip,
-                    "Install-UnifiedPackages.ps1",
-                    params={"Packages": resolved_pkgs}
-                )
+                res = self.task_registry.execute(user_id, job_id, lambda: self.winrm.run_script_file(
+                    ip, "Install-UnifiedPackages.ps1", params={"Packages": resolved_pkgs}))
                 
                 # Se o usuário cancelou via chat, morre silenciosamente e aborta a notificação final.
                 if cancel_event.is_set():
@@ -2337,7 +2384,7 @@ class TrueConfChatOps:
                 if res.get("auth_failed"):
                     srv_url = self._get_server_url()
                     reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Install", error=f"Acesso negado. Baixe o agente: {srv_url}/download/UltronAgent.exe"), trace_id)
-                    if self.bot: self.bot.send_direct_message(user_id, reply)
+                    if self.bot: self.bot.send_direct_message(user_id, f"{reply}\nID da tarefa: {job_id}")
                     return
 
                 if res["success"]:
@@ -2354,14 +2401,19 @@ class TrueConfChatOps:
                     reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Install", error=res.get('stderr') or res.get('stdout') or 'Erro Winget'), trace_id)
                 
                 if self.bot:
-                    self.bot.send_direct_message(user_id, reply)
+                    self.bot.send_direct_message(user_id, f"{reply}\nID da tarefa: {job_id}")
             finally:
                 # Remove o job ativo (apenas se ainda for o mesmo job rodando)
                 if self.active_jobs.get(user_id, {}).get("event") == cancel_event:
                     self.active_jobs.pop(user_id, None)
 
-        threading.Thread(target=_worker, daemon=True).start()
-        return self.msg_builder.success("Instalação Iniciada", {"Alvo": ip, "Pacotes": ", ".join(resolved_pkgs)}, trace_id, emoji="📦")
+        try:
+            job = self._queue_tracked_worker(user_id, ip, "software_install", _worker)
+        except TaskRegistryError as exc:
+            if self.active_jobs.get(user_id, {}).get("event") is cancel_event:
+                self.active_jobs.pop(user_id, None)
+            return f"Instalacao nao iniciada: {exc}"
+        return self.msg_builder.success("Instalação Iniciada", {"Alvo": ip, "ID": job["job_id"], "Pacotes": ", ".join(resolved_pkgs)}, trace_id, emoji="📦")
 
     def _cmd_power(self, user_id: str, args: List[str], action: str, trace_id: str = None) -> str:
         """Uma solicitação, um transporte: WinRM (sem fallback após tentativa)."""

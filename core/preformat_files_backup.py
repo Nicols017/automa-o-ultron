@@ -120,8 +120,9 @@ def _parse_result(res: Any, *, client: str, ticket: str) -> Dict[str, Any]:
 class FileBackupJobs:
     def __init__(
         self, executor_factory: Optional[Callable] = None,
-        thread_factory: Optional[Callable] = None,
+        thread_factory: Optional[Callable] = None, registry=None,
     ):
+        self._registry = registry
         self._executor_factory = executor_factory or self._default_executor
         self._thread_factory = thread_factory or threading.Thread
         self._lock = threading.Lock()
@@ -134,8 +135,12 @@ class FileBackupJobs:
 
     def start(
         self, ip: str, client: str, ticket: str,
-        on_done: Optional[Callable] = None,
+        on_done: Optional[Callable] = None, owner: Optional[str] = None,
     ) -> Dict[str, Any]:
+        tracked = owner is not None
+        if tracked and self._registry is None:
+            from core.task_registry import task_registry
+            self._registry = task_registry
         config = read_file_backup_configuration()
         validate_file_backup_request(ip, client, ticket, config)
         with self._lock:
@@ -147,6 +152,11 @@ class FileBackupJobs:
                         del self._jobs[key]
                         break
             job_id = "files_" + uuid.uuid4().hex
+            if tracked:
+                try:
+                    self._registry.create(owner, ip, "file_backup", job_id=job_id)
+                except Exception:
+                    raise FileBackupError("Registro indisponivel ou equipamento ocupado; copia nao iniciada.") from None
             self._jobs[job_id] = {
                 "job_id": job_id,
                 "source_ip": ip,
@@ -159,7 +169,12 @@ class FileBackupJobs:
         def worker():
             with self._lock:
                 self._jobs[job_id]["status"] = "RUNNING"
+            result = None
+            dispatched = False
             try:
+                if tracked and not self._registry.begin(owner, job_id):
+                    raise FileBackupError("Tarefa ja entregue ou encerrada; copia nao reenviada.")
+                dispatched = True
                 result = self._executor_factory().run_script_file(
                     ip, "Backup-UserData.ps1",
                     params={
@@ -178,7 +193,10 @@ class FileBackupJobs:
                     "mdt_authorized": False,
                     "reason": str(exc),
                 }
-                status = "ERROR"
+                status = "UNKNOWN" if dispatched and (result is None or result.get("outcome") == "UNKNOWN") else "ERROR"
+            if tracked:
+                self._registry.finish(owner, job_id, status,
+                    "BACKUP_REPORT_VALIDATED" if status == "SUCCESS" else "NONE")
             with self._lock:
                 self._jobs[job_id].update({
                     "status": status,
@@ -195,6 +213,8 @@ class FileBackupJobs:
         try:
             self._thread_factory(target=worker, daemon=True).start()
         except Exception as exc:
+            if tracked:
+                self._registry.finish(owner, job_id, "ERROR", "NOT_STARTED")
             with self._lock:
                 del self._jobs[job_id]
             raise FileBackupError("Não foi possível iniciar a tarefa.") from exc

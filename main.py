@@ -63,6 +63,9 @@ bot = TrueConfBot(
 
 @app.on_event("startup")
 async def startup_event():
+    from core.task_registry import task_registry
+    if task_registry.acquire_runtime():
+        task_registry.recover_after_restart()
     # Windows packages are built explicitly in CI, never on server startup.
 
     if bot.bot_password or bot.api_token:
@@ -71,6 +74,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     bot.stop_polling()
+    # Keep the runtime lease until process exit: daemon workers may still be active.
 
 # --- Schemas ---
 
@@ -760,8 +764,17 @@ def scan_bench_network(timeout: float = Query(0.3, description="Timeout de conex
 def diagnose_machine(req: DiagnosticRequest, request: Request):
     """Executa varredura de hardware e análise de IA na máquina alvo sem alterar configurações"""
     require_operator(request)
-    result = orchestrator.run_diagnostics_only(req.ip)
-    return result
+    from core.task_registry import task_registry, TaskRegistryError
+    try:
+        job = task_registry.create("api_operator", req.ip, "diagnose")
+    except TaskRegistryError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    try:
+        result = task_registry.execute("api_operator", job["job_id"],
+            lambda: orchestrator.run_diagnostics_only(req.ip))
+    except Exception:
+        return {"success": False, "job_id": job["job_id"], "outcome": "UNKNOWN"}
+    return dict(result, job_id=job["job_id"])
 
 # --- Rotas de Ações Rápidas de Bancada ---
 
@@ -774,7 +787,7 @@ def execute_backup_action(req: BackupRequest, request: Request):
     try:
         job = file_backup_jobs.start(
             req.ip, req.client_name,
-            (req.ticket_number or "").strip(),
+            (req.ticket_number or "").strip(), owner="api_operator",
         )
     except FileBackupError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
@@ -787,7 +800,27 @@ def get_backup_action(job_id: str, request: Request):
     require_operator(request)
     job = file_backup_jobs.get(job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="Tarefa não encontrada neste processo.")
+        from core.task_registry import task_registry
+        job = task_registry.get("api_operator", job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Tarefa nao encontrada.")
+    return job
+
+
+@app.get("/api/v1/tasks")
+def list_operator_tasks(request: Request):
+    require_operator(request)
+    from core.task_registry import task_registry
+    return {"tasks": task_registry.recent("api_operator")}
+
+
+@app.get("/api/v1/tasks/{job_id}")
+def get_operator_task(job_id: str, request: Request):
+    require_operator(request)
+    from core.task_registry import task_registry
+    job = task_registry.get("api_operator", job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Tarefa nao encontrada.")
     return job
 
 

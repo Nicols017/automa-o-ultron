@@ -133,3 +133,6 @@ jobs:
 
       - name: Project reliability and TrueConf integration with fake SDK
         run: python -m unittest discover -s tests -p 'test_project_reliability.py' -v
+
+      - name: Unified persistent tasks with fake executors
+        run: python -m unittest discover -s tests -p 'test_task_registry.py' -v

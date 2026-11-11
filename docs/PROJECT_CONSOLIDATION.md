@@ -77,8 +77,9 @@ Todos os transportes sao falsos; nenhum contato com TrueConf ou equipamento.
 CI roda essa suite e as regressoes existentes no Linux e Windows.
 
 ## O que ainda falta no projeto
-1. **Jobs unificados persistentes:** fila do agente ja e persistente; instalacoes,
-   outros jobs de ChatOps e scheduler ainda misturam memoria/threads.
+1. **Jobs unificados persistentes:** primeira etapa para diagnosticos, instalacoes
+   de software e copias de arquivos em UNIFIED_TASKS.md. Outros jobs de ChatOps
+   e scheduler ainda misturam memoria/threads.
    Modelar estados, proprietario, idempotencia e reconciliacao antes de trocar
    transporte ou habilitar mais acoes automaticas.
 2. **Identidade confiavel dos equipamentos:** inventario por serial/MAC/hostname,
