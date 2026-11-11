@@ -29,19 +29,6 @@ from core.network_scanner import NetworkScanner
 from core.orchestrator import LabOrchestrator
 from core.package_manager import UnifiedPackageManager
 from chatops.bot import TrueConfBot
-from core.public_tools import (
-    MacVendorResolver,
-    NetworkDiagnosticsService,
-    LabWeatherService,
-    DnsDiagnosticsService,
-    CveSecurityService,
-    WindowsErrorLookupService,
-    QrCodeService,
-    CisaKevService,
-    NtpTimeService,
-    GitHubToolsVersionService,
-    TechWisdomService
-)
 from core.agent_builder import agent_builder
 from core.agent_runtime import agent_task_mgr
 from core.agent_auth import AgentAuthenticator, require_operator
@@ -754,69 +741,8 @@ def list_cached_agents(request: Request):
 
 # --- Rotas de Telemetria e Ferramentas Públicas (Public APIs) ---
 
-@app.get("/api/v1/telemetry/wan")
-def get_wan_telemetry():
-    """Retorna telemetria de WAN, provedor ISP, ASN, geolocalização e latência do laboratório"""
-    return NetworkDiagnosticsService.get_wan_diagnostics()
-
-@app.get("/api/v1/telemetry/thermal")
-def get_thermal_telemetry(lat: float = Query(-20.3155, description="Latitude do laboratório"), lon: float = Query(-40.3128, description="Longitude do laboratório")):
-    """Retorna clima ambiente e análise de headroom térmico para testes de estresse (Burn-in)"""
-    return LabWeatherService.get_ambient_conditions(lat=lat, lon=lon)
-
-@app.get("/api/v1/tools/cve/search")
-def search_cve_vulnerabilities(package: str = Query(..., description="Nome do pacote/software"), version: Optional[str] = Query(None, description="Versão específica")):
-    """Consulta banco público de vulnerabilidades de segurança (OSV.dev & CIRCL CVE)"""
-    return CveSecurityService.search_vulnerabilities(package, version)
-
-@app.get("/api/v1/tools/cve/kev")
-def get_cisa_kev_feed(limit: int = Query(6, description="Quantidade máxima de CVEs recentes")):
-    """Retorna o catálogo CISA de vulnerabilidades exploradas ativamente na internet"""
-    return CisaKevService.get_latest_exploited_vulns(limit=limit)
-
-@app.get("/api/v1/tools/windows-error/lookup")
-def lookup_windows_error(code: str = Query(..., description="Código de erro hexadecimal (ex: 0x80070005)")):
-    """Decodifica códigos de erro hexadecimais do Windows/BSOD com causas e scripts de correção"""
-    return WindowsErrorLookupService.lookup(code)
-
-@app.get("/api/v1/tools/dns/inspect")
-def inspect_domain_dns(domain: str = Query(..., description="Nome do domínio (ex: penserede.local)"), dns_server: Optional[str] = Query(None, description="Servidor DNS")):
-    """Inspeciona resolução DNS e controladores de domínio AD (registros SRV) antes do Domain Join"""
-    return DnsDiagnosticsService.inspect_domain(domain, dns_server)
-
-@app.get("/api/v1/tools/ntp/check")
-def check_ntp_drift():
-    """Verifica sincronismo atômico do relógio local contra servidores NTP para autenticação Kerberos"""
-    return NtpTimeService.check_clock_drift()
-
-@app.get("/api/v1/tools/versions/check")
-def check_bench_tools_versions():
-    """Consulta as versões mais recentes das ferramentas de automação no GitHub Releases"""
-    return {
-        "tools": GitHubToolsVersionService.get_tools_versions()
-    }
-
-@app.get("/api/v1/tools/quote")
-def get_tech_quote():
-    """Retorna citação inspiracional de tecnologia para o console"""
-    return TechWisdomService.get_quote()
-
-@app.get("/api/v1/tools/mac/resolve")
-def resolve_mac_vendor(mac: str = Query(..., description="Endereço MAC (ex: 00:14:22:01:23:45)")):
-    """Identifica o fabricante de hardware OEM a partir do endereço MAC"""
-    return MacVendorResolver.resolve(mac)
-
-@app.get("/api/v1/tools/qr")
-def get_qr_code_url(data: str = Query(..., description="Conteúdo textual ou URL para o QR Code"), size: int = Query(250, description="Tamanho em pixels")):
-    """Gera URL de QR Code para visualização ou handoff mobile"""
-    qr_url = QrCodeService.generate_qr_url(data, size)
-    return {
-        "data": data,
-        "size": size,
-        "qr_url": qr_url
-    }
-
-# --- Rotas de Bancada & Pipeline ---
+# Endpoints auxiliares exclusivos do painel foram retirados.
+# Serviços equivalentes permanecem acessíveis ao TrueConf pelos módulos internos.
 
 @app.get("/api/v1/bench/scan")
 def scan_bench_network(timeout: float = Query(0.3, description="Timeout de conexão por porta em segundos")):
