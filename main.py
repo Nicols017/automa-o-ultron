@@ -235,7 +235,7 @@ def download_ultron_agent():
     if os.environ.get("ULTRON_AGENT_DOWNLOAD_ENABLED") != "true":
         raise HTTPException(status_code=503, detail="Distribuicao suspensa ate homologacao do pacote Windows revisado.")
     try:
-        bin_info = agent_builder.get_latest_agent_binary()
+        bin_info = agent_builder.get_distributable_agent_binary()
     except AgentPackageError:
         raise HTTPException(status_code=503, detail="Pacote Windows ausente ou nao validado.")
 

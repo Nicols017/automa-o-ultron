@@ -606,8 +606,11 @@ class TrueConfChatOps:
                 extra_msg = m_file.group(2).strip().strip("\"'“”‘’") if m_file.group(2) else ""
                 resolved_target = self._resolve_trueconf_user(target_raw)
 
-                from core.agent_builder import agent_builder
-                bin_info = agent_builder.get_latest_agent_binary()
+                from core.agent_builder import agent_builder, AgentPackageError
+                try:
+                    bin_info = agent_builder.get_distributable_agent_binary()
+                except AgentPackageError:
+                    return "Distribuicao do agente suspensa: pacote ausente, divergente ou ainda nao homologado."
                 found_exe = bin_info["file_path"]
                 version = bin_info["version"]
                 versioned_filename = bin_info["filename"]
@@ -2685,37 +2688,26 @@ class TrueConfChatOps:
         return f"🔍 Consultando catálogo global do UniGetUI para '{query}'..."
 
     def _cmd_download_agent(self, user_id: str) -> str:
-        """Envia o executável UltronAgent.exe diretamente como anexo no TrueConf e fornece link"""
-        from core.agent_builder import agent_builder
-        bin_info = agent_builder.get_latest_agent_binary()
-        found_path = bin_info["file_path"]
-        version = bin_info["version"]
-        versioned_filename = bin_info["filename"]
-
-        # Se o bot estiver conectado, envia o arquivo diretamente como anexo no TrueConf
-        if self.bot and found_path and os.path.exists(found_path):
+        """Distribute only a verified package after explicit release enablement."""
+        from core.agent_builder import agent_builder, AgentPackageError
+        try:
+            info = agent_builder.get_distributable_agent_binary()
+        except AgentPackageError:
+            return "Distribuicao do agente suspensa: pacote ausente, divergente ou ainda nao homologado."
+        sent = False
+        if self.bot:
             try:
-                self.bot.send_direct_file(
-                    user_id=user_id,
-                    file_path=found_path,
-                    caption=f"📎 {versioned_filename} (Atualizado) — Agente de Automação de Bancada (Pense Rede)",
-                    filename=versioned_filename
-                )
-            except Exception as e:
-                logger.warning(f"Não foi possível anexar arquivo no chat: {e}")
-
-        srv_url = self._get_server_url()
+                sent = bool(self.bot.send_direct_file(
+                    user_id=user_id, file_path=info["file_path"],
+                    caption="UltronAgent: instalacao explicita; WinRM nativo separado.",
+                    filename=info["filename"]))
+            except Exception:
+                logger.warning("Nao foi possivel anexar o pacote do agente.")
+        delivery = "Anexo enviado." if sent else "Anexo nao enviado; use o link do pacote revisado."
         return (
-            f"📥 ULTRON AGENT v{version} (.EXE) — PRONTO PARA USO\n\n"
-            f"📎 O arquivo {versioned_filename} foi enviado como anexo diretamente aqui no seu chat!\n\n"
-            f"💡 Novidades desta versão (v{version}):\n"
-            "• Auto-Atualização Silenciosa OTA (Over-The-Air)\n"
-            "• Detecção em tempo real do Usuário Logado na máquina\n"
-            "• Captura automática de ID do AnyDesk\n"
-            "• Auto-instalação como Serviço Windows SYSTEM (UltronService)\n"
-            "• Suporte a instalações e bundles universais do UniGetUI\n\n"
-            "🌐 Link para download direto no navegador:\n"
-            f"{srv_url}/download/UltronAgent.exe"
+            f"UltronAgent v{info['version']}. {delivery}\n"
+            "Sem instalacao ou atualizacao automatica. WinRM e um recurso separado.\n"
+            f"{self._get_server_url()}/download/UltronAgent.exe"
         )
 
     # ------------------------------------------------------------------

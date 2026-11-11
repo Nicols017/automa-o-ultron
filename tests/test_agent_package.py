@@ -1,8 +1,11 @@
 """Offline integrity checks against disposable package fixtures, never real executables."""
+import ast
+import types
 import hashlib
 import json
 from pathlib import Path
 import tempfile
+from unittest.mock import Mock, patch
 import unittest
 from core.agent_builder import AgentBuilder, AgentPackageError
 
@@ -27,6 +30,45 @@ class PackageTests(unittest.TestCase):
 
     def write_manifest(self):
         (self.package / "manifest.json").write_text(json.dumps(self.manifest), encoding="utf-8")
+
+    def test_distribution_disabled_even_with_valid_package(self):
+        with patch.dict("os.environ", {}, clear=True), self.assertRaises(AgentPackageError):
+            self.builder.get_distributable_agent_binary()
+
+    def test_distribution_enabled_still_requires_integrity(self):
+        self.binary.write_bytes(b"tampered")
+        with patch.dict("os.environ", {"ULTRON_AGENT_DOWNLOAD_ENABLED": "true"}):
+            with self.assertRaises(AgentPackageError):
+                self.builder.get_distributable_agent_binary()
+
+    def test_chatops_missing_package_never_sends_file(self):
+        source = Path(__file__).resolve().parents[1] / "chatops/chatops.py"
+        method = next(node for node in ast.walk(ast.parse(source.read_text(encoding="utf-8")))
+                      if isinstance(node, ast.FunctionDef) and node.name == "_cmd_download_agent")
+        namespace = {"logger": Mock()}
+        exec(compile(ast.Module(body=[method], type_ignores=[]), str(source), "exec"), namespace)
+        caller = types.SimpleNamespace(bot=Mock(), _get_server_url=lambda: "https://example.invalid")
+        with patch("core.agent_builder.agent_builder.get_distributable_agent_binary",
+                   side_effect=AgentPackageError("private-path-secret")):
+            result = namespace["_cmd_download_agent"](caller, "fixture-user")
+        caller.bot.send_direct_file.assert_not_called()
+        self.assertIn("suspensa", result)
+        self.assertNotIn("private-path-secret", result)
+
+    def test_chatops_does_not_claim_unsent_attachment(self):
+        source = Path(__file__).resolve().parents[1] / "chatops/chatops.py"
+        method = next(node for node in ast.walk(ast.parse(source.read_text(encoding="utf-8")))
+                      if isinstance(node, ast.FunctionDef) and node.name == "_cmd_download_agent")
+        namespace = {"logger": Mock()}
+        exec(compile(ast.Module(body=[method], type_ignores=[]), str(source), "exec"), namespace)
+        bot = Mock()
+        bot.send_direct_file.return_value = False
+        caller = types.SimpleNamespace(bot=bot, _get_server_url=lambda: "https://example.invalid")
+        with patch("core.agent_builder.agent_builder.get_distributable_agent_binary",
+                   return_value={"version": "2.3.0", "file_path": "fixture", "filename": "fixture.exe"}):
+            result = namespace["_cmd_download_agent"](caller, "fixture-user")
+        self.assertIn("Anexo nao enviado", result)
+        self.assertNotIn("OTA", result)
 
     def test_valid_manifest(self):
         result = self.builder.get_latest_agent_binary()

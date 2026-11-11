@@ -64,6 +64,11 @@ class AgentBuilder:
         except (OSError, ValueError, TypeError, KeyError):
             raise AgentPackageError("Pacote ausente ou divergente; gere e homologue um pacote revisado.") from None
 
+    def get_distributable_agent_binary(self):
+        if os.environ.get("ULTRON_AGENT_DOWNLOAD_ENABLED") != "true":
+            raise AgentPackageError("Distribuicao suspensa ate homologacao do pacote Windows.")
+        return self.get_latest_agent_binary()
+
     def needs_compilation(self):
         # Compatibility with callers; no timestamps or fallback to legacy executables.
         try:

@@ -139,3 +139,7 @@ Fontes:
   Windows PowerShell 5.1 separado; nao usar esse harness por dot-sourcing.
 - Continuam pendentes VMs descartaveis para SCM/ACL/GPO reais, Windows PT/EN,
   dominio/workgroup, rede publica/privada e validacao de tarefas privilegiadas.
+
+O mesmo bloqueio de distribuicao e validacao de manifesto se aplica aos anexos
+do agente no TrueConf. Pacote ausente/divergente retorna orientacao sem anexar
+arquivo. A resposta nao afirma envio de anexo quando o bot informa falha.
