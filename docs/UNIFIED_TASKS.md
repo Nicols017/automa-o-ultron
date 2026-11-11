@@ -19,15 +19,19 @@ maquinas/servicos reais. TrueConf permanece interface; sem dashboard e sem FOG.
 ## Estados e evidencias
 core/task_registry.py usa data/tasks.sqlite3 (ULTRON_JOB_DB).
 Guarda ID, proprietario, IP, acao, estado, evidencia e horarios.
-Nao guarda comandos, argumentos, pacotes, senhas, tokens, stdout ou laudos.
+Nao guarda comandos, argumentos brutos, senhas, tokens, stdout ou laudos.
+Para software, task_packages guarda resumo tipado por programa solicitado;
+consulte SOFTWARE_VERIFICATION.md.
 
 QUEUED: registrado antes da thread.
 RUNNING: entrega ao executor reservada atomicamente, uma unica vez por ID.
 SUCCESS: executor informou sucesso ou relatorio passou no validador.
+PARTIAL: somente parte da instalacao foi confirmada.
 ERROR: falha explicita ou tarefa nao iniciada.
 UNKNOWN: transporte/resultado sem confirmacao ou encerramento antes de concluir.
 
-EXECUTOR_REPORTED_SUCCESS nao e verificacao independente de instalacao.
+EXECUTOR_REPORTED_SUCCESS nao e verificacao independente.
+SOFTWARE_PRESENCE_VERIFIED identifica presenca/versao no inventario, nao saude/licenca.
 BACKUP_REPORT_VALIDATED e apenas relatorio Robocopy validado, nao imagem completa.
 NOT_STARTED identifica worker que nao iniciou entrega.
 Nenhum estado libera formatacao, restauracao ou prova de imagem Macrium/FOG.

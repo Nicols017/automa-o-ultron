@@ -1,4 +1,4 @@
-"""Unified metadata registry. Never stores commands/results or retries execution."""
+"""Unified metadata registry. Stores metadata and typed package outcomes; never raw output/commands or retries."""
 from contextlib import contextmanager
 import ipaddress
 import os
@@ -9,8 +9,8 @@ import time
 import uuid
 
 ACTIONS = {"diagnose", "software_install", "file_backup"}
-TERMINAL = {"SUCCESS", "ERROR", "UNKNOWN"}
-EVIDENCE = {"NONE", "EXECUTOR_REPORTED_SUCCESS", "BACKUP_REPORT_VALIDATED", "NOT_STARTED"}
+TERMINAL = {"SUCCESS", "PARTIAL", "ERROR", "UNKNOWN"}
+EVIDENCE = {"NONE", "EXECUTOR_REPORTED_SUCCESS", "BACKUP_REPORT_VALIDATED", "NOT_STARTED", "SOFTWARE_PRESENCE_VERIFIED"}
 
 
 class TaskRegistryError(ValueError):
@@ -41,6 +41,11 @@ class TaskRegistry:
                 created_at REAL NOT NULL, updated_at REAL NOT NULL)""")
             db.execute("""CREATE UNIQUE INDEX IF NOT EXISTS one_active_task_per_target
                         ON tasks(target_ip) WHERE status IN ('QUEUED','RUNNING')""")
+            db.execute("""CREATE TABLE IF NOT EXISTS task_packages (
+                job_id TEXT NOT NULL REFERENCES tasks(job_id),
+                requested TEXT NOT NULL, manager TEXT NOT NULL, installer_exit_code INTEGER,
+                installer_reported_success INTEGER, status TEXT NOT NULL, version TEXT,
+                PRIMARY KEY(job_id,requested))""")
             if os.name == "posix":
                 self.path.chmod(0o600)
             with db:
@@ -118,13 +123,19 @@ class TaskRegistry:
                 "WHERE owner=? AND job_id=? AND status='QUEUED'",
                 (time.time(), actor(owner), job_id)).rowcount == 1
 
-    def finish(self, owner, job_id, status, evidence="NONE"):
+    def finish(self, owner, job_id, status, evidence="NONE", package_results=None):
         if status not in TERMINAL or evidence not in EVIDENCE:
             raise TaskRegistryError("Resultado invalido.")
         with self.connect() as db:
-            return db.execute("UPDATE tasks SET status=?,evidence=?,updated_at=? "
+            changed = db.execute("UPDATE tasks SET status=?,evidence=?,updated_at=? "
                 "WHERE owner=? AND job_id=? AND status IN ('QUEUED','RUNNING')",
                 (status, evidence, time.time(), actor(owner), job_id)).rowcount == 1
+            if changed and package_results is not None:
+                for row in package_results:
+                    db.execute("INSERT INTO task_packages VALUES (?,?,?,?,?,?,?)",
+                        (job_id, row["requested"], row["manager"], row["installer_exit_code"],
+                         row["installer_reported_success"], row["status"], row["version"]))
+            return changed
 
     def execute(self, owner, job_id, operation):
         if not self.begin(owner, job_id):
@@ -134,6 +145,17 @@ class TaskRegistry:
         except Exception:
             self.finish(owner, job_id, "UNKNOWN")
             raise
+        record = self.get(owner, job_id)
+        if record and record["action"] == "software_install":
+            from core.software_installation import validated_summary
+            try:
+                status, rows = validated_summary(result)
+            except (ValueError, TypeError, KeyError, AttributeError):
+                self.finish(owner, job_id, "UNKNOWN")
+            else:
+                self.finish(owner, job_id, status,
+                    "SOFTWARE_PRESENCE_VERIFIED" if status == "SUCCESS" else "NONE", package_results=rows)
+            return result
         if not isinstance(result, dict) or result.get("outcome") == "UNKNOWN":
             status = "UNKNOWN"
         elif result.get("success") is True and not result.get("error"):
@@ -150,7 +172,17 @@ class TaskRegistry:
         with self.connect() as db:
             row = db.execute("SELECT * FROM tasks WHERE owner=? AND job_id=?",
                              (actor(owner), job_id)).fetchone()
-            return dict(row) if row else None
+            if row is None:
+                return None
+            record = dict(row)
+            if record["action"] == "software_install":
+                record["package_results"] = []
+                for item in db.execute("SELECT requested,manager,installer_exit_code,installer_reported_success,status,version FROM task_packages WHERE job_id=? ORDER BY requested", (job_id,)):
+                    package = dict(item)
+                    if package["installer_reported_success"] is not None:
+                        package["installer_reported_success"] = bool(package["installer_reported_success"])
+                    record["package_results"].append(package)
+            return record
 
     def recent(self, owner, limit=10):
         if not isinstance(limit, int) or not 1 <= limit <= 50:

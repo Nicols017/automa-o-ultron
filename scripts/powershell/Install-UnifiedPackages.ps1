@@ -1,8 +1,9 @@
-param (
+﻿param (
     [string[]]$Packages = @(),
     [string]$BundleJsonPath = "",
     [string]$RawJsonContent = "",
-    [bool]$Interactive = $false
+    [bool]$Interactive = $false,
+    [ValidatePattern('^[a-fA-F0-9]{32}$')][string]$RunId = ([guid]::NewGuid().ToString('N'))
 )
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -41,7 +42,7 @@ if ($Packages -and $Packages.Count -gt 0) {
 
 if ($targetPackages.Count -eq 0) {
     Write-Host "⚠️ Nenhum pacote especificado para instalação." -ForegroundColor Yellow
-    exit 0
+    exit 1
 }
 
 Write-Host "==================================================" -ForegroundColor Cyan
@@ -64,12 +65,14 @@ $wingetExe = Get-RealWingetPath
 $chocoAvailable = $null -ne (Get-Command choco.exe -ErrorAction SilentlyContinue)
 $scoopAvailable = $null -ne (Get-Command scoop.exe -ErrorAction SilentlyContinue)
 
+$attempts = @{}
 $successList = @()
 $failedList = @()
 
 foreach ($pkgQuery in $targetPackages) {
     $clean = $pkgQuery.Trim()
     if (-not $clean) { continue }
+    $attempts[$clean] = @{ requested=$clean; manager='unknown'; exit_code=$null; reported_success=$false }
 
     Write-Host "`n[*] Processando e buscando: $clean..." -ForegroundColor Cyan
 
@@ -90,18 +93,23 @@ foreach ($pkgQuery in $targetPackages) {
     # 1. Se contém ponto (ex: Valve.Steam, Google.Chrome), tenta instalação direta por ID exato no Winget
     if ($clean -match "\.") {
         Write-Host "    -> Tentando Winget por ID exato: $clean (Modo: $displayMode)" -ForegroundColor Gray
-        $wArgs = @("install", "--id", $clean, "-e", $displayMode, "--accept-package-agreements", "--accept-source-agreements", "--force", "--scope", "machine")
+        $wArgs = @("install", "--id", $clean, "-e", $displayMode, "--accept-package-agreements", "--accept-source-agreements", "--scope", "machine")
         $p = Start-Process -FilePath $wingetExe -ArgumentList $wArgs -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
+        $attempts[$clean].manager = 'winget'
+        $attempts[$clean].exit_code = if ($p) { $p.ExitCode } else { $null }
         
         # Se falhou no modo interativo, tenta fallback no modo silencioso
         if ((-not $p -or ($p.ExitCode -ne 0 -and $p.ExitCode -ne -1978335189)) -and $Interactive) {
-            $wArgsSilent = @("install", "--id", $clean, "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--force", "--scope", "machine")
+            $wArgsSilent = @("install", "--id", $clean, "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--scope", "machine")
             $p = Start-Process -FilePath $wingetExe -ArgumentList $wArgsSilent -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
+            $attempts[$clean].manager = 'winget'
+            $attempts[$clean].exit_code = if ($p) { $p.ExitCode } else { $null }
         }
 
         if ($p -and ($p.ExitCode -eq 0 -or $p.ExitCode -eq -1978335189)) {
-            Write-Host "    [OK] Instalado com sucesso via Winget (ID)!" -ForegroundColor Green
+            Write-Host "    [OK] Instalador reportou conclusao via Winget (ID)!" -ForegroundColor Green
             $successList += $clean
+            $attempts[$clean].reported_success = $true
             $installed = $true
             continue
         }
@@ -110,33 +118,43 @@ foreach ($pkgQuery in $targetPackages) {
     # 2. Busca e instala por Nome ou Query livre no Winget
     if (-not $installed) {
         Write-Host "    -> Buscando correspondência universal no catálogo Winget: '$clean'..." -ForegroundColor Gray
-        $wArgs = @("install", "--name", $clean, $displayMode, "--accept-package-agreements", "--accept-source-agreements", "--force", "--scope", "machine")
+        $wArgs = @("install", "--name", $clean, $displayMode, "--accept-package-agreements", "--accept-source-agreements", "--scope", "machine")
         $p = Start-Process -FilePath $wingetExe -ArgumentList $wArgs -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
+        $attempts[$clean].manager = 'winget'
+        $attempts[$clean].exit_code = if ($p) { $p.ExitCode } else { $null }
 
         if ((-not $p -or ($p.ExitCode -ne 0 -and $p.ExitCode -ne -1978335189)) -and $Interactive) {
-            $wArgsSilent = @("install", "--name", $clean, "--silent", "--accept-package-agreements", "--accept-source-agreements", "--force", "--scope", "machine")
+            $wArgsSilent = @("install", "--name", $clean, "--silent", "--accept-package-agreements", "--accept-source-agreements", "--scope", "machine")
             $p = Start-Process -FilePath $wingetExe -ArgumentList $wArgsSilent -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
+            $attempts[$clean].manager = 'winget'
+            $attempts[$clean].exit_code = if ($p) { $p.ExitCode } else { $null }
         }
 
         if ($p -and ($p.ExitCode -eq 0 -or $p.ExitCode -eq -1978335189)) {
-            Write-Host "    [OK] Instalado com sucesso via Winget (Nome)!" -ForegroundColor Green
+            Write-Host "    [OK] Instalador reportou conclusao via Winget (Nome)!" -ForegroundColor Green
             $successList += $clean
+            $attempts[$clean].reported_success = $true
             $installed = $true
             continue
         }
 
         # 2.1 Fallback de Query livre no Winget
-        $wArgsQuery = @("install", "-q", $clean, $displayMode, "--accept-package-agreements", "--accept-source-agreements", "--force", "--scope", "machine")
+        $wArgsQuery = @("install", "-q", $clean, $displayMode, "--accept-package-agreements", "--accept-source-agreements", "--scope", "machine")
         $p2 = Start-Process -FilePath $wingetExe -ArgumentList $wArgsQuery -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
+        $attempts[$clean].manager = 'winget'
+        $attempts[$clean].exit_code = if ($p2) { $p2.ExitCode } else { $null }
 
         if ((-not $p2 -or ($p2.ExitCode -ne 0 -and $p2.ExitCode -ne -1978335189)) -and $Interactive) {
-            $wArgsQuerySilent = @("install", "-q", $clean, "--silent", "--accept-package-agreements", "--accept-source-agreements", "--force", "--scope", "machine")
+            $wArgsQuerySilent = @("install", "-q", $clean, "--silent", "--accept-package-agreements", "--accept-source-agreements", "--scope", "machine")
             $p2 = Start-Process -FilePath $wingetExe -ArgumentList $wArgsQuerySilent -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
+            $attempts[$clean].manager = 'winget'
+            $attempts[$clean].exit_code = if ($p2) { $p2.ExitCode } else { $null }
         }
 
         if ($p2 -and ($p2.ExitCode -eq 0 -or $p2.ExitCode -eq -1978335189)) {
-            Write-Host "    [OK] Instalado com sucesso via Winget (Query)!" -ForegroundColor Green
+            Write-Host "    [OK] Instalador reportou conclusao via Winget (Query)!" -ForegroundColor Green
             $successList += $clean
+            $attempts[$clean].reported_success = $true
             $installed = $true
             continue
         }
@@ -147,9 +165,12 @@ foreach ($pkgQuery in $targetPackages) {
         Write-Host "    -> Tentando no catálogo Chocolatey: '$clean'..." -ForegroundColor Yellow
         $cArgs = @("install", $clean, "-y", "--no-progress")
         $cp = Start-Process -FilePath "choco.exe" -ArgumentList $cArgs -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
+        $attempts[$clean].manager = 'chocolatey'
+        $attempts[$clean].exit_code = if ($cp) { $cp.ExitCode } else { $null }
         if ($cp -and $cp.ExitCode -eq 0) {
-            Write-Host "    [OK] Instalado com sucesso via Chocolatey!" -ForegroundColor Green
+            Write-Host "    [OK] Instalador reportou conclusao via Chocolatey!" -ForegroundColor Green
             $successList += $clean
+            $attempts[$clean].reported_success = $true
             $installed = $true
             continue
         }
@@ -160,9 +181,12 @@ foreach ($pkgQuery in $targetPackages) {
         Write-Host "    -> Tentando no catálogo Scoop: '$clean'..." -ForegroundColor Yellow
         $sArgs = @("install", $clean)
         $sp = Start-Process -FilePath "scoop.exe" -ArgumentList $sArgs -Wait -WindowStyle Hidden -PassThru -ErrorAction SilentlyContinue
+        $attempts[$clean].manager = 'scoop'
+        $attempts[$clean].exit_code = if ($sp) { $sp.ExitCode } else { $null }
         if ($sp -and $sp.ExitCode -eq 0) {
-            Write-Host "    [OK] Instalado com sucesso via Scoop!" -ForegroundColor Green
+            Write-Host "    [OK] Instalador reportou conclusao via Scoop!" -ForegroundColor Green
             $successList += $clean
+            $attempts[$clean].reported_success = $true
             $installed = $true
             continue
         }
@@ -177,7 +201,14 @@ foreach ($pkgQuery in $targetPackages) {
 Write-Host "`n==================================================" -ForegroundColor Cyan
 Write-Host " 📊 RESUMO DA INSTALAÇÃO UNIFICADA" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host "✅ Sucesso: $($successList.Count) pacotes ($($successList -join ', '))" -ForegroundColor Green
+Write-Host "Retorno positivo do instalador (a verificar): $($successList.Count) pacotes ($($successList -join ', '))" -ForegroundColor Green
+$attemptReport = @{
+    schema_version = 1
+    run_id = $RunId
+    packages = @($targetPackages | ForEach-Object { if ($attempts.ContainsKey($_.Trim())) { $attempts[$_.Trim()] } })
+}
+Write-Output ('ULTRON_INSTALL_ATTEMPTS_JSON:' + ($attemptReport | ConvertTo-Json -Depth 5 -Compress))
+Write-Host 'Presenca e versao exigem verificacao separada.'
 if ($failedList.Count -gt 0) {
     Write-Host "❌ Falhas/Não encontrados: $($failedList.Count) pacotes ($($failedList -join ', '))" -ForegroundColor Red
     exit 1

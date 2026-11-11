@@ -36,6 +36,8 @@ on:
       - "docker-compose.yml"
       - ".dockerignore"
       - "scripts/powershell/Bootstrap-Ultron.ps1"
+      - "scripts/powershell/Install-UnifiedPackages.ps1"
+      - "scripts/powershell/Verify-InstalledPackages.ps1"
       - "tests/test_windows_agent_review.py"
   workflow_dispatch:
 
@@ -139,3 +141,14 @@ jobs:
 
       - name: Typed diagnostic clarification and exact offline inventory
         run: python -m unittest discover -s tests -p 'test_clarification.py' -v
+
+      - name: Per-package installation assessment with fake executors
+        run: python -m unittest discover -s tests -p 'test_software_installation.py' -v
+      - name: Package query and installer reporting with all native commands mocked
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & powershell.exe -NoProfile -NonInteractive -File .\tests\Test-PackageVerificationOffline.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & powershell.exe -NoProfile -NonInteractive -File .\tests\Test-InstallAttemptsOffline.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

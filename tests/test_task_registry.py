@@ -175,8 +175,8 @@ class TrackedChatOpsTests(RegistryFixture):
         reply = self.client._cmd_softwares("tech", ["192.0.2.50", "Chrome"])
         record = self.registry.recent("tech")[0]
         self.assertIn(record["job_id"], reply)
-        self.assertEqual(record["status"], "SUCCESS")
-        self.client.winrm.run_script_file.assert_called_once()
+        self.assertEqual(record["status"], "UNKNOWN")
+        self.assertEqual(self.client.winrm.run_script_file.call_count, 2)
         self.assertIn(record["job_id"], self.client.bot.send_direct_message.call_args.args[1])
 
     def test_diagnostic_uncertainty_is_persisted_with_id(self):

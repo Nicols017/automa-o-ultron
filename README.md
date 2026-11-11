@@ -126,3 +126,7 @@ Diagnosticos, instalacoes de softwares e backups de arquivos passam a ter histor
 ## Esclarecimento de diagnostico
 
 No modo semantico readonly autorizado, o Ultron pode pedir o alvo faltante e retomar o diagnostico. Hostname/serial/MAC de inventario offline exigem confirmacao do IP. Veja [fluxo, configuracao e limites](docs/DIAGNOSTIC_CLARIFICATION.md).
+
+## Verificacao de software
+
+/softwares e APIs de instalacao distinguem retorno do instalador de presenca/versao encontradas, com resultado por programa e estado PARTIAL quando aplicavel. Detalhes ficam em /tarefa <ID>. Veja [criterios e limites](docs/SOFTWARE_VERIFICATION.md). Presenca nao comprova funcionamento ou licenca.

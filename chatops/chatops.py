@@ -2080,8 +2080,13 @@ class TrueConfChatOps:
                 lines.append("Resultado desconhecido: confira o equipamento antes de solicitar nova execucao.")
             elif job["evidence"] == "EXECUTOR_REPORTED_SUCCESS":
                 lines.append("Ferramenta informou sucesso; isso nao substitui verificacao independente.")
+            elif job["evidence"] == "SOFTWARE_PRESENCE_VERIFIED":
+                lines.append("Programas encontrados no inventario com versao; funcionamento/licenca nao verificados.")
             elif job["evidence"] == "BACKUP_REPORT_VALIDATED":
                 lines.append("Relatorio de copia de arquivos validado; nao e imagem nem autoriza formatacao.")
+            if job.get("package_results"):
+                from core.software_installation import format_installation
+                lines.extend(format_installation(job).splitlines()[1:])
         return "\n".join(lines)
 
     def _cmd_contexto(self, user_id: str) -> str:
@@ -2410,33 +2415,16 @@ class TrueConfChatOps:
         def _worker(job_id):
             try:
                 log.info("task_started", trace_id, ip=ip, action="instalar_software", packages=resolved_pkgs)
-                res = self.task_registry.execute(user_id, job_id, lambda: self.winrm.run_script_file(
-                    ip, "Install-UnifiedPackages.ps1", params={"Packages": resolved_pkgs}))
+                from core.software_installation import install_and_verify, format_installation
+                res = self.task_registry.execute(user_id, job_id,
+                    lambda: install_and_verify(self.winrm, ip, resolved_pkgs))
                 
                 # Se o usuário cancelou via chat, morre silenciosamente e aborta a notificação final.
                 if cancel_event.is_set():
                     log.info("task_cancelled", trace_id, ip=ip)
                     return
 
-                if res.get("auth_failed"):
-                    srv_url = self._get_server_url()
-                    reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Install", error=f"Acesso negado. Baixe o agente: {srv_url}/download/UltronAgent.exe"), trace_id)
-                    if self.bot: self.bot.send_direct_message(user_id, f"{reply}\nID da tarefa: {job_id}")
-                    return
-
-                if res["success"]:
-                    reply = self.msg_builder.success(
-                        "SOFTWARES INSTALADOS",
-                        {
-                            "Computador": ip,
-                            "Pacotes processados": ", ".join(resolved_pkgs),
-                            "Motor": "Winget / UniGetUI"
-                        },
-                        trace_id, emoji="📦"
-                    )
-                else:
-                    reply = self.msg_builder.error(WinRMResult(ok=False, host=ip, command="Install", error=res.get('stderr') or res.get('stdout') or 'Erro Winget'), trace_id)
-                
+                reply = format_installation(res)
                 if self.bot:
                     self.bot.send_direct_message(user_id, f"{reply}\nID da tarefa: {job_id}")
             finally:

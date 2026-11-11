@@ -999,27 +999,30 @@ def list_package_bundles():
         "bundles": bundles
     }
 
+def _install_verified_packages(ip, packages, interactive=False):
+    from core.software_installation import install_and_verify, package_list
+    from core.task_registry import task_registry, TaskRegistryError
+    try:
+        packages = package_list(packages)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    try:
+        job = task_registry.create("api_operator", ip, "software_install")
+    except TaskRegistryError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    result = task_registry.execute("api_operator", job["job_id"],
+        lambda: install_and_verify(orchestrator.winrm, ip, packages, interactive))
+    return dict(result, ip=ip, packages=packages, job_id=job["job_id"])
+
+
 @app.post("/api/v1/packages/install")
 def install_packages_api(request: Request, req: PackageInstallRequest):
     """Instala uma lista de pacotes via instalador unificado UniGetUI/Winget"""
     require_operator(request)
     if not req.packages:
         raise HTTPException(status_code=400, detail="Nenhum pacote selecionado para instalação.")
-    res = orchestrator.winrm.run_script_file(
-        req.ip,
-        "Install-UnifiedPackages.ps1",
-        params={
-            "Packages": req.packages,
-            "Interactive": req.interactive
-        }
-    )
-    return {
-        "success": res.get("success", False),
-        "ip": req.ip,
-        "packages": req.packages,
-        "stdout": res.get("stdout", ""),
-        "stderr": res.get("stderr", "")
-    }
+    return _install_verified_packages(req.ip, req.packages, req.interactive)
+
 
 @app.post("/api/v1/packages/upgrade_all")
 def upgrade_all_packages_api(request: Request, req: PackageUpgradeRequest):
@@ -1048,18 +1051,11 @@ def execute_install_software_action(request: Request, req: InstallSoftwareReques
     require_operator(request)
     if not req.packages:
         raise HTTPException(status_code=400, detail="Nenhum pacote selecionado")
-    res = orchestrator.winrm.run_script_file(
-        req.ip,
-        "Install-UnifiedPackages.ps1",
-        params={"Packages": req.packages, "Interactive": True}
-    )
-    return {
-        "success": res.get("success", False),
-        "ip": req.ip,
-        "installed": req.packages if res.get("success") else [],
-        "stdout": res.get("stdout", ""),
-        "stderr": res.get("stderr", "")
-    }
+    result = _install_verified_packages(req.ip, req.packages, True)
+    # Compatibility field now means observed presence, not attributed installation.
+    result["installed"] = [row["requested"] for row in result["package_results"] if row["version"]]
+    return result
+
 
 @app.post("/api/v1/bench/action/domain-join")
 def execute_domain_join_action(request: Request, req: DomainJoinRequest):

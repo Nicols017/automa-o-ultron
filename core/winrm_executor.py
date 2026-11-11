@@ -186,7 +186,7 @@ class WinRMExecutor:
                 }
 
         try:
-            with open(script_path, "r", encoding="utf-8") as f:
+            with open(script_path, "r", encoding="utf-8-sig") as f:
                 script_content = f.read()
         except UnicodeDecodeError:
             with open(script_path, "r", encoding="latin-1") as f:
