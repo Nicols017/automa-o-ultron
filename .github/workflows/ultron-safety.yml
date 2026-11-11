@@ -31,6 +31,9 @@ on:
       - "tests/test_agent_protocol_contract.py"
       - "agent/UltronAgent.cs"
       - ".github/workflows/ultron-safety.yml"
+      - "agent/**"
+      - "scripts/powershell/Bootstrap-Ultron.ps1"
+      - "tests/test_windows_agent_review.py"
   workflow_dispatch:
 
 permissions:
@@ -87,4 +90,19 @@ jobs:
           if ($errors.Count -gt 0) {
             $errors | ForEach-Object { Write-Error $_.Message }
             exit 1
+          }
+
+      - name: Windows agent offline behavior tests
+        run: python -m unittest discover -s tests -p 'test_windows_agent_review.py' -v
+      - name: Compile agent and parse installer without running either
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /r:System.Management.dll /r:System.ServiceProcess.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /out:agent-review-test.exe .\agent\UltronAgent.cs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($path in @('agent/Install-Agent.ps1', 'scripts/powershell/Bootstrap-Ultron.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count) { throw ($errors | Out-String) }
           }

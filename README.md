@@ -110,3 +110,7 @@ de agente, webhook, relatórios e automação continuam existentes.
 - \`docs/TRUECONF_PREFORMAT_BACKUP.md\`: backup de arquivos e suas limitações.
 - \`docs/ULTRON_MACRIUM_INTEGRATION.md\`: verificação Macrium existente.
 - Plano FOG: ainda a preparar, sem instalação ou integração operacional.
+
+## Agente Windows e WinRM
+
+WinRM e nativo do Windows; UltronAgent e separado. Consulte [revisao e migracao](docs/WINDOWS_AGENT_REVIEW.md). Distribuicao suspensa por padrao ate homologacao do pacote revisado.

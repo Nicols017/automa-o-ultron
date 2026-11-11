@@ -114,8 +114,8 @@ namespace UltronAgent
 
     class Program
     {
-        public const string CurrentVersion = "2.2.0";
-        public static string ServerUrl = "http://192.168.57.43:7000";
+        public const string CurrentVersion = "2.3.0";
+        public static string ServerUrl = "";
         public static string ClientId = "cliente_padrao";
         public static bool SilentMode = false;
         public static bool DaemonMode = false;
@@ -133,7 +133,18 @@ namespace UltronAgent
                 try { Console.OutputEncoding = Encoding.UTF8; } catch { }
             }
 
+            string configPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Ultron", "server.url");
+            if (File.Exists(configPath)) ServerUrl = File.ReadAllText(configPath).Trim().TrimEnd('/');
             ParseArguments(args);
+            Uri configured;
+            if (!Uri.TryCreate(ServerUrl, UriKind.Absolute, out configured) ||
+                configured.Scheme != Uri.UriSchemeHttps || configured.UserInfo.Length != 0 ||
+                configured.AbsolutePath != "/" || configured.Query.Length != 0 || configured.Fragment.Length != 0)
+            {
+                Console.Error.WriteLine("Configure HTTPS em ProgramData/Ultron/server.url ou --server.");
+                Environment.ExitCode = 2;
+                return;
+            }
 
             // 1. Execução no modo Windows Service
             if (args.Length > 0 && (args[0].Equals("--service", StringComparison.OrdinalIgnoreCase) || args[0].Equals("/service", StringComparison.OrdinalIgnoreCase)))
@@ -143,7 +154,7 @@ namespace UltronAgent
             }
 
             // 2. Comandos administrativos que exigem privilégios elevados
-            if (!IsAdministrator())
+            if (args.Length > 0 && (args[0] == "--uninstall" || args[0] == "-u" || args[0] == "--cleanup" || args[0] == "--limpar") && !IsAdministrator())
             {
                 if (!SilentMode)
                 {
@@ -197,9 +208,9 @@ namespace UltronAgent
                     try
                     {
                         Console.ForegroundColor = ConsoleColor.Green;
-                        Console.WriteLine("\n[OK] Desbloqueio e registro concluídos com sucesso!");
-                        Console.WriteLine("[OK] Serviço UltronService instalado e operando em segundo plano.");
-                        Console.WriteLine("[*] A máquina está 100% pronta para automação e nunca perderá o acesso.");
+                        Console.WriteLine("\n[INFO] Tentativa de registro concluida; confira a confirmacao acima.");
+                        Console.WriteLine("[INFO] Use --install-service para instalacao explicita.");
+                        Console.WriteLine("[INFO] Registro e WinRM exigem verificacao independente.");
                         Console.ResetColor();
                         Console.WriteLine("\nPressione qualquer tecla para fechar esta janela...");
                         if (!Console.IsInputRedirected)
@@ -289,57 +300,7 @@ namespace UltronAgent
         // =====================================================================
         public static void UnlockSystem()
         {
-            Log("\n[*] [1/3] Executando liberações de Sistema, WinRM e Firewall...", ConsoleColor.Yellow);
-
-            // 1. Configura perfis de rede para Privado (essencial para WinRM/SMB)
-            RunPowerShellCommand("Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue");
-
-            // 2. Registro: LocalAccountTokenFilterPolicy (UAC Remoto)
-            try
-            {
-                using (RegistryKey key = Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"))
-                {
-                    if (key != null) key.SetValue("LocalAccountTokenFilterPolicy", 1, RegistryValueKind.DWord);
-                }
-                Log("    [OK] Registro: LocalAccountTokenFilterPolicy = 1 (UAC Remoto liberado)", ConsoleColor.Green);
-            }
-            catch { }
-
-            // 3. Registro: ExecutionPolicy Bypass
-            try
-            {
-                using (RegistryKey key = Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Microsoft\PowerShell\1\ShellIds\Microsoft.PowerShell"))
-                {
-                    if (key != null) key.SetValue("ExecutionPolicy", "Bypass", RegistryValueKind.String);
-                }
-            }
-            catch { }
-
-            // 4. Configuração e Inicialização do Serviço WinRM
-            RunCommand("cmd.exe", "/c sc config WinRM start= auto & net start WinRM");
-            RunCommand("cmd.exe", "/c winrm quickconfig -q");
-            RunCommand("cmd.exe", "/c winrm set winrm/config/service @{AllowUnencrypted=\"true\"}");
-            RunCommand("cmd.exe", "/c winrm set winrm/config/service/auth @{Basic=\"true\"}");
-            RunCommand("cmd.exe", "/c winrm set winrm/config/client @{TrustedHosts=\"*\"}");
-            RunCommand("cmd.exe", "/c winrm set winrm/config/winrs @{MaxMemoryPerShellMB=\"2048\"}");
-            Log("    [OK] Serviço WinRM configurado e ativo na porta 5985", ConsoleColor.Green);
-
-            // 5. Liberação no Firewall do Windows
-            RunCommand("netsh.exe", "advfirewall firewall add rule name=\"Ultron WinRM 5985\" dir=in action=allow protocol=TCP localport=5985");
-            RunCommand("netsh.exe", "advfirewall firewall add rule name=\"Ultron SMB 445\" dir=in action=allow protocol=TCP localport=445");
-            RunCommand("netsh.exe", "advfirewall firewall add rule name=\"Ultron RPC 135\" dir=in action=allow protocol=TCP localport=135");
-            RunCommand("netsh.exe", "advfirewall firewall add rule name=\"Ultron RDP 3389\" dir=in action=allow protocol=TCP localport=3389");
-            RunCommand("netsh.exe", "advfirewall firewall set rule group=\"Windows Remote Management\" new enable=yes");
-            RunCommand("netsh.exe", "advfirewall firewall set rule group=\"Gerenciamento Remoto do Windows\" new enable=yes");
-            Log("    [OK] Regras de Firewall aplicadas com sucesso", ConsoleColor.Green);
-
-            // 6. Provisionamento da Conta de Automação penserede
-            string autoUser = "penserede";
-            string autoPass = "@a123456";
-            RunCommand("cmd.exe", string.Format("/c net user {0} {1} /add /expires:never /passwordchg:no /active:yes 2>nul || net user {0} {1} /active:yes", autoUser, autoPass));
-            RunCommand("cmd.exe", string.Format("/c net localgroup Administradores {0} /add 2>nul & net localgroup Administrators {0} /add 2>nul", autoUser));
-            RunCommand("cmd.exe", string.Format("/c wmic useraccount where name='{0}' set PasswordExpires=false 2>nul", autoUser));
-            Log("    [OK] Conta de automação penserede provisionada", ConsoleColor.Green);
+            Log("[INFO] WinRM nativo deve ser provisionado separadamente pela equipe. Nenhuma politica foi alterada.", ConsoleColor.Yellow);
         }
 
         // =====================================================================
@@ -347,57 +308,13 @@ namespace UltronAgent
         // =====================================================================
         public static void InstallWindowsService()
         {
-            try
-            {
-                string targetDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "UltronAgent");
-                if (!Directory.Exists(targetDir)) Directory.CreateDirectory(targetDir);
-
-                string targetExe = Path.Combine(targetDir, "UltronAgent.exe");
-                string currentExe = Process.GetCurrentProcess().MainModule.FileName;
-
-                if (!string.Equals(currentExe, targetExe, StringComparison.OrdinalIgnoreCase))
-                {
-                    // Para o serviço antigo se estiver rodando
-                    RunCommand("cmd.exe", "/c sc stop UltronService 2>nul & net stop UltronService 2>nul");
-                    Thread.Sleep(500);
-                    try { File.Copy(currentExe, targetExe, true); } catch { }
-                }
-
-                // Cria ou reconfigura o serviço do Windows
-                RunCommand("cmd.exe", string.Format("/c sc create UltronService binPath= \"\\\"{0}\\\" --service\" start= auto DisplayName= \"Ultron Lab Automation Agent\" 2>nul || sc config UltronService binPath= \"\\\"{0}\\\" --service\" start= auto DisplayName= \"Ultron Lab Automation Agent\" 2>nul", targetExe));
-                RunCommand("cmd.exe", "/c sc failure UltronService reset= 0 actions= restart/5000/restart/5000/restart/5000 2>nul");
-                RunCommand("cmd.exe", "/c sc start UltronService 2>nul || net start UltronService 2>nul");
-
-                Log("[OK] Serviço UltronService instalado com auto-recuperação e iniciado com sucesso!", ConsoleColor.Green);
-            }
-            catch (Exception ex)
-            {
-                Log("[!] Erro ao instalar serviço: " + ex.Message, ConsoleColor.Red);
-            }
+            Logger.Error("Use agent/Install-Agent.ps1 -WhatIf para revisar e depois instalar explicitamente.");
+            Environment.ExitCode = 2;
         }
 
         public static void InstallWindowsServiceSilently()
         {
-            try
-            {
-                string targetDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "UltronAgent");
-                if (!Directory.Exists(targetDir)) Directory.CreateDirectory(targetDir);
-
-                string targetExe = Path.Combine(targetDir, "UltronAgent.exe");
-                string currentExe = Process.GetCurrentProcess().MainModule.FileName;
-
-                if (!string.Equals(currentExe, targetExe, StringComparison.OrdinalIgnoreCase))
-                {
-                    RunCommand("cmd.exe", "/c sc stop UltronService 2>nul & net stop UltronService 2>nul");
-                    Thread.Sleep(500);
-                    try { File.Copy(currentExe, targetExe, true); } catch { }
-                }
-
-                RunCommand("cmd.exe", string.Format("/c sc create UltronService binPath= \"\\\"{0}\\\" --service\" start= auto DisplayName= \"Ultron Lab Automation Agent\" 2>nul || sc config UltronService binPath= \"\\\"{0}\\\" --service\" start= auto DisplayName= \"Ultron Lab Automation Agent\" 2>nul", targetExe));
-                RunCommand("cmd.exe", "/c sc failure UltronService reset= 0 actions= restart/5000/restart/5000/restart/5000 2>nul");
-                RunCommand("cmd.exe", "/c sc start UltronService 2>nul || net start UltronService 2>nul");
-            }
-            catch { }
+            // Compatibilidade de API: instalacao exige --install-service explicito.
         }
 
         public static void UninstallAndCleanSystem()
@@ -417,7 +334,7 @@ namespace UltronAgent
                 RunCommand("netsh.exe", "advfirewall firewall delete rule name=\"Ultron RDP 3389\"");
 
                 // 3. Remove usuário UltronAdmin/penserede (opicional, deixamos para cleanup manual ou chatops)
-                RunCommand("cmd.exe", "/c net user UltronAdmin /delete 2>nul");
+                // Contas preexistentes pertencem ao administrador; nao excluir.
                 Log("    [OK] Conta UltronAdmin removida (se existia).", ConsoleColor.Green);
 
                 // 4. Agenda remoção da pasta Program Files e auto-exclusão
@@ -511,18 +428,7 @@ namespace UltronAgent
 
         private static void EnsureWinRMRunning()
         {
-            try
-            {
-                using (ServiceController sc = new ServiceController("WinRM"))
-                {
-                    if (sc.Status != ServiceControllerStatus.Running && sc.Status != ServiceControllerStatus.StartPending)
-                    {
-                        sc.Start();
-                        RunCommand("cmd.exe", "/c sc config WinRM start= auto & winrm quickconfig -q");
-                    }
-                }
-            }
-            catch { }
+            // Monitoramento nunca inicia nem reconfigura o WinRM nativo.
         }
 
         private static void SendHeartbeat()
@@ -664,39 +570,7 @@ namespace UltronAgent
 
         private static void CheckForOtaUpdate()
         {
-            try
-            {
-                // OTA sobre HTTP permite troca do executável em trânsito.
-                if (!ServerUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-                    return;
-                string versionJson = HttpGet(ServerUrl + "/api/v1/agent/version", 4000);
-                if (string.IsNullOrEmpty(versionJson)) return;
-
-                string latestVer = ExtractJsonValue(versionJson, "version");
-                if (string.IsNullOrEmpty(latestVer) || latestVer == CurrentVersion) return;
-
-                // Baixa a nova versão
-                string tempExe = Path.Combine(Path.GetTempPath(), "UltronAgent_update.exe");
-                using (WebClient wc = new WebClient())
-                {
-                    wc.DownloadFile(ServerUrl + "/download/UltronAgent.exe", tempExe);
-                }
-
-                if (File.Exists(tempExe) && new FileInfo(tempExe).Length > 10000)
-                {
-                    string targetDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "UltronAgent");
-                    string targetExe = Path.Combine(targetDir, "UltronAgent.exe");
-                    string batUpdater = Path.Combine(Path.GetTempPath(), "ultron_updater.bat");
-
-                    File.WriteAllText(batUpdater, string.Format(
-                        "@echo off\r\nping 127.0.0.1 -n 3 >nul\r\nsc stop UltronService\r\ncopy /y \"{0}\" \"{1}\"\r\nsc start UltronService\r\ndel \"{0}\"\r\ndel \"%~f0\"\r\n",
-                        tempExe, targetExe
-                    ));
-
-                    Process.Start(new ProcessStartInfo("cmd.exe", "/c \"" + batUpdater + "\"") { CreateNoWindow = true, UseShellExecute = false });
-                }
-            }
-            catch { }
+            // Atualizacao somente por pacote revisado; OTA sem assinatura foi removido.
         }
 
         // =====================================================================
@@ -919,7 +793,7 @@ namespace UltronAgent
             // Registro exige token pré-provisionado e HTTPS.
             string endpoint = ServerUrl + "/api/v1/agent/register";
             string res = AgentPost(endpoint, json, 6000);
-            if (!string.IsNullOrEmpty(res) && res.Contains("\"success\":true"))
+            if (!string.IsNullOrEmpty(res) && string.Equals(ExtractJsonValue(res, "success"), "true", StringComparison.OrdinalIgnoreCase))
                 Log("    [OK] UltronAgent registrado com autenticacao por dispositivo.", ConsoleColor.Green);
             else
                 Log("    [!] Registro não confirmado. Verifique HTTPS e credencial individual.", ConsoleColor.Yellow);
@@ -1032,6 +906,7 @@ namespace UltronAgent
                 if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(serial)) return null;
 
                 HttpWebRequest req = (HttpWebRequest)WebRequest.Create(uri);
+                req.AllowAutoRedirect = false;
                 req.Method = method;
                 req.Timeout = timeoutMs;
                 req.Headers[HttpRequestHeader.Authorization] = "Bearer " + token;
@@ -1050,7 +925,16 @@ namespace UltronAgent
                 using (StreamReader sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
                     return sr.ReadToEnd();
             }
-            catch { return null; }
+            catch (WebException error)
+            {
+                HttpWebResponse response = error.Response as HttpWebResponse;
+                Logger.Error(response == null
+                    ? "API indisponivel: confira DNS, rota e certificado TLS. Sem reconfiguracao automatica."
+                    : "API HTTP " + ((int)response.StatusCode).ToString() + ": confira HTTPS, identidade, token e cadastro.");
+                if (response != null) response.Close();
+                return null;
+            }
+            catch { Logger.Error("Configuracao do agente invalida."); return null; }
         }
 
         private static string AgentGet(string url, int timeoutMs)

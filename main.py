@@ -236,6 +236,8 @@ def service_status():
 @app.get("/UltronUnlocker.exe")
 def download_ultron_agent():
     """Entrega o executável nativo do Agente Ultron garantindo que esteja sempre na compilação mais recente"""
+    if os.environ.get("ULTRON_AGENT_DOWNLOAD_ENABLED") != "true":
+        raise HTTPException(status_code=503, detail="Distribuicao suspensa ate homologacao do pacote Windows revisado.")
     bin_info = agent_builder.get_latest_agent_binary()
     exe_path = bin_info["file_path"]
     filename = bin_info["filename"]
@@ -267,7 +269,7 @@ def get_agent_version():
     return {
         "version": ver,
         "download_url": "/download/UltronAgent.exe",
-        "release_notes": f"UltronAgent {ver}: Auto-Updater OTA silencioso, Reconhecimento de Usuário Logado, Detecção de AnyDesk ID, Auto-Instalação como Serviço Windows e Suporte a Bundles UniGetUI."
+        "release_notes": f"UltronAgent {ver}: instalacao explicita; WinRM nativo separado; sem OTA automatico."
     }
 
 @app.get("/api/v1/agent/tasks/{target_id}")
