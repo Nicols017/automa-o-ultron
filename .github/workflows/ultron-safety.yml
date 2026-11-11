@@ -18,6 +18,7 @@ on:
       - "tests/test_macrium_integration_contract.py"
       - "tests/test_preformat_files_backup.py"
       - "tests/test_intent_preflight.py"
+      - "tests/test_structured_intent.py"
       - "scripts/powershell/Backup-UserData.ps1"
       - "tests/test_agent_protocol_contract.py"
       - "agent/UltronAgent.cs"
@@ -45,7 +46,7 @@ jobs:
         run: python -m pip install "fastapi>=0.110,<1"
       - name: Check syntax of modified Python modules
         run: |
-          python -m compileall -q main.py chatops/chatops.py core/agent_runtime.py core/agent_task_manager.py core/orchestrator.py core/agent_auth.py core/backup_gate.py core/macrium_remote.py core/preformat_files_backup.py core/intent_preflight.py verifier/macrium_verify.py
+          python -m compileall -q main.py chatops/chatops.py core/agent_runtime.py core/agent_task_manager.py core/orchestrator.py core/agent_auth.py core/backup_gate.py core/macrium_remote.py core/preformat_files_backup.py core/intent_preflight.py core/structured_intent.py verifier/macrium_verify.py
       - name: Run offline safety tests (no network or production access)
         run: |
           python -m unittest discover -s tests -p 'test_readonly_diagnostics.py' -v
@@ -58,6 +59,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_macrium_integration_contract.py' -v
           python -m unittest discover -s tests -p 'test_preformat_files_backup.py' -v
           python -m unittest discover -s tests -p 'test_intent_preflight.py' -v
+          python -m unittest discover -s tests -p 'test_structured_intent.py' -v
           python -m unittest discover -s tests -p 'test_agent_protocol_contract.py' -v
 
       - name: Validate Windows PowerShell parse (without executing)
