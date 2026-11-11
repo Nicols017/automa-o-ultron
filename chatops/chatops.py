@@ -888,6 +888,10 @@ class TrueConfChatOps:
         if os.environ.get("ULTRON_SEMANTIC_ROUTER_ENABLED", "").lower() in ("1", "true"):
             if (not text.startswith("/") and not text.isdigit()
                     and norm_text not in ("menu", "ajuda", "help", "inicio", "comecar", "opcoes", "opções")):
+                from chatops.install_request import installation_command
+                command = installation_command(text, getattr(self, "SOFTWARE_ALIASES", {}))
+                if command:
+                    return command
                 return self._semantic_route_message(user_id, text)
 
         # 1.1 Controle Mestre / Agendamento exclusivo para Nicolas Silva

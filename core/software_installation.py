@@ -114,6 +114,7 @@ def assess_installation(install, verification, requested, run_id):
                 outcome="UNKNOWN" if status == "UNKNOWN" else "REPORTED",
                 verification_method="winget_export", package_results=rows,
                 evidence="SOFTWARE_PRESENCE_VERIFIED" if status == "SUCCESS" else "NONE",
+                credentials_missing=install.get("error_code") == "CREDENTIALS_MISSING",
                 auth_failed=bool(install.get("auth_failed")),
                 status_code=install.get("status_code", -1), stdout="", stderr="",
                 install_report_valid=attempt_valid)
@@ -142,6 +143,8 @@ def install_and_verify(executor, ip, packages, interactive=False):
 def format_installation(result):
     status = result.get("status", "UNKNOWN")
     lines = ["INSTALACAO: " + status]
+    if result.get("credentials_missing"):
+        lines.append("A instalação não começou. Configure a credencial Windows autorizada para o equipamento e envie o pedido novamente.")
     if result.get("auth_failed"):
         lines.append("Autenticacao do executor recusada; instalacao nao confirmada.")
     for row in result.get("package_results", []):
