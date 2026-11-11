@@ -16,6 +16,8 @@ on:
       - "scripts/powershell/Verify-MacriumImage.ps1"
       - "tests/test_macrium_remote.py"
       - "tests/test_macrium_integration_contract.py"
+      - "tests/test_preformat_files_backup.py"
+      - "scripts/powershell/Backup-UserData.ps1"
       - "tests/test_agent_protocol_contract.py"
       - "agent/UltronAgent.cs"
       - ".github/workflows/ultron-safety.yml"
@@ -42,7 +44,7 @@ jobs:
         run: python -m pip install "fastapi>=0.110,<1"
       - name: Check syntax of modified Python modules
         run: |
-          python -m compileall -q main.py chatops/chatops.py core/agent_runtime.py core/agent_task_manager.py core/orchestrator.py core/agent_auth.py core/backup_gate.py core/macrium_remote.py verifier/macrium_verify.py
+          python -m compileall -q main.py chatops/chatops.py core/agent_runtime.py core/agent_task_manager.py core/orchestrator.py core/agent_auth.py core/backup_gate.py core/macrium_remote.py core/preformat_files_backup.py verifier/macrium_verify.py
       - name: Run offline safety tests (no network or production access)
         run: |
           python -m unittest discover -s tests -p 'test_readonly_diagnostics.py' -v
@@ -53,6 +55,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_macrium_verifier.py' -v
           python -m unittest discover -s tests -p 'test_macrium_remote.py' -v
           python -m unittest discover -s tests -p 'test_macrium_integration_contract.py' -v
+          python -m unittest discover -s tests -p 'test_preformat_files_backup.py' -v
           python -m unittest discover -s tests -p 'test_agent_protocol_contract.py' -v
 
       - name: Validate Windows PowerShell parse (without executing)
@@ -62,6 +65,7 @@ jobs:
           $tokens = $null
           $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile('scripts/powershell/Verify-MacriumImage.ps1', [ref]$tokens, [ref]$errors) | Out-Null
+          [System.Management.Automation.Language.Parser]::ParseFile('scripts/powershell/Backup-UserData.ps1', [ref]$tokens, [ref]$errors) | Out-Null
           if ($errors.Count -gt 0) {
             $errors | ForEach-Object { Write-Error $_.Message }
             exit 1
