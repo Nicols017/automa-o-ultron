@@ -130,17 +130,17 @@
   {
     "id": "get_anydesk",
     "message": "Qual o AnyDesk da máquina 192.168.57.50?",
-    "intent": "explain",
-    "mode": "question",
-    "preflight": "explanatory",
+    "intent": "get_anydesk",
+    "mode": "request",
+    "preflight": "passthrough",
     "target_ip": "192.168.57.50"
   },
   {
     "id": "list_bench",
     "message": "Quais computadores estão na bancada?",
-    "intent": "explain",
-    "mode": "question",
-    "preflight": "explanatory",
+    "intent": "list_hosts",
+    "mode": "request",
+    "preflight": "passthrough",
     "target_ip": null
   },
   {
