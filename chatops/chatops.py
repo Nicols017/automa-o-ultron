@@ -1066,8 +1066,13 @@ class TrueConfChatOps:
                 
                 if host and pacotes:
                     return self._cmd_softwares(user_id, [host, pacotes], trace_id=trace_id)
-                else:
-                    return self._start_wizard_softwares(user_id, trace_id=trace_id)
+                if pacotes:
+                    self.user_sessions[user_id] = {"type": "wizard_softwares", "step": "ip", "packages": pacotes}
+                    return f"Em qual IP deseja instalar {pacotes}? Digite 0 para cancelar."
+                if host:
+                    self.user_sessions[user_id] = {"type": "wizard_softwares", "step": "packages", "ip": host}
+                    return f"Quais programas deseja instalar em {host}?"
+                return self._start_wizard_softwares(user_id, trace_id=trace_id)
             elif intent_match.intent == "formatar_maquina":
                 return self._cmd_formatar(user_id, [host], trace_id=trace_id) if host else self._start_wizard_formatar(user_id)
             elif intent_match.intent == "verificar_saude":
@@ -1361,10 +1366,13 @@ class TrueConfChatOps:
         if wtype == "wizard_softwares":
             step = session.get("step")
             if step == "ip":
-                ip = self._extract_target_ip(text)
+                ip = self._extract_target_ip(text) if re.fullmatch(r"[0-9]+(?:\.[0-9]+){1,3}", text.strip()) else None
                 if not ip:
                     return "⚠️ Endereço IP inválido. Por favor, digite um IP válido (ex: 57.48) ou 0 para cancelar."
                 session["ip"] = ip
+                if session.get("packages"):
+                    self.user_sessions.pop(user_id, None)
+                    return self._cmd_softwares(user_id, [ip, session["packages"]])
                 session["step"] = "choice"
                 return (
                     f"📦 Instalação de Softwares em {ip}\n\n"
@@ -1376,7 +1384,7 @@ class TrueConfChatOps:
                     f"[ 5 ] Digitar nomes avulsos (ex: Google.Chrome,AnyDesk)\n\n"
                     f"[ 0 ] Cancelar"
                 )
-            elif step == "choice":
+            elif step in ("choice", "packages"):
                 ip = session.get("ip")
                 pkgs_map = {
                     "1": "Google.Chrome,AnyDeskSoftwareGmbH.AnyDesk,RARLab.WinRAR,7zip.7zip,Adobe.Acrobat.Reader.64-bit",
@@ -1384,7 +1392,14 @@ class TrueConfChatOps:
                     "3": "AnyDeskSoftwareGmbH.AnyDesk",
                     "4": "RARLab.WinRAR,7zip.7zip",
                 }
-                pkgs = pkgs_map.get(text.strip(), text.strip())
+                value = text.strip()
+                if step == "choice" and value == "5":
+                    session["step"] = "packages"
+                    return "Quais programas deseja instalar? Separe os nomes por vírgula."
+                if not value or value.isdigit():
+                    if step == "packages" or value not in pkgs_map:
+                        return "Escolha uma opção válida ou informe o nome do programa."
+                pkgs = pkgs_map.get(value, value) if step == "choice" else value
                 self.user_sessions.pop(user_id, None)
                 return self._cmd_softwares(user_id, [ip, pkgs])
 
@@ -2343,10 +2358,16 @@ class TrueConfChatOps:
 
     def _cmd_softwares(self, user_id: str, args: List[str], trace_id: str = None) -> str:
         trace_id = trace_id or new_trace_id()
-        if len(args) < 2:
-            return self.msg_builder.error(WinRMResult(ok=False, host="N/A", command="/softwares", error="Uso: /softwares <IP> <app1, app2...>"), trace_id)
-            
-        ip = self._extract_target_ip(args[0]) or args[0]
+        ip = self._extract_target_ip(args[0]) if args and re.fullmatch(r"[0-9]+(?:\.[0-9]+){1,3}", args[0]) else None
+        if not ip:
+            if not args or any(c.isdigit() for c in args[0]) and args[0].replace(".", "").isdigit():
+                return "Informe um IP válido e os programas em /softwares <IP> <programas>."
+            packages = " ".join(args).strip()
+            self.user_sessions[user_id] = {"type": "wizard_softwares", "step": "ip", "packages": packages}
+            return f"Em qual IP deseja instalar {packages}? Digite 0 para cancelar."
+        if len(args) == 1:
+            self.user_sessions[user_id] = {"type": "wizard_softwares", "step": "packages", "ip": ip}
+            return f"Quais programas deseja instalar em {ip}?"
         self._last_user_ip[user_id] = ip
 
         raw_str = " ".join(args[1:]) if len(args) > 1 else ""

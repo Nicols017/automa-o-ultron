@@ -189,3 +189,16 @@ def validated_summary(result):
             or row["installer_reported_success"] is not True for row in rows)):
         raise ValueError("Sucesso sem confirmacao")
     return result["status"], rows
+
+def verify_preparation_packages(executor, ip, packages):
+    """Check requested IDs after preparation, without another install."""
+    packages = package_list(packages)
+    nonce = uuid.uuid4().hex
+    response = executor.run_script_file(ip, "Verify-InstalledPackages.ps1",
+                                       params={"Packages": packages, "RunId": nonce})
+    if response.get("success") is not True or response.get("status_code") != 0:
+        return {package: None for package in packages}
+    found = _report(response, VERIFY_MARKER, packages, nonce, verification=True)
+    return {package: (found[package.casefold()]["version"]
+                      if found[package.casefold()]["status"] == "CONFIRMED_PRESENT" else None)
+            for package in packages}

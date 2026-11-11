@@ -344,6 +344,20 @@ class LabOrchestrator:
                         mark("instalacao", "UNKNOWN" if step_result.get("outcome") == "UNKNOWN" else "ERROR")
                         return {"success": False, "job_id": job_id, "error": "Etapa de instalação interrompida."}
 
+            from core.software_installation import verify_preparation_packages
+            requested = ["AnyDeskSoftwareGmbH.AnyDesk", "Google.Chrome", "RARLab.WinRAR",
+                         "Adobe.Acrobat.Reader.64-bit", *combined_pkgs]
+            try:
+                versions = verify_preparation_packages(self.winrm, ip, requested)
+            except Exception:
+                versions = dict.fromkeys(requested)
+            missing = [name for name, version in versions.items() if not version]
+            if missing:
+                mark("instalacao", "UNKNOWN")
+                return {"success": False, "job_id": job_id, "package_versions": versions,
+                        "error": "Presença ou versão não confirmada para " + ", ".join(missing)}
+            mark("instalacao", "SUCCESS")
+
             # 6. Domínio e Teste de Estresse (Burn-in)
             dom_cfg = domain_config or profile.get("dominio", {})
             d_name = ""
@@ -391,7 +405,6 @@ class LabOrchestrator:
                 stage_name="Emissão de Laudo & Notificação"
             )
             tech_display = technician_name or "Nicolas Silva"
-            mark("instalacao", "SUCCESS")
             mark("laudo", "RUNNING")
             pdf_path = self.report_gen.generate_report(
                 telemetry_data=telemetry,
@@ -431,6 +444,7 @@ class LabOrchestrator:
                 "client": client_name,
                 "serial": telemetry.get("serial_number", "N/A"),
                 "anydesk_id": anydesk_id,
+                "package_versions": versions,
                 "pdf_report": pdf_filename,
                 "pdf_path": pdf_path,
                 "burnin_status": burnin_status,
