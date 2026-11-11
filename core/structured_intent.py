@@ -119,3 +119,75 @@ def analyze_message(
     except Exception as exc:
         raise IntentPlanError("Modelo indisponível.") from exc
     return validate_plan(result, message, trusted_target)
+
+
+# The model returns suggestions only. This gate is independent from the LLM.
+# No host command is dispatched without explicit policy and authorization.
+@dataclass(frozen=True)
+class IntentDecision:
+    kind: str
+    reason: str
+    action: Optional[str] = None
+
+
+def decide_action(
+    plan: IntentPlan,
+    message: str,
+    *,
+    read_only_enabled: bool = False,
+    allowed_subnet: Optional[str] = None,
+) -> IntentDecision:
+    if plan.mode == "question" or plan.intent == "explain":
+        return IntentDecision("explain", "Solicitação de explicação.")
+    if plan.mode != "request" or plan.confidence < 0.85 or plan.intent == "unknown":
+        return IntentDecision(
+            "clarify", "Não identifiquei com segurança a ação desejada. "
+            "Pode indicar o equipamento e o que precisa fazer?"
+        )
+    if plan.intent in ("disk_image_capture", "disk_image_restore"):
+        return IntentDecision(
+            "blocked", "O motor FOG ainda não está instalado nem integrado ao Ultron. "
+            "Nenhuma captura ou restauração foi iniciada."
+        )
+    if plan.intent == "backup_status":
+        return IntentDecision(
+            "clarify", "Para consultar uma cópia de arquivos já iniciada, "
+            "informe o identificador da tarefa em /status_backup."
+        )
+    if plan.intent not in ("diagnose", "list_hosts"):
+        return IntentDecision(
+            "blocked", "Entendi a solicitação, mas a execução desse tipo de operação "
+            "ainda exige um fluxo específico de autorização. Nenhum comando foi executado."
+        )
+    if not read_only_enabled:
+        return IntentDecision(
+            "blocked", "A execução automática de consultas pela IA está desativada. "
+            "A intenção foi reconhecida, mas não executei nada."
+        )
+    if plan.intent == "list_hosts":
+        return IntentDecision("allow_readonly", "Consultar equipamentos da bancada.", "list_hosts")
+    if plan.target_ip is None:
+        return IntentDecision("clarify", "Qual é o IP do computador a diagnosticar?")
+    # A remembered device may help conversation but is NOT enough for action.
+    explicit = re.search(r"(?<![\d.])" + re.escape(plan.target_ip) + r"(?![\d.])", message)
+    if not explicit:
+        return IntentDecision(
+            "clarify", "Confirme o IP completo do equipamento antes de executar o diagnóstico."
+        )
+    if not allowed_subnet:
+        return IntentDecision(
+            "blocked", "A sub-rede de diagnósticos por IA não foi autorizada."
+        )
+    try:
+        network = ipaddress.ip_network(allowed_subnet, strict=False)
+        address = ipaddress.ip_address(plan.target_ip)
+    except ValueError:
+        return IntentDecision("blocked", "Rede de diagnósticos inválida.")
+    infrastructure_hosts = {
+        "192.168.57.43", "192.168.57.87", "192.168.57.112",
+        "192.168.57.20",
+    }
+    if (network.version != 4 or not network.is_private or
+            address not in network or plan.target_ip in infrastructure_hosts):
+        return IntentDecision("blocked", "O host não está autorizado para diagnóstico por IA.")
+    return IntentDecision("allow_readonly", "Diagnóstico autorizado pelo roteador.", "diagnose")
