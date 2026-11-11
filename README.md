@@ -122,3 +122,7 @@ Consulte [correcoes gerais e proximas prioridades](docs/PROJECT_CONSOLIDATION.md
 ## Acompanhamento de tarefas
 
 Diagnosticos, instalacoes de softwares e backups de arquivos passam a ter historico persistente: /tarefas, /tarefa <ID> e /status_backup <ID>. Veja [estados, migracao e limites](docs/UNIFIED_TASKS.md). Reinicio deixa tarefas inacabadas como UNKNOWN e nunca as reexecuta automaticamente.
+
+## Esclarecimento de diagnostico
+
+No modo semantico readonly autorizado, o Ultron pode pedir o alvo faltante e retomar o diagnostico. Hostname/serial/MAC de inventario offline exigem confirmacao do IP. Veja [fluxo, configuracao e limites](docs/DIAGNOSTIC_CLARIFICATION.md).

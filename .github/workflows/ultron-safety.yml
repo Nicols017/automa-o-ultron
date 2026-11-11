@@ -136,3 +136,6 @@ jobs:
 
       - name: Unified persistent tasks with fake executors
         run: python -m unittest discover -s tests -p 'test_task_registry.py' -v
+
+      - name: Typed diagnostic clarification and exact offline inventory
+        run: python -m unittest discover -s tests -p 'test_clarification.py' -v

@@ -32,6 +32,7 @@ from core.public_tools import (
 from core.reliability import IntentRouter, MessageBuilder, TraceLogger, new_trace_id, DEFAULT_INTENTS, log, WinRMResult
 from core.operational_memory import OperationalMemory
 from core.task_registry import task_registry, TaskRegistryError
+from core.clarification import DiagnosticClarification
 from core.trueconf_transport import trueconf_request
 
 def _clean_chat_text(s: str) -> str:
@@ -85,6 +86,7 @@ class TrueConfChatOps:
         self._pending_message_target: Dict[str, str] = {}
         self.active_jobs: Dict[str, Any] = {}
         self.task_registry = task_registry
+        self.clarifications = DiagnosticClarification()
 
         # Cache de varredura de bancada para resposta instantânea
         self._cached_devices: List[Dict[str, Any]] = []
@@ -848,6 +850,31 @@ class TrueConfChatOps:
         if user_id in self.user_sessions:
             return self._handle_wizard_step(user_id, self.user_sessions[user_id], text)
 
+        flow = getattr(self, "clarifications", None)
+        if flow is not None:
+            try:
+                clarified = flow.reply(user_id, text)
+            except Exception:
+                logger.warning("Esclarecimento indisponivel; nenhuma acao iniciada.")
+                return "Nao consegui conferir o pedido pendente; nenhuma acao foi iniciada."
+            if clarified is not None:
+                if "target_ip" in clarified:
+                    return self._cmd_diagnostico(user_id, [clarified["target_ip"]])
+                return clarified["reply"]
+
+        # A bare IP without an active clarification is context, never a new action.
+        if re.fullmatch(r"[0-9]{1,3}(?:\.[0-9]{1,3}){3}", text):
+            import ipaddress
+            try:
+                target = str(ipaddress.IPv4Address(text))
+            except ValueError:
+                return "IP invalido. Informe a acao e um IP completo valido."
+            self._last_user_ip[user_id] = target
+            remember = getattr(self, "_remember_explicit_target", None)
+            if remember:
+                remember(user_id, target)
+            return "IP registrado como contexto. Informe a acao desejada; nenhum diagnostico foi iniciado."
+
         # Preflight sem efeitos colaterais: perguntas não acionam scripts,
         # pedidos de imagem FOG indisponível não viram backup Robocopy.
         from core.intent_preflight import preflight_request
@@ -859,7 +886,8 @@ class TrueConfChatOps:
 
         # Semantic routing is opt-in; the model only proposes a typed plan.
         if os.environ.get("ULTRON_SEMANTIC_ROUTER_ENABLED", "").lower() in ("1", "true"):
-            if not text.startswith("/"):
+            if (not text.startswith("/") and not text.isdigit()
+                    and norm_text not in ("menu", "ajuda", "help", "inicio", "comecar", "opcoes", "opções")):
                 return self._semantic_route_message(user_id, text)
 
         # 1.1 Controle Mestre / Agendamento exclusivo para Nicolas Silva
@@ -2121,6 +2149,15 @@ class TrueConfChatOps:
             logger.exception("Roteador semântico falhou; execução negada.")
             return "⚠️ Interpretação indisponível. Nenhum comando foi executado."
 
+        if (policy.kind == "clarify" and plan.intent == "diagnose"
+                and plan.mode == "request" and plan.confidence >= 0.85
+                and not any(field != "target_ip" for field in plan.missing_fields)):
+            flow = getattr(self, "clarifications", None)
+            if flow is not None:
+                try:
+                    return flow.start(user_id, plan.confidence)
+                except Exception:
+                    return "Nao consegui guardar o pedido; informe acao e IP juntos. Nada executado."
         if policy.kind == "explain":
             return self._handle_ai_conversation(user_id, text)
         if policy.kind == "allow_readonly":

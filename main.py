@@ -65,7 +65,13 @@ bot = TrueConfBot(
 async def startup_event():
     from core.task_registry import task_registry
     if task_registry.acquire_runtime():
-        task_registry.recover_after_restart()
+        try:
+            task_registry.recover_after_restart()
+            from core.clarification import ClarificationStore
+            ClarificationStore().clear_after_restart()
+        except Exception:
+            task_registry.release_runtime()
+            raise
     # Windows packages are built explicitly in CI, never on server startup.
 
     if bot.bot_password or bot.api_token:

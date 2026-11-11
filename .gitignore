@@ -54,3 +54,6 @@ verifier/audit/
 *agent-credentials.json
 macrium-evidence-*.json
 mrverify-*.log
+
+# Operator-provisioned device mappings (example is safe and tracked separately).
+/config/device_inventory.json

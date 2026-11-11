@@ -101,3 +101,7 @@ CI roda essa suite e as regressoes existentes no Linux e Windows.
 
 Nenhum desses itens pendentes e anunciado como concluido. Esta rodada corrige
 falhas demonstraveis e cria limites/testes para continuar sem perder as funcoes.
+
+Primeira etapa de esclarecimento de diagnostico e resolucao exata em inventario
+offline: DIAGNOSTIC_CLARIFICATION.md. Coleta automatica confiavel de inventario
+e dialogos de operacoes que alteram maquinas continuam pendentes.
