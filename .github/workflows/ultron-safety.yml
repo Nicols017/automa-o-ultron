@@ -23,6 +23,8 @@ on:
       - "tests/test_semantic_dispatch.py"
       - "tests/test_headless_api.py"
       - "tests/test_intent_corpus.py"
+      - "tests/test_conversation_safety.py"
+      - "README.md"
       - "tests/intent_examples.json"
       - "scripts/evaluate_intents.py"
       - "scripts/powershell/Backup-UserData.ps1"
@@ -52,7 +54,7 @@ jobs:
         run: python -m pip install "fastapi>=0.110,<1"
       - name: Check syntax of modified Python modules
         run: |
-          python -m compileall -q main.py chatops/chatops.py core/agent_runtime.py core/agent_task_manager.py core/orchestrator.py core/agent_auth.py core/backup_gate.py core/macrium_remote.py core/preformat_files_backup.py core/intent_preflight.py core/structured_intent.py core/operational_memory.py core/trueconf_webhook_auth.py verifier/macrium_verify.py
+          python -m compileall -q main.py chatops/chatops.py core/agent_runtime.py core/agent_task_manager.py core/orchestrator.py core/agent_auth.py core/backup_gate.py core/macrium_remote.py core/preformat_files_backup.py core/intent_preflight.py core/structured_intent.py core/diagnostic_analyzer.py core/operational_memory.py core/trueconf_webhook_auth.py verifier/macrium_verify.py
       - name: Run offline safety tests (no network or production access)
         run: |
           python -m unittest discover -s tests -p 'test_readonly_diagnostics.py' -v
@@ -70,6 +72,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_semantic_dispatch.py' -v
           python -m unittest discover -s tests -p 'test_headless_api.py' -v
           python -m unittest discover -s tests -p 'test_intent_corpus.py' -v
+          python -m unittest discover -s tests -p 'test_conversation_safety.py' -v
           python scripts/evaluate_intents.py --strict
           python -m unittest discover -s tests -p 'test_agent_protocol_contract.py' -v
 
