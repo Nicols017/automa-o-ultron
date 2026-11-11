@@ -70,7 +70,7 @@ def preflight_request(message: str) -> PreflightDecision:
         )
 
     # A question about validation must never be misread as a fresh backup.
-    if backup and _has(text, r"\b(?:verific[a-z]*|confir[a-z]*|valid[a-z]*|chec[a-z]*|integridade|status)\b"):
+    if backup and _has(text, r"\b(?:verifi(?:c|qu)[a-z]*|confir[a-z]*|valid[a-z]*|chec[a-z]*|integridade|status)\b"):
         return PreflightDecision(
             "blocked",
             "Você pediu para consultar ou verificar um backup, não para criar outro. "
