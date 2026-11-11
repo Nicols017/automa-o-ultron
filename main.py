@@ -514,7 +514,7 @@ def get_infra_status(request: Request):
     }
 
 @app.post("/api/v1/trueconf/test")
-def test_trueconf_notification(req: Optional[TrueConfTestRequest] = None, request: Request):
+def test_trueconf_notification(request: Request, req: Optional[TrueConfTestRequest] = None):
     """Envia uma notificação privada de teste no TrueConf para o técnico"""
     require_operator(request)
     user_id = req.user_id if req else "nicolas"
@@ -554,7 +554,7 @@ def trueconf_webhook(request: Request, payload: Optional[TrueConfWebhookPayload]
     }
 
 @app.get("/api/v1/clients")
-def list_clients(force_refresh: bool = False, request: Request):
+def list_clients(request: Request, force_refresh: bool = False):
     """Retorna todos os clientes e perfis disponíveis no Ultron sincronizados com o Milvus"""
     require_operator(request)
     clients = profile_mgr.list_clients(force_refresh_milvus=force_refresh)
@@ -564,7 +564,7 @@ def list_clients(force_refresh: bool = False, request: Request):
     }
 
 @app.get("/api/v1/clients/{client_id}")
-def get_client_profile(client_id: str, request: Request):
+def get_client_profile(request: Request, client_id: str):
     """Retorna as configurações e pacotes do perfil de um cliente específico"""
     require_operator(request)
     profile = profile_mgr.get_client_profile(client_id)
@@ -581,7 +581,7 @@ def get_milvus_config(request: Request):
     return profile_mgr.get_milvus_config()
 
 @app.post("/api/v1/milvus/config")
-def update_milvus_config(req: MilvusConfigRequest, request: Request):
+def update_milvus_config(request: Request, req: MilvusConfigRequest):
     """Atualiza e salva as credenciais e parâmetros da Dashboard Milvus em config/settings.yaml"""
     require_operator(request)
     ok = profile_mgr.save_milvus_config(
@@ -598,7 +598,7 @@ def update_milvus_config(req: MilvusConfigRequest, request: Request):
     }
 
 @app.post("/api/v1/milvus/test")
-def test_milvus_connection(req: Optional[MilvusTestRequest] = None, request: Request):
+def test_milvus_connection(request: Request, req: Optional[MilvusTestRequest] = None):
     """Testa a conectividade, latência e endpoints da Dashboard Milvus em tempo real"""
     require_operator(request)
     custom_url = req.custom_url if req else None
@@ -617,7 +617,7 @@ def get_milvus_client_tokens(request: Request):
     }
 
 @app.post("/api/v1/milvus/client-tokens")
-def update_milvus_client_token(req: ClientTokenUpdateRequest, request: Request):
+def update_milvus_client_token(request: Request, req: ClientTokenUpdateRequest):
     """Atualiza o token de instalação do agente Milvus para um cliente específico em clients.yaml"""
     require_operator(request)
     ok = profile_mgr.update_client_token(req.client_id, req.milvus_token)
@@ -630,7 +630,7 @@ def update_milvus_client_token(req: ClientTokenUpdateRequest, request: Request):
     }
 
 @app.get("/api/v1/milvus/tickets")
-def get_milvus_tickets(force_refresh: bool = False, request: Request):
+def get_milvus_tickets(request: Request, force_refresh: bool = False):
     """Retorna a lista de chamados em aberto e pendentes na Dashboard Milvus (192.168.57.7)"""
     require_operator(request)
     tickets = profile_mgr.milvus.get_open_tickets(force_refresh=force_refresh)
@@ -654,7 +654,7 @@ def sync_milvus_data(request: Request):
     }
 
 @app.get("/api/v1/milvus/agent/download/{client_id}")
-def download_client_milvus_agent(client_id: str, force_download: bool = False, request: Request):
+def download_client_milvus_agent(request: Request, client_id: str, force_download: bool = False):
     """
     Baixa ou entrega o instalador .MSI oficial do Agente Milvus já configurado com o token do cliente.
     Permite que qualquer máquina na rede ou técnico baixe o instalador pronto via API.
@@ -704,7 +704,7 @@ def download_client_milvus_agent(client_id: str, force_download: bool = False, r
         raise HTTPException(status_code=502, detail=res.get("error", "Falha ao baixar instalador do Milvus"))
 
 @app.post("/api/v1/milvus/agent/sync-all")
-def sync_all_milvus_agents(background_tasks: BackgroundTasks, request: Request):
+def sync_all_milvus_agents(request: Request, background_tasks: BackgroundTasks):
     """
     Baixa em lote e armazena em cache local os instaladores MSI de todos os clientes que possuem token configurado.
     """
@@ -1033,7 +1033,7 @@ def list_package_bundles():
     }
 
 @app.post("/api/v1/packages/install")
-def install_packages_api(req: PackageInstallRequest, request: Request):
+def install_packages_api(request: Request, req: PackageInstallRequest):
     """Instala uma lista de pacotes via instalador unificado UniGetUI/Winget"""
     require_operator(request)
     if not req.packages:
@@ -1055,28 +1055,28 @@ def install_packages_api(req: PackageInstallRequest, request: Request):
     }
 
 @app.post("/api/v1/packages/upgrade_all")
-def upgrade_all_packages_api(req: PackageUpgradeRequest, request: Request):
+def upgrade_all_packages_api(request: Request, req: PackageUpgradeRequest):
     """Atualiza em massa todos os programas instalados na máquina alvo via Winget"""
     require_operator(request)
     res = package_mgr.upgrade_all_packages(req.ip)
     return res
 
 @app.post("/api/v1/packages/backup")
-def backup_packages_api(req: PackageBackupRequest, request: Request):
+def backup_packages_api(request: Request, req: PackageBackupRequest):
     """Varre e exporta todos os programas instalados em um bundle UniGetUI (.json)"""
     require_operator(request)
     res = package_mgr.export_machine_packages(req.ip, identifier=req.identifier)
     return res
 
 @app.post("/api/v1/packages/restore")
-def restore_packages_api(req: PackageRestoreRequest, request: Request):
+def restore_packages_api(request: Request, req: PackageRestoreRequest):
     """Restaura um bundle UniGetUI (.json) previamente salvo na máquina alvo"""
     require_operator(request)
     res = package_mgr.restore_machine_packages(req.ip, bundle_name_or_id=req.bundle_name)
     return res
 
 @app.post("/api/v1/bench/action/install-software")
-def execute_install_software_action(req: InstallSoftwareRequest, request: Request):
+def execute_install_software_action(request: Request, req: InstallSoftwareRequest):
     """Instala uma lista de pacotes via instalador unificado na máquina alvo"""
     require_operator(request)
     if not req.packages:
@@ -1095,7 +1095,7 @@ def execute_install_software_action(req: InstallSoftwareRequest, request: Reques
     }
 
 @app.post("/api/v1/bench/action/domain-join")
-def execute_domain_join_action(req: DomainJoinRequest, request: Request):
+def execute_domain_join_action(request: Request, req: DomainJoinRequest):
     """Executa a configuração de rede e o ingresso da máquina no domínio com credenciais dinâmicas"""
     require_operator(request)
     params = {
@@ -1219,7 +1219,7 @@ def list_reports(request: Request):
     return {"total": len(reports), "reports": reports}
 
 @app.get("/api/v1/reports/download/{filename}")
-def download_report(filename: str, request: Request):
+def download_report(request: Request, filename: str):
     """Permite o download de um laudo técnico gerado"""
     require_operator(request)
     # Prevent path traversal and exposing arbitrary files.
