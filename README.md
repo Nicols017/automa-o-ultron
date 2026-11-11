@@ -1,155 +1,132 @@
-# 🤖 Ultron Lab Automation - Pense Rede
+# Ultron — Automação de Bancada da Pense Rede
 
-Sistema inteligente de orquestração, provisionamento e automação de bancada/remoto, com validação de hardware por IA local (RTX 5060 Ti / Ollama), execução remota via WinRM/PowerShell e emissão automática de laudos técnicos em PDF para clientes corporativos da **Pense Rede**.
+O Ultron é um serviço FastAPI e bot do TrueConf para suporte técnico e
+automação de bancada. **Não possui dashboard web** nesta versão. A interface
+do técnico é o TrueConf; a API fornece tarefas, agentes, diagnósticos e laudos.
 
----
+## Estado deste branch
 
-## 🌐 Ultron Anywhere (Automação Flexível Sem Dependência de Switch)
+Branch de homologação. **Não fazer merge, deploy nem reiniciar serviços do
+Jarvis sem autorização e plano de migração.** A versão corrente em produção
+pode utilizar HTTP, enquanto este branch possui autenticação HTTPS e
+mudanças no protocolo dos agentes. Os binários atuais não são
+automaticamente compatíveis.
 
-O Ultron foi projetado para operar tanto na **bancada física do laboratório** quanto em **qualquer lugar da rede / remoto**, sem estar restrito a uma porta de switch específica.
+O **FOG Project foi escolhido** para o futuro motor de captura e recuperação
+de imagem via PXE. **Não existe integração FOG neste código**; nenhum DHCP,
+WDS, PXE ou armazenamento foi alterado.
 
-### 📌 1. Execução Universal via One-Liner PowerShell (Qualquer Máquina)
-Em qualquer computador com Windows (no Wi-Fi, em outra filial, pós-formatação ou na bancada), basta abrir o PowerShell como Administrador e executar:
+## Arquitetura
 
-```powershell
-irm http://192.168.57.43:7000/bootstrap.ps1 | iex
-```
-*(Substitua pelo IP/DNS do servidor Ultron ou pelo IP do túnel Tailscale/VPN)*.
+- Ultron/TrueConf: Jarvis, 192.168.57.43. Apenas controle e orquestração.
+- WDS/MDT: Windows Server, 192.168.57.87. Instalação Windows atual.
+- Storage: 192.168.57.112, compartilhamento \`backups3\`.
+- FOG: implantação futura em Linux isolado, em VM ou host dedicado,
+  sem DHCP/ProxyDHCP ativo durante a homologação.
+- Windows de testes: 192.168.57.77, não será usado como produção.
 
-**O que o Bootstrap faz automaticamente:**
-1. Coleta a **Service Tag / Número de Série**, modelo, MAC e IP.
-2. Configura e habilita o serviço **WinRM** e regras de Firewall necessárias.
-3. Registra a máquina no Ultron Server (`/api/v1/mdt/completed`) e inicia a esteira se configurado.
+## Funções preservadas
 
----
+- TrueConf e processamento de solicitações;
+- diagnóstico (WinRM, modo leitura), automação Windows e agentes;
+- geração de laudos técnicos PDF (com logo local);
+- backup de pastas selecionadas por Robocopy, rotulado explicitamente como
+  **backup de arquivos, não imagem completa**;
+- verificação de imagens Macrium existentes, em estação autorizada;
+- APIs de agentes e operações administrativas, mediante autenticação.
 
-## 🏛️ Topologia e Conectividade da Rede
+O **MDT continua bloqueado para formatação automatizada**, porque ainda
+não existe uma prova confiável de captura e validação de imagem vinculada
+ao equipamento.
 
-* **Ultron Server (Host Linux + RTX 5060 Ti):** `http://192.168.57.43:7000` ou `http://localhost:7000`
-* **Servidor PXE / MDT & Repositório de Softwares:** `192.168.57.87` (Compartilhamento `\\192.168.57.87\MilvusAgents`)
-* **Servidor Storage de Backups Macrium:** `192.168.57.112` (Compartilhamento `\\192.168.57.112\Backups`)
-* **Subrede Padrão da Bancada:** `192.168.57.0/24` (Suporta também qualquer subrede arbitrária ou IP individual).
+## Entendimento da IA v2
 
----
+A entrada do TrueConf possui:
+1. filtro de perguntas, negações e pedidos conflitantes;
+2. classificador LLM de saída JSON tipada (intenção, alvo, confiança, campos
+   faltantes);
+3. política determinística: modelo não executa PowerShell nem gera comandos;
+4. memória SQLite restrita a usuário/último equipamento e status de tarefa;
+5. catálogo de ações: apenas consultas/diagnósticos explicitamente permitidos
+   podem ser executados na modalidade semântica;
+6. rastreabilidade e testes de frases reais de bancada.
 
-## 📁 Estrutura Completa do Projeto
+### Comandos de homologação
 
-```
-automa-o-ultron/
-├── .env                         # Configurações de ambiente (Ollama/LLM, IPs)
-├── agent/                       # Agente C# (Windows Service) para máquinas
-│   ├── UltronAgent.cs           # Código fonte do Agente
-│   ├── UltronAgent.exe          # Executável do Agente
-│   └── build_agent.ps1          # Script de compilação
-├── backups/                     # Armazenamento de backups (UserData, etc.)
-├── chatops/                     # Integração de ChatOps
-│   ├── bot.py                   # Bot de notificações (TrueConf/Slack/etc.)
-│   └── chatops.py               # Lógica principal do ChatOps
-├── config/
-│   ├── settings.yaml            # Configurações globais (IPs, WinRM, Ollama, Switch)
-│   ├── clients.yaml             # Mapeamento dos clientes (Tokens Milvus, Domínios e OUs)
-│   └── profiles/                # Perfis YAML de software/política por cliente
-├── core/
-│   ├── agent_builder.py         # Compilador e empacotador dinâmico do agente
-│   ├── diagnostic_analyzer.py   # Diagnóstico de hardware com LLM local (Ollama)
-│   ├── milvus_sync.py           # Sincronização e integração com a API do Milvus
-│   ├── network_scanner.py       # Varredura de rede concorrente
-│   ├── obsidian_memory.py       # Memória baseada em Markdown (Obsidian Vault)
-│   ├── orchestrator.py          # Esteira ponta a ponta (Pipeline mestre)
-│   ├── package_manager.py       # Gerenciamento de pacotes instalados/winget
-│   ├── profile_manager.py       # Leitor e consolidador de perfis de clientes
-│   ├── public_tools.py          # Ferramentas expostas e utilitários públicos
-│   ├── reliability.py           # Testes de estresse e validação de estabilidade
-│   ├── scheduler.py             # Agendador de tarefas automatizadas
-│   ├── switch_identifier.py     # Leitura de portas de switch (opcional)
-│   └── winrm_executor.py        # Execução remota de scripts PowerShell via WinRM
-├── mdt/                         # Automação de deploy do Windows (MDT)
-│   ├── Bootstrap.ini            # Configuração inicial MDT
-│   ├── CustomSettings.ini       # Regras do MDT
-│   ├── Setup-MDT-Automation.ps1 # Script de setup do MDT
-│   ├── autounattend.xml         # Respostas automáticas do Windows
-│   └── scripts/
-│       └── Notify-Ultron.ps1    # Script chamado na etapa final do MDT
-├── reports/
-│   ├── report_generator.py      # Gerador de Laudos Técnicos em PDF (ReportLab)
-│   └── output/                  # Armazenamento dos PDFs gerados
-├── scripts/powershell/          # Scripts executados nas máquinas cliente
-│   ├── Backup-UserData.ps1      # Backup de dados de perfil de usuário
-│   ├── Bootstrap-Ultron.ps1     # Inicializador universal One-Liner (Ultron Anywhere)
-│   ├── Configure-TrueConfClient.ps1 # Configuração do cliente TrueConf
-│   ├── Export-InstalledPackages.ps1 # Exportação de lista de softwares instalados
-│   ├── Inspect-SystemLogs.ps1   # Coleta S.M.A.R.T, BSODs e logs de eventos
-│   ├── Install-Flutter.ps1      # Ambiente de desenvolvimento Flutter
-│   ├── Install-LabStandard.ps1  # Instalação padrão (AnyDesk, Office, Milvus, Ativação MAS)
-│   ├── Install-MilvusAgent.ps1  # Instalação do agente Milvus com token do cliente
-│   ├── Install-UltronService.ps1# Instalação do Agente C# como serviço Windows
-│   ├── Install-UnifiedPackages.ps1# Instalação unificada de softwares customizados
-│   ├── Join-CustomerDomain.ps1  # Ingresso automático no Active Directory do cliente
-│   ├── Map-SPAShares.ps1        # Mapeamento de unidades de rede
-│   ├── Run-LabBurnIn.ps1        # Teste de estresse de CPU/RAM e validação de drivers
-│   ├── Search-Packages.ps1      # Busca por pacotes (Winget/Chocolatey)
-│   ├── Send-UserMessage.ps1     # Envio de mensagem pop-up para o usuário logado
-│   └── Upgrade-AllPackages.ps1  # Atualização automática de todos os softwares
-├── static/                      # Interface Web (CSS e JavaScript)
-├── templates/                   # Template HTML do Dashboard
-├── tests/                       # Testes automatizados
-│   ├── test_components.py       # Testes unitários dos módulos internos
-│   └── test_api.py              # Testes de integração da API FastAPI
-├── Dockerfile                   # Build da imagem Linux para produção
-├── docker-compose.yml           # Orquestração Docker com network_mode: host
-├── requirements.txt             # Dependências Python
-├── ultron.service               # Unidade systemd para Linux daemon
-└── main.py                      # Servidor FastAPI e Web Dashboard
-```
+- \`/entender <texto>\`: mostra o entendimento do modelo sem executar ações.
+- \`/contexto\`: mostra apenas o contexto operacional do próprio técnico.
+- \`/backup <IP> <CLIENTE> <CHAMADO>\`: cópia de arquivos, com flag de habilitação.
+- \`/status_backup files_<id>\`: consulta a tarefa de backup de arquivos.
+- \`/verificar_backup <caminho.mrimg>\`: verificação Macrium, se autorizada.
 
----
+Roteador semântico: **desativado por padrão**. Para uma homologação controlada,
+a configuração do processo (não do host todo) precisa incluir:
 
-## 🛠️ Configuração no Ambiente de Desenvolvimento / IDE
+    ULTRON_SEMANTIC_ROUTER_ENABLED=1
+    ULTRON_SEMANTIC_ALLOWED_TRUECONF_USERS=<tecnicos_validos>
+    ULTRON_SEMANTIC_READONLY_ENABLED=1
+    ULTRON_SEMANTIC_ALLOWED_SUBNET=<CIDR_de_PCs_de_teste>
+    ULTRON_OPERATIONAL_DB=data/operational_context.sqlite3
 
-### 1. Criar e Ativar Ambiente Virtual Python:
-```bash
-python -m venv venv
-# No Windows PowerShell:
-.\venv\Scripts\Activate.ps1
-# No Linux:
-source venv/bin/activate
-```
+A opção READONLY habilita apenas diagnóstico em IP explicitamente informado
+e listagem de bancada. Reinicialização, instalação, formatação, backup de
+imagem e restauração não são liberados pela IA. Confiança retornada pelo
+modelo não é autorização nem probabilidade calibrada.
 
-### 2. Instalar Dependências:
-```bash
-pip install -r requirements.txt
-```
+### Segurança da API
 
-### 3. Ajustar Configurações no `config/settings.yaml`:
-* **`network`**: Ajuste os IPs do servidor Ultron, MDT e Storage de Backups.
-* **`winrm`**: Configure o usuário e senha padrão definidos na imagem padrão de bancada (`Administrator`).
-* **`llm`**: Configure a URL do Ollama (`http://localhost:11434` ou o IP do servidor com a GPU) e o nome do modelo.
-* **`trueconf`**: Insira o token do bot e URL do TrueConf da Pense Rede.
-* **`switch`**: Deixe `enabled: false` para operação livre de switch ou `true` se quiser vincular aos cabos do lab.
+A API administrativa utiliza HTTPS e \`ULTRON_ADMIN_API_TOKEN\` (32+ caracteres)
+para endpoints internos e de modificação. O webhook HTTP do TrueConf exige
+HTTPS e \`ULTRON_TRUECONF_WEBHOOK_SECRET\` de 32+ caracteres enviado no header
+\`X-Ultron-TrueConf-Secret\`; sem isso, o webhook fica indisponível.
 
-### 4. Executar o Servidor em Modo de Desenvolvimento:
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 7000
-```
-Acesse o painel em: **`http://localhost:7000`** ou **`http://<SEU_IP>:7000`**.
+O bot TrueConf conectado por seu próprio transporte autenticado é uma
+integração separada. Nunca confiar em um \`user_id\` enviado por terceiros
+como autorização de uma operação.
 
----
+Credenciais devem ficar fora do Git. Validar autenticação do WinRM e migração
+de agentes antes de ativar a API em produção. Rejeitar comandos não é falha:
+é o comportamento seguro quando permissões ou dados estão incompletos.
 
-## 🚀 Execução em Produção (Docker / Linux Server)
+## Desenvolvimento e testes
 
-```bash
-docker compose up -d --build
-```
-> O container roda com `network_mode: host` para comunicação direta com a rede local e Ollama.
+    python -m venv venv
+    pip install -r requirements.txt
 
----
+Testes de segurança são executados pela GitHub Actions no Linux e Windows,
+sem rede nem execução de tarefas em equipamentos reais. Para executar a
+mesma suíte em ambiente de desenvolvimento:
 
-## 🧪 Executar Testes Automatizados
+    python -m unittest discover -s tests -p 'test_operational_memory.py' -v
+    python -m unittest discover -s tests -p 'test_semantic_dispatch.py' -v
+    python -m unittest discover -s tests -p 'test_headless_api.py' -v
 
-```bash
-# Testes dos componentes internos (ProfileManager, PDF, Scanner, WinRM)
-python tests/test_components.py
+O endpoint \`GET /\` retorna apenas o status do serviço. Rotas de downloads
+de agente, webhook, relatórios e automação continuam existentes.
 
-# Testes da API FastAPI e Dashboard
-python tests/test_api.py
-```
+## Documentos de projeto
+
+- \`docs/ULTRON_INTELLIGENCE_V2.md\`: IA, critérios de teste e segurança.
+- \`docs/TRUECONF_PREFORMAT_BACKUP.md\`: backup de arquivos e suas limitações.
+- \`docs/ULTRON_MACRIUM_INTEGRATION.md\`: verificação Macrium existente.
+- Plano FOG: ainda a preparar, sem instalação ou integração operacional.
+
+## Agente Windows e WinRM
+
+WinRM e nativo do Windows; UltronAgent e separado. Consulte [revisao e migracao](docs/WINDOWS_AGENT_REVIEW.md). Distribuicao suspensa por padrao ate homologacao do pacote revisado.
+
+## Consolidacao do projeto
+
+Consulte [correcoes gerais e proximas prioridades](docs/PROJECT_CONSOLIDATION.md). TrueConf agora exige usuarios explicitamente autorizados, identidade do SDK e TLS validado; configure o ambiente antes de homologar. Corpus de entendimento: 45 frases, com novos casos sinteticos de negacoes e exemplos.
+
+## Acompanhamento de tarefas
+
+Diagnosticos, instalacoes de softwares e backups de arquivos passam a ter historico persistente: /tarefas, /tarefa <ID> e /status_backup <ID>. Veja [estados, migracao e limites](docs/UNIFIED_TASKS.md). Reinicio deixa tarefas inacabadas como UNKNOWN e nunca as reexecuta automaticamente.
+
+## Esclarecimento de diagnostico
+
+No modo semantico readonly autorizado, o Ultron pode pedir o alvo faltante e retomar o diagnostico. Hostname/serial/MAC de inventario offline exigem confirmacao do IP. Veja [fluxo, configuracao e limites](docs/DIAGNOSTIC_CLARIFICATION.md).
+
+## Verificacao de software
+
+/softwares e APIs de instalacao distinguem retorno do instalador de presenca/versao encontradas, com resultado por programa e estado PARTIAL quando aplicavel. Detalhes ficam em /tarefa <ID>. Veja [criterios e limites](docs/SOFTWARE_VERIFICATION.md). Presenca nao comprova funcionamento ou licenca.

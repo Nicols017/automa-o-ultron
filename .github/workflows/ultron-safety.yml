@@ -1,0 +1,154 @@
+name: Ultron safety regression tests
+
+on:
+  pull_request:
+    paths:
+      - "core/**"
+      - "chatops/**"
+      - "main.py"
+      - "tests/test_readonly_diagnostics.py"
+      - "tests/test_agent_task_manager.py"
+      - "tests/test_chatops_safety.py"
+      - "tests/test_agent_auth.py"
+      - "tests/test_backup_gate.py"
+      - "tests/test_macrium_verifier.py"
+      - "verifier/**"
+      - "scripts/powershell/Verify-MacriumImage.ps1"
+      - "tests/test_macrium_remote.py"
+      - "tests/test_macrium_integration_contract.py"
+      - "tests/test_preformat_files_backup.py"
+      - "tests/test_intent_preflight.py"
+      - "tests/test_structured_intent.py"
+      - "tests/test_operational_memory.py"
+      - "tests/test_semantic_dispatch.py"
+      - "tests/test_headless_api.py"
+      - "tests/test_intent_corpus.py"
+      - "tests/test_conversation_safety.py"
+      - "README.md"
+      - "tests/intent_examples.json"
+      - "scripts/evaluate_intents.py"
+      - "scripts/powershell/Backup-UserData.ps1"
+      - "tests/test_agent_protocol_contract.py"
+      - "agent/UltronAgent.cs"
+      - ".github/workflows/ultron-safety.yml"
+      - "agent/**"
+      - "tests/**"
+      - "docker-compose.yml"
+      - ".dockerignore"
+      - "scripts/powershell/Bootstrap-Ultron.ps1"
+      - "scripts/powershell/Install-UnifiedPackages.ps1"
+      - "scripts/powershell/Verify-InstalledPackages.ps1"
+      - "tests/test_windows_agent_review.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-safety-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install security test dependency
+        run: python -m pip install "fastapi>=0.110,<1"
+      - name: Check syntax of modified Python modules
+        run: |
+          python -m compileall -q main.py chatops/chatops.py core/agent_runtime.py core/agent_task_manager.py core/orchestrator.py core/agent_auth.py core/backup_gate.py core/macrium_remote.py core/preformat_files_backup.py core/intent_preflight.py core/structured_intent.py core/diagnostic_analyzer.py core/operational_memory.py core/trueconf_webhook_auth.py verifier/macrium_verify.py
+      - name: Run offline safety tests (no network or production access)
+        run: |
+          python -m unittest discover -s tests -p 'test_readonly_diagnostics.py' -v
+          python -m unittest discover -s tests -p 'test_agent_task_manager.py' -v
+          python -m unittest discover -s tests -p 'test_chatops_safety.py' -v
+          python -m unittest discover -s tests -p 'test_agent_auth.py' -v
+          python -m unittest discover -s tests -p 'test_backup_gate.py' -v
+          python -m unittest discover -s tests -p 'test_macrium_verifier.py' -v
+          python -m unittest discover -s tests -p 'test_macrium_remote.py' -v
+          python -m unittest discover -s tests -p 'test_macrium_integration_contract.py' -v
+          python -m unittest discover -s tests -p 'test_preformat_files_backup.py' -v
+          python -m unittest discover -s tests -p 'test_intent_preflight.py' -v
+          python -m unittest discover -s tests -p 'test_structured_intent.py' -v
+          python -m unittest discover -s tests -p 'test_operational_memory.py' -v
+          python -m unittest discover -s tests -p 'test_semantic_dispatch.py' -v
+          python -m unittest discover -s tests -p 'test_headless_api.py' -v
+          python -m unittest discover -s tests -p 'test_intent_corpus.py' -v
+          python -m unittest discover -s tests -p 'test_conversation_safety.py' -v
+          python scripts/evaluate_intents.py --strict
+          python -m unittest discover -s tests -p 'test_agent_protocol_contract.py' -v
+
+      - name: Validate Windows PowerShell parse (without executing)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile('scripts/powershell/Verify-MacriumImage.ps1', [ref]$tokens, [ref]$errors) | Out-Null
+          [System.Management.Automation.Language.Parser]::ParseFile('scripts/powershell/Backup-UserData.ps1', [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
+      - name: Windows agent offline behavior tests
+        run: python -m unittest discover -s tests -p 'test_windows_agent_review.py' -v
+      - name: Compile agent and parse installer without running either
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /r:System.Management.dll /r:System.ServiceProcess.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /out:agent-review-test.exe .\agent\UltronAgent.cs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($path in @('agent/Install-Agent.ps1', 'scripts/powershell/Bootstrap-Ultron.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count) { throw ($errors | Out-String) }
+          }
+
+      - name: Verify package integrity offline
+        run: python -m unittest discover -s tests -p 'test_agent_package.py' -v
+      - name: Test pure C# diagnostics and mocked Windows installation
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /r:agent-review-test.exe /out:diagnostic-tests.exe .\tests\AgentDiagnosticsTests.cs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & .\diagnostic-tests.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & powershell.exe -NoProfile -NonInteractive -File .\tests\Test-AgentInstallerOffline.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build and validate review package only inside CI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & .\agent\build_agent.ps1 -OutputDirectory "$env:RUNNER_TEMP/ultron-agent-package"
+          $env:ULTRON_AGENT_PACKAGE_DIR = "$env:RUNNER_TEMP/ultron-agent-package"
+          python -c "from core.agent_builder import AgentBuilder; print(AgentBuilder().get_latest_agent_binary())"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Project reliability and TrueConf integration with fake SDK
+        run: python -m unittest discover -s tests -p 'test_project_reliability.py' -v
+
+      - name: Unified persistent tasks with fake executors
+        run: python -m unittest discover -s tests -p 'test_task_registry.py' -v
+
+      - name: Typed diagnostic clarification and exact offline inventory
+        run: python -m unittest discover -s tests -p 'test_clarification.py' -v
+
+      - name: Per-package installation assessment with fake executors
+        run: python -m unittest discover -s tests -p 'test_software_installation.py' -v
+      - name: Package query and installer reporting with all native commands mocked
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & powershell.exe -NoProfile -NonInteractive -File .\tests\Test-PackageVerificationOffline.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & powershell.exe -NoProfile -NonInteractive -File .\tests\Test-InstallAttemptsOffline.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -35,24 +35,15 @@ switch:
   type: mikrotik_ssh
   user: admin
 trueconf:
-  api_token: DH233ZbAAlnzc3b2suuFjwjyXhHRLob2
-  bot_password: 55JnRSa8UsS10GnF4Q65
+  api_token: ""
+  bot_password: ""
   bot_username: ultron
   channel_id: lab_bench_channel
   default_tech_user_id: nicolas.silva
   server_url: https://trueconf.penserede.com.br
 winrm:
-  default_pass: "@a123456"
-  default_user: penserede
-  fallback_credentials:
-  - pass: "@a123456"
-    user: penserede
-  - pass: "@a123456"
-    user: ultron_admin
-  - pass: ''
-    user: Administrator
-  - pass: ''
-    user: Administrador
-  - pass: ''
-    user: penserede
-  port: 5985
+  default_user: ""
+  default_pass: ""
+  scheme: https
+  port: 5986
+  allow_http_ntlm: false

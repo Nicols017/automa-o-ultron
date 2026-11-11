@@ -6,7 +6,7 @@ e comandos de superadministrador exclusivos para Nicolas Silva.
 
 import threading
 import time
-import re
+import uuid
 import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
@@ -38,20 +38,20 @@ class UltronScheduler:
 
     def schedule_message(self, sender_id: str, target_user: str, message: str, trigger_time: datetime) -> str:
         """Agenda uma mensagem no TrueConf para ser entregue no horário programado."""
-        task_id = f"sch_{int(time.time() * 1000)}"
+        task_id = "sch_" + uuid.uuid4().hex
         task = ScheduledMessage(task_id, sender_id, target_user, message, trigger_time)
         with self._lock:
             self.tasks.append(task)
         logger.info(f"⏰ Mensagem agendada [{task_id}] de {sender_id} para @{target_user} às {trigger_time.strftime('%H:%M:%S (%d/%m)')}")
         return task_id
 
-    def list_scheduled(self, sender_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_scheduled(self, sender_id: str) -> List[Dict[str, Any]]:
         with self._lock:
             now = datetime.now()
             res = []
             for t in self.tasks:
                 if not t.executed:
-                    if not sender_id or t.sender_id == sender_id:
+                    if t.sender_id == sender_id:
                         res.append({
                             "id": t.task_id,
                             "target": t.target_user,
@@ -61,11 +61,11 @@ class UltronScheduler:
                         })
             return res
 
-    def cancel_task(self, task_id: str) -> bool:
+    def cancel_task(self, task_id: str, sender_id: str) -> bool:
         with self._lock:
             for t in self.tasks:
-                if t.task_id == task_id and not t.executed:
-                    t.executed = True
+                if t.task_id == task_id and t.sender_id == sender_id and not t.executed:
+                    self.tasks.remove(t)
                     return True
         return False
 
@@ -79,6 +79,7 @@ class UltronScheduler:
                         if not t.executed and t.trigger_time <= now:
                             t.executed = True
                             due_tasks.append(t)
+                    self.tasks = [t for t in self.tasks if not t.executed]
 
                 for t in due_tasks:
                     self._dispatch_task(t)

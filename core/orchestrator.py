@@ -62,19 +62,7 @@ class LabOrchestrator:
         bench_info = self.switch_id.identify_bench(ip=ip)
         log(f"🔍 [ULTRON] Coletando telemetria de {ip} ({bench_info['bench_name']})...")
         
-        log(f"🩺 [ULTRON] Rodando Motor de Auto-Cura de Hardware em {ip}...")
-        heal_res = self.winrm.run_script_file(ip, "AutoHeal-Hardware.ps1")
-        heal_data = {}
-        if heal_res.get("success") and heal_res.get("stdout"):
-            try:
-                h_out = heal_res["stdout"]
-                h_start = h_out.find("{")
-                h_end = h_out.rfind("}") + 1
-                if h_start != -1 and h_end != -1:
-                    heal_data = json.loads(h_out[h_start:h_end])
-            except Exception:
-                pass
-
+        # Diagnósticos são somente leitura. Reparos exigem uma operação separada e autorizada.
         telemetry_res = self.winrm.run_script_file(ip, "Inspect-SystemLogs.ps1")
         
         telemetry_data = {}
@@ -85,9 +73,10 @@ class LabOrchestrator:
                 json_start = stdout.find("{")
                 json_end = stdout.rfind("}") + 1
                 if json_start != -1 and json_end != -1:
-                    telemetry_data = json.loads(stdout[json_start:json_end])
-                    if heal_data:
-                        telemetry_data["auto_heal_report"] = heal_data
+                    parsed = json.loads(stdout[json_start:json_end])
+                    if not isinstance(parsed, dict):
+                        raise ValueError("A telemetria retornada não é um objeto JSON.")
+                    telemetry_data = parsed
             except Exception as e:
                 log(f"⚠️ Erro ao parsear JSON de telemetria: {e}", level="warning")
                 error_msg = f"Erro ao processar dados de telemetria da máquina: {e}"
@@ -99,40 +88,23 @@ class LabOrchestrator:
                 "ip": ip,
                 "success": False,
                 "error": error_msg or "Dados de telemetria não puderam ser extraídos da máquina.",
+                "outcome": telemetry_res.get("outcome", "CONFIRMED_FAILURE"),
                 "telemetry": {},
                 "ai_diagnosis": ""
             }
 
-        log(f"🧠 [ULTRON] Processando diagnóstico com IA na RTX 5060 Ti...")
-        
-        # Modo Agente Autônomo (Loop de Ferramentas)
+        log("🧠 [ULTRON] Gerando diagnóstico a partir da telemetria (sem execução remota pela IA)...")
         try:
-            from core.tools import RunPowerShellTool
-            from core.agent_loop import AgenticLoop
-            
-            powershell_tool = RunPowerShellTool(self.winrm)
-            agent = AgenticLoop(self.analyzer, [powershell_tool])
-            
-            # Reconstrói os prompts da análise para o contexto do agente
-            system_prompt = (
-                "Você é o ULTRON, perito sênior em hardware de computadores e suporte de TI da Pense Rede.\n"
-                "Sua missão é emitir um laudo técnico claro e direto.\n"
-                "Diretrizes:\n"
-                "- Idioma: Português do Brasil (pt-BR).\n"
-                "- Escreva de forma simples e natural, em parágrafos curtos.\n"
-                "- Siga exatamente esta estrutura em texto corrido (utilize estas exatas palavras como início de frase, sem negrito, seguido de dois pontos e pule uma linha entre elas):\n\n"
-                "Diagnóstico:\n(Resumo do que foi encontrado)\n\n"
-                "Causa provável:\n(Causa do problema)\n\n"
-                "Ações recomendadas:\n(Passo a passo prático)\n\n"
-                "Veredito:\n(Aprovada para preparação ou requer manutenção)"
-            )
-            prompt = f"Analise a telemetria e logs de hardware da máquina alvo (IP: {ip}):\n\n--- DADOS DA MÁQUINA ---\n{json.dumps(telemetry_data, indent=2, ensure_ascii=False)}\n------------------------\nSe detectar problemas que possam ser resolvidos via WinRM (PowerShell), resolva-os antes de gerar o laudo final."
-            
-            # Inicia o loop agentic e captura o veredito final
-            ai_verdict = agent.run(prompt, system_prompt, log_callback=log)
-        except Exception as e:
-            log(f"⚠️ Erro no Modo Agente: {e}. Executando fallback normal.", level="warning")
             ai_verdict = self.analyzer.analyze_logs(telemetry_data)
+        except Exception:
+            log("⚠️ Não foi possível gerar o parecer de IA.", level="warning")
+            return {
+                "ip": ip,
+                "success": False,
+                "error": "Falha ao gerar parecer de diagnóstico.",
+                "telemetry": telemetry_data,
+                "ai_diagnosis": ""
+            }
 
         # Consulta Memória Permanente (Obsidian) pelo MAC Address
         obsidian_history = ""
@@ -171,279 +143,321 @@ class LabOrchestrator:
         """
         Executa a esteira completa de preparação da máquina com streaming de eventos.
         """
-        logs = []
-        anydesk_id = ""
-        TOTAL_STAGES = 7
+        from core.preparation import preparation
+        with preparation(tech_user_id or "api_operator", ip) as (job_id, mark):
+            logs = []
+            anydesk_id = ""
+            TOTAL_STAGES = 7
 
-        def log(msg: str, level: str = "info", stage: Optional[int] = None, stage_name: Optional[str] = None):
-            print(msg)
-            logs.append(msg)
+            def log(msg: str, level: str = "info", stage: Optional[int] = None, stage_name: Optional[str] = None):
+                print(msg)
+                logs.append(msg)
+                if log_callback:
+                    try:
+                        payload = {
+                            "type": "log",
+                            "message": msg,
+                            "level": level,
+                            "stage": stage,
+                            "total_stages": TOTAL_STAGES,
+                            "stage_name": stage_name,
+                            "anydesk_id": anydesk_id
+                        }
+                        log_callback(payload)
+                    except Exception:
+                        pass
+
+            # 1. Carrega Perfil do Cliente e Valida Conexão
+            profile = self.profile_mgr.get_client_profile(client_id)
+            client_name = profile.get("nome_exibicao", client_id)
+            milvus_token = profile.get("milvus_token", "")
+            mdt_server = self.settings.get("network", {}).get("mdt_server_ip", "192.168.57.87")
+            bench_info = self.switch_id.identify_bench(ip=ip)
+
+            log(
+                f"🚀 [ULTRON] Iniciando Esteira para {ip} ({bench_info['bench_name']}) - Cliente: {client_name}",
+                level="info",
+                stage=1,
+                stage_name="Reconhecimento & Conectividade"
+            )
+
+            if not self.winrm.test_connection(ip):
+                err_msg = f"❌ [ULTRON] Máquina {ip} ({bench_info['bench_name']}) inacessível via WinRM (porta 5985 fechada)."
+                log(err_msg, level="error", stage=1, stage_name="Falha de Conectividade")
+                if tech_user_id:
+                    self.bot.send_direct_message(tech_user_id, f"⚠️ Falha no Ultron: {err_msg}")
+                if log_callback:
+                    log_callback({"type": "error", "error": err_msg})
+                return {"success": False, "job_id": job_id, "ip": ip, "logs": logs, "error": err_msg}
+
+            log("✅ Conexão WinRM estabelecida com sucesso!", level="success", stage=1)
+
+            # 2. Coleta de Telemetria
+            log(
+                "🔍 [ULTRON] Executando inspeção de hardware e coleta de S.M.A.R.T...",
+                level="info",
+                stage=2,
+                stage_name="Inspeção de Hardware"
+            )
+            mark("diagnostico", "RUNNING")
+            diag_result = self.run_diagnostics_only(ip, log_callback=log_callback)
+            mark("diagnostico", "SUCCESS" if diag_result.get("success") else ("UNKNOWN" if diag_result.get("outcome") == "UNKNOWN" else "ERROR"))
+            if not diag_result.get("success"):
+                err_msg = diag_result.get("error") or "Diagnóstico não pôde ser concluído."
+                log(f"❌ [ULTRON] Preparação interrompida: {err_msg}", level="error", stage=2, stage_name="Falha de Diagnóstico")
+                if log_callback:
+                    log_callback({"type": "error", "error": err_msg})
+                return {"success": False, "job_id": job_id, "ip": ip, "logs": logs, "error": err_msg}
+            telemetry = diag_result["telemetry"]
+            log(f"💻 Hostname: {telemetry.get('computer_name')} | Serial: {telemetry.get('serial_number')}", level="info", stage=2)
+
+            # 3. Diagnóstico Inteligente com IA
+            log(
+                "🧠 [ULTRON] Processando diagnóstico com IA Jarvis (Qwen 3.5 / llama.cpp)...",
+                level="info",
+                stage=3,
+                stage_name="Diagnóstico Inteligente IA"
+            )
+            ai_verdict = diag_result["ai_diagnosis"]
+            log("✅ Parecer técnico gerado pelo Ultron AI!", level="success", stage=3)
+
+            # 4. Executa Instalação de Softwares Padrão
+            log(
+                "📦 [ULTRON] Instalando softwares padrão (AnyDesk, Office, Milvus, Ativação MAS)...",
+                level="info",
+                stage=4,
+                stage_name="Instalação de Softwares Padrão"
+            )
+            install_params = {
+                "MilvusToken": milvus_token,
+                "ClientName": client_name,
+                "MdtServer": mdt_server,
+                "ActivateOfficeWin": True
+            }
+            mark("instalacao", "RUNNING")
+            install_res = self.winrm.run_script_file(ip, "Install-LabStandard.ps1", params=install_params)
+        
+            # Extrai AnyDesk ID da saída
+            import re
+            stdout_txt = install_res.get("stdout", "")
+            anydesk_match = re.search(r"ANYDESK_ID:([^\r\n]+)", stdout_txt)
+            if anydesk_match:
+                raw_id = anydesk_match.group(1).strip()
+                if raw_id and raw_id != "NÃO_DETECTADO":
+                    anydesk_id = raw_id
+                    log(f"🔑 AnyDesk ID capturado: {anydesk_id}", level="success", stage=4)
+                    if log_callback:
+                        log_callback({"type": "anydesk_detected", "anydesk_id": anydesk_id})
+
+            if not install_res["success"]:
+                mark("instalacao", "UNKNOWN" if install_res.get("outcome") == "UNKNOWN" else "ERROR")
+                return {"success": False, "job_id": job_id, "ip": ip, "logs": logs, "error": "Instalação padrão não confirmada."}
+            # 5. Softwares Adicionais do Perfil via Winget & Scripts Customizados
+            log(
+                "⚙️ [ULTRON] Verificando configurações e pacotes específicos do perfil...",
+                level="info",
+                stage=5,
+                stage_name="Configurações do Cliente"
+            )
+            profile_pkgs = profile.get("softwares", {}).get("winget", []) or []
+            extra_pkgs = custom_packages or []
+        
+            # Junta pacotes sem duplicações preservando a ordem
+            combined_pkgs = []
+            for p in profile_pkgs + extra_pkgs:
+                clean_p = p.strip()
+                if clean_p and clean_p not in combined_pkgs:
+                    combined_pkgs.append(clean_p)
+
+            if combined_pkgs:
+                log(f"📦 Preparando Chocolatey e instalando pacotes adicionais ({len(combined_pkgs)} itens)...", level="info", stage=5)
+                setup_choco = """
+                if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+                    Set-ExecutionPolicy Bypass -Scope Process -Force
+                    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+                    Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+                }
+                """
+                self.winrm.run_powershell_code(ip, setup_choco)
+
+                winget_to_choco = {
+                    "Google.Chrome": "googlechrome",
+                    "Mozilla.Firefox": "firefox",
+                    "AnyDeskSoftwareGmbH.AnyDesk": "anydesk",
+                    "7zip.7zip": "7zip",
+                    "RARLab.WinRAR": "winrar",
+                    "Foxit.FoxitReader": "foxitreader",
+                    "Notepad++.Notepad++": "notepadplusplus",
+                    "Skillcaps.Lightshot": "lightshot",
+                    "Microsoft.Teams": "microsoft-teams",
+                    "OpenVPNTechnologies.OpenVPN": "openvpn",
+                    "FileZilla.FileZillaClient": "filezilla",
+                    "Devolutions.RemoteDesktopManager": "remotedesktopmanager",
+                    "Postman.Postman": "postman",
+                    "Git.Git": "git",
+                    "Microsoft.VisualStudioCode": "vscode",
+                    "TeamViewer.TeamViewer": "teamviewer",
+                    "Adobe.Acrobat.Reader.64-bit": "adobereader",
+                    "Microsoft.Office": "LOCAL_OFFICE"
+                }
+
+                for pkg in combined_pkgs:
+                    choco_pkg = winget_to_choco.get(pkg, pkg.lower())
+                
+                    if choco_pkg == "LOCAL_OFFICE":
+                        log(f"  -> Instalando Pacote Pesado via Rede Local: {pkg}...", level="info", stage=5)
+                        office_cmd = "cmd.exe /c \"\\\\\\\\192.168.57.87\\\\DeploymentShare$\\\\Scripts\\\\InstalarOffice.bat\""
+                        step_result = self.winrm.run_powershell_code(ip, office_cmd)
+                        if not step_result.get("success"):
+                            mark("instalacao", "UNKNOWN" if step_result.get("outcome") == "UNKNOWN" else "ERROR")
+                            return {"success": False, "job_id": job_id, "error": "Etapa de instalação interrompida."}
+                    elif "sqlserver" in choco_pkg or "visualstudio" in choco_pkg or "vegas" in choco_pkg:
+                        log(f"  -> Pulo intencional de app pesado via Choco: {pkg}", level="warning", stage=5)
+                    else:
+                        log(f"  -> Instalando {choco_pkg} via Chocolatey...", level="info", stage=5)
+                        cmd = f"choco install {choco_pkg} -y --no-progress --force"
+                        step_result = self.winrm.run_powershell_code(ip, cmd)
+                        if not step_result.get("success"):
+                            mark("instalacao", "UNKNOWN" if step_result.get("outcome") == "UNKNOWN" else "ERROR")
+                            return {"success": False, "job_id": job_id, "error": "Etapa de instalação interrompida."}
+
+            custom_scripts = profile.get("custom_scripts", [])
+            for script_item in custom_scripts:
+                log(f"⚙️ Executando script customizado: {script_item}", level="info", stage=5)
+                parts = script_item.split(" ", 1)
+                s_name = parts[0]
+                if len(parts) > 1:
+                    script_path = os.path.join(self.winrm.scripts_dir, s_name)
+                    if os.path.exists(script_path):
+                        with open(script_path, "r", encoding="utf-8") as f:
+                            content = f.read()
+                        invoker = f"& {{\n{content}\n}} {parts[1]}"
+                        step_result = self.winrm.run_powershell_code(ip, invoker)
+                        if not step_result.get("success"):
+                            mark("instalacao", "UNKNOWN" if step_result.get("outcome") == "UNKNOWN" else "ERROR")
+                            return {"success": False, "job_id": job_id, "error": "Etapa de instalação interrompida."}
+                    else:
+                        log(f"⚠️ Script customizado não encontrado: {s_name}", level="warning", stage=5)
+                else:
+                    step_result = self.winrm.run_script_file(ip, s_name)
+                    if not step_result.get("success"):
+                        mark("instalacao", "UNKNOWN" if step_result.get("outcome") == "UNKNOWN" else "ERROR")
+                        return {"success": False, "job_id": job_id, "error": "Etapa de instalação interrompida."}
+
+            from core.software_installation import verify_preparation_packages
+            requested = ["AnyDeskSoftwareGmbH.AnyDesk", "Google.Chrome", "RARLab.WinRAR",
+                         "Adobe.Acrobat.Reader.64-bit", *combined_pkgs]
+            try:
+                versions = verify_preparation_packages(self.winrm, ip, requested)
+            except Exception:
+                versions = dict.fromkeys(requested)
+            missing = [name for name, version in versions.items() if not version]
+            if missing:
+                mark("instalacao", "UNKNOWN")
+                return {"success": False, "job_id": job_id, "package_versions": versions,
+                        "error": "Presença ou versão não confirmada para " + ", ".join(missing)}
+            mark("instalacao", "SUCCESS")
+
+            # 6. Domínio e Teste de Estresse (Burn-in)
+            dom_cfg = domain_config or profile.get("dominio", {})
+            d_name = ""
+            if isinstance(dom_cfg, dict):
+                d_name = dom_cfg.get("domain_name") or dom_cfg.get("nome", "")
+
+            if d_name:
+                d_user = dom_cfg.get("domain_user", "")
+                d_pass = dom_cfg.get("domain_password", "")
+                d_dns = dom_cfg.get("dns_server", "")
+                d_ip = dom_cfg.get("static_ip", "")
+                d_mask = dom_cfg.get("subnet_mask", "255.255.255.0")
+                d_gw = dom_cfg.get("gateway", "")
+                d_ou = dom_cfg.get("ou_path", "")
+
+                log(f"🏢 [ULTRON] Configurando rede e ingressando no domínio {d_name}...", level="info", stage=6, stage_name="Domínio & Estresse")
+                dom_params = {
+                    "DomainName": d_name,
+                    "DomainUser": d_user,
+                    "DomainPassword": d_pass,
+                    "DnsServer": d_dns,
+                    "StaticIp": d_ip,
+                    "SubnetMask": d_mask,
+                    "Gateway": d_gw,
+                    "OUPath": d_ou
+                }
+                dom_res = self.winrm.run_script_file(ip, "Join-CustomerDomain.ps1", params=dom_params)
+                if not dom_res["success"]:
+                    log(f"⚠️ Alerta durante ingresso no domínio: {dom_res.get('stderr', '')}", level="warning", stage=6)
+                else:
+                    log(f"✅ Ingressado com sucesso no domínio {d_name}!", level="success", stage=6)
+
+            burnin_status = "Ignorado"
+            if not skip_burnin:
+                log("⚡ [ULTRON] Executando teste de estresse térmico (Burn-in)...", level="info", stage=6, stage_name="Teste de Estresse")
+                burnin_res = self.winrm.run_script_file(ip, "Run-LabBurnIn.ps1", params={"StressMinutes": 1})
+                burnin_status = "Aprovado" if burnin_res["success"] else "Alerta de Estresse"
+                log(f"⚡ Resultado do Teste de Estresse: {burnin_status}", level="success" if burnin_status == "Aprovado" else "warning", stage=6)
+
+            # 7. Geração do Laudo Técnico em PDF e Notificação
+            log(
+                "📄 [ULTRON] Gerando Laudo Técnico em PDF com chancela Pense Rede...",
+                level="info",
+                stage=7,
+                stage_name="Emissão de Laudo & Notificação"
+            )
+            tech_display = technician_name or "Nicolas Silva"
+            mark("laudo", "RUNNING")
+            pdf_path = self.report_gen.generate_report(
+                telemetry_data=telemetry,
+                client_name=client_name,
+                ai_diagnosis=ai_verdict,
+                burnin_status=burnin_status,
+                technician=tech_display,
+                anydesk_id=anydesk_id
+            )
+            if not pdf_path or not os.path.isfile(pdf_path) or not os.path.getsize(pdf_path):
+                mark("laudo", "ERROR")
+                return {"success": False, "job_id": job_id, "error": "Laudo ausente ou vazio."}
+            mark("laudo", "SUCCESS")
+            pdf_filename = os.path.basename(pdf_path)
+            log(f"✅ [ULTRON] Laudo PDF gerado: {pdf_filename}", level="success", stage=7)
+
+            # Notificação no TrueConf
+            if tech_user_id:
+                self.bot.notify_pipeline_finished(
+                    user_id=tech_user_id,
+                    bench_name=bench_info["bench_name"],
+                    ip=ip,
+                    serial=telemetry.get("serial_number", "N/A"),
+                    client_name=client_name,
+                    burnin_status=burnin_status,
+                    pdf_filename=pdf_filename,
+                    anydesk_id=anydesk_id
+                )
+                log("📱 Técnico notificado no privado via TrueConf!", level="success", stage=7)
+
+            log("🎉 [ULTRON] Esteira de automação finalizada com laudo gerado!", level="success", stage=7)
+
+            result = {
+                "job_id": job_id,
+                "success": True,
+                "ip": ip,
+                "client": client_name,
+                "serial": telemetry.get("serial_number", "N/A"),
+                "anydesk_id": anydesk_id,
+                "package_versions": versions,
+                "pdf_report": pdf_filename,
+                "pdf_path": pdf_path,
+                "burnin_status": burnin_status,
+                "logs": logs
+            }
+
             if log_callback:
                 try:
-                    payload = {
-                        "type": "log",
-                        "message": msg,
-                        "level": level,
-                        "stage": stage,
-                        "total_stages": TOTAL_STAGES,
-                        "stage_name": stage_name,
-                        "anydesk_id": anydesk_id
-                    }
-                    log_callback(payload)
+                    log_callback({
+                        "type": "finished",
+                        "result": result
+                    })
                 except Exception:
                     pass
 
-        # 1. Carrega Perfil do Cliente e Valida Conexão
-        profile = self.profile_mgr.get_client_profile(client_id)
-        client_name = profile.get("nome_exibicao", client_id)
-        milvus_token = profile.get("milvus_token", "")
-        mdt_server = self.settings.get("network", {}).get("mdt_server_ip", "192.168.57.87")
-        bench_info = self.switch_id.identify_bench(ip=ip)
-
-        log(
-            f"🚀 [ULTRON] Iniciando Esteira para {ip} ({bench_info['bench_name']}) - Cliente: {client_name}",
-            level="info",
-            stage=1,
-            stage_name="Reconhecimento & Conectividade"
-        )
-
-        if not self.winrm.test_connection(ip):
-            err_msg = f"❌ [ULTRON] Máquina {ip} ({bench_info['bench_name']}) inacessível via WinRM (porta 5985 fechada)."
-            log(err_msg, level="error", stage=1, stage_name="Falha de Conectividade")
-            if tech_user_id:
-                self.bot.send_direct_message(tech_user_id, f"⚠️ Falha no Ultron: {err_msg}")
-            if log_callback:
-                log_callback({"type": "error", "error": err_msg})
-            return {"success": False, "ip": ip, "logs": logs, "error": err_msg}
-
-        log("✅ Conexão WinRM estabelecida com sucesso!", level="success", stage=1)
-
-        # 2. Coleta de Telemetria
-        log(
-            "🔍 [ULTRON] Executando inspeção de hardware e coleta de S.M.A.R.T...",
-            level="info",
-            stage=2,
-            stage_name="Inspeção de Hardware"
-        )
-        diag_result = self.run_diagnostics_only(ip, log_callback=log_callback)
-        telemetry = diag_result["telemetry"]
-        log(f"💻 Hostname: {telemetry.get('computer_name')} | Serial: {telemetry.get('serial_number')}", level="info", stage=2)
-
-        # 3. Diagnóstico Inteligente com IA
-        log(
-            "🧠 [ULTRON] Processando diagnóstico com IA Jarvis (Qwen 3.5 / llama.cpp)...",
-            level="info",
-            stage=3,
-            stage_name="Diagnóstico Inteligente IA"
-        )
-        ai_verdict = diag_result["ai_diagnosis"]
-        log("✅ Parecer técnico gerado pelo Ultron AI!", level="success", stage=3)
-
-        # 4. Executa Instalação de Softwares Padrão
-        log(
-            "📦 [ULTRON] Instalando softwares padrão (AnyDesk, Office, Milvus, Ativação MAS)...",
-            level="info",
-            stage=4,
-            stage_name="Instalação de Softwares Padrão"
-        )
-        install_params = {
-            "MilvusToken": milvus_token,
-            "ClientName": client_name,
-            "MdtServer": mdt_server,
-            "ActivateOfficeWin": True
-        }
-        install_res = self.winrm.run_script_file(ip, "Install-LabStandard.ps1", params=install_params)
-        
-        # Extrai AnyDesk ID da saída
-        import re
-        stdout_txt = install_res.get("stdout", "")
-        anydesk_match = re.search(r"ANYDESK_ID:([^\r\n]+)", stdout_txt)
-        if anydesk_match:
-            raw_id = anydesk_match.group(1).strip()
-            if raw_id and raw_id != "NÃO_DETECTADO":
-                anydesk_id = raw_id
-                log(f"🔑 AnyDesk ID capturado: {anydesk_id}", level="success", stage=4)
-                if log_callback:
-                    log_callback({"type": "anydesk_detected", "anydesk_id": anydesk_id})
-
-        if not install_res["success"]:
-            log(f"⚠️ Alerta durante instalação de softwares: {install_res.get('stderr', '')}", level="warning", stage=4)
-        else:
-            log("✅ Softwares padrão instalados com sucesso!", level="success", stage=4)
-
-        # 5. Softwares Adicionais do Perfil via Winget & Scripts Customizados
-        log(
-            "⚙️ [ULTRON] Verificando configurações e pacotes específicos do perfil...",
-            level="info",
-            stage=5,
-            stage_name="Configurações do Cliente"
-        )
-        profile_pkgs = profile.get("softwares", {}).get("winget", []) or []
-        extra_pkgs = custom_packages or []
-        
-        # Junta pacotes sem duplicações preservando a ordem
-        combined_pkgs = []
-        for p in profile_pkgs + extra_pkgs:
-            clean_p = p.strip()
-            if clean_p and clean_p not in combined_pkgs:
-                combined_pkgs.append(clean_p)
-
-        if combined_pkgs:
-            log(f"📦 Preparando Chocolatey e instalando pacotes adicionais ({len(combined_pkgs)} itens)...", level="info", stage=5)
-            setup_choco = """
-            if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-                Set-ExecutionPolicy Bypass -Scope Process -Force
-                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-                Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-            }
-            """
-            self.winrm.run_powershell_code(ip, setup_choco)
-
-            winget_to_choco = {
-                "Google.Chrome": "googlechrome",
-                "Mozilla.Firefox": "firefox",
-                "AnyDeskSoftwareGmbH.AnyDesk": "anydesk",
-                "7zip.7zip": "7zip",
-                "RARLab.WinRAR": "winrar",
-                "Foxit.FoxitReader": "foxitreader",
-                "Notepad++.Notepad++": "notepadplusplus",
-                "Skillcaps.Lightshot": "lightshot",
-                "Microsoft.Teams": "microsoft-teams",
-                "OpenVPNTechnologies.OpenVPN": "openvpn",
-                "FileZilla.FileZillaClient": "filezilla",
-                "Devolutions.RemoteDesktopManager": "remotedesktopmanager",
-                "Postman.Postman": "postman",
-                "Git.Git": "git",
-                "Microsoft.VisualStudioCode": "vscode",
-                "TeamViewer.TeamViewer": "teamviewer",
-                "Adobe.Acrobat.Reader.64-bit": "adobereader",
-                "Microsoft.Office": "LOCAL_OFFICE"
-            }
-
-            for pkg in combined_pkgs:
-                choco_pkg = winget_to_choco.get(pkg, pkg.lower())
-                
-                if choco_pkg == "LOCAL_OFFICE":
-                    log(f"  -> Instalando Pacote Pesado via Rede Local: {pkg}...", level="info", stage=5)
-                    office_cmd = "cmd.exe /c \"\\\\\\\\192.168.57.87\\\\DeploymentShare$\\\\Scripts\\\\InstalarOffice.bat\""
-                    self.winrm.run_powershell_code(ip, office_cmd)
-                elif "sqlserver" in choco_pkg or "visualstudio" in choco_pkg or "vegas" in choco_pkg:
-                    log(f"  -> Pulo intencional de app pesado via Choco: {pkg}", level="warning", stage=5)
-                else:
-                    log(f"  -> Instalando {choco_pkg} via Chocolatey...", level="info", stage=5)
-                    cmd = f"choco install {choco_pkg} -y --no-progress --force"
-                    self.winrm.run_powershell_code(ip, cmd)
-
-        custom_scripts = profile.get("custom_scripts", [])
-        for script_item in custom_scripts:
-            log(f"⚙️ Executando script customizado: {script_item}", level="info", stage=5)
-            parts = script_item.split(" ", 1)
-            s_name = parts[0]
-            if len(parts) > 1:
-                script_path = os.path.join(self.winrm.scripts_dir, s_name)
-                if os.path.exists(script_path):
-                    with open(script_path, "r", encoding="utf-8") as f:
-                        content = f.read()
-                    invoker = f"& {{\n{content}\n}} {parts[1]}"
-                    self.winrm.run_powershell_code(ip, invoker)
-                else:
-                    log(f"⚠️ Script customizado não encontrado: {s_name}", level="warning", stage=5)
-            else:
-                self.winrm.run_script_file(ip, s_name)
-
-        # 6. Domínio e Teste de Estresse (Burn-in)
-        dom_cfg = domain_config or profile.get("dominio", {})
-        d_name = ""
-        if isinstance(dom_cfg, dict):
-            d_name = dom_cfg.get("domain_name") or dom_cfg.get("nome", "")
-
-        if d_name:
-            d_user = dom_cfg.get("domain_user", "")
-            d_pass = dom_cfg.get("domain_password", "")
-            d_dns = dom_cfg.get("dns_server", "")
-            d_ip = dom_cfg.get("static_ip", "")
-            d_mask = dom_cfg.get("subnet_mask", "255.255.255.0")
-            d_gw = dom_cfg.get("gateway", "")
-            d_ou = dom_cfg.get("ou_path", "")
-
-            log(f"🏢 [ULTRON] Configurando rede e ingressando no domínio {d_name}...", level="info", stage=6, stage_name="Domínio & Estresse")
-            dom_params = {
-                "DomainName": d_name,
-                "DomainUser": d_user,
-                "DomainPassword": d_pass,
-                "DnsServer": d_dns,
-                "StaticIp": d_ip,
-                "SubnetMask": d_mask,
-                "Gateway": d_gw,
-                "OUPath": d_ou
-            }
-            dom_res = self.winrm.run_script_file(ip, "Join-CustomerDomain.ps1", params=dom_params)
-            if not dom_res["success"]:
-                log(f"⚠️ Alerta durante ingresso no domínio: {dom_res.get('stderr', '')}", level="warning", stage=6)
-            else:
-                log(f"✅ Ingressado com sucesso no domínio {d_name}!", level="success", stage=6)
-
-        burnin_status = "Ignorado"
-        if not skip_burnin:
-            log("⚡ [ULTRON] Executando teste de estresse térmico (Burn-in)...", level="info", stage=6, stage_name="Teste de Estresse")
-            burnin_res = self.winrm.run_script_file(ip, "Run-LabBurnIn.ps1", params={"StressMinutes": 1})
-            burnin_status = "Aprovado" if burnin_res["success"] else "Alerta de Estresse"
-            log(f"⚡ Resultado do Teste de Estresse: {burnin_status}", level="success" if burnin_status == "Aprovado" else "warning", stage=6)
-
-        # 7. Geração do Laudo Técnico em PDF e Notificação
-        log(
-            "📄 [ULTRON] Gerando Laudo Técnico em PDF com chancela Pense Rede...",
-            level="info",
-            stage=7,
-            stage_name="Emissão de Laudo & Notificação"
-        )
-        tech_display = technician_name or "Nicolas Silva"
-        pdf_path = self.report_gen.generate_report(
-            telemetry_data=telemetry,
-            client_name=client_name,
-            ai_diagnosis=ai_verdict,
-            burnin_status=burnin_status,
-            technician=tech_display,
-            anydesk_id=anydesk_id
-        )
-        pdf_filename = os.path.basename(pdf_path)
-        log(f"✅ [ULTRON] Laudo PDF gerado: {pdf_filename}", level="success", stage=7)
-
-        # Notificação no TrueConf
-        if tech_user_id:
-            self.bot.notify_pipeline_finished(
-                user_id=tech_user_id,
-                bench_name=bench_info["bench_name"],
-                ip=ip,
-                serial=telemetry.get("serial_number", "N/A"),
-                client_name=client_name,
-                burnin_status=burnin_status,
-                pdf_filename=pdf_filename,
-                anydesk_id=anydesk_id
-            )
-            log("📱 Técnico notificado no privado via TrueConf!", level="success", stage=7)
-
-        log("🎉 [ULTRON] Esteira de automação finalizada com 100% de êxito!", level="success", stage=7)
-
-        result = {
-            "success": True,
-            "ip": ip,
-            "client": client_name,
-            "serial": telemetry.get("serial_number", "N/A"),
-            "anydesk_id": anydesk_id,
-            "pdf_report": pdf_filename,
-            "pdf_path": pdf_path,
-            "burnin_status": burnin_status,
-            "logs": logs
-        }
-
-        if log_callback:
-            try:
-                log_callback({
-                    "type": "finished",
-                    "result": result
-                })
-            except Exception:
-                pass
-
-        return result
+            return result

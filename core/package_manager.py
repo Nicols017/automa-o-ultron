@@ -123,21 +123,13 @@ class UnifiedPackageManager:
         if not pkg_ids:
             return {"success": False, "ip": ip, "error": "O arquivo de backup não contém nenhum ID de pacote válido."}
 
-        # Executa a instalação multi-gerenciador
-        res = self.winrm.run_script_file(
-            ip,
-            "Install-UnifiedPackages.ps1",
-            params={"Packages": pkg_ids}
-        )
-
-        return {
-            "success": res["success"],
-            "ip": ip,
-            "bundle_file": os.path.basename(bundle_file),
-            "packages_sent": len(pkg_ids),
-            "output": res.get("stdout", ""),
-            "error": res.get("stderr", "")
-        }
+        from core.software_installation import install_and_verify
+        try:
+            res = install_and_verify(self.winrm, ip, pkg_ids)
+        except ValueError:
+            return {"success": False, "ip": ip, "error": "Bundle contem identificadores invalidos."}
+        return dict(res, ip=ip, bundle_file=os.path.basename(bundle_file),
+                    packages_sent=len(pkg_ids), output="")
 
     def upgrade_all_packages(self, ip: str) -> Dict[str, Any]:
         """
