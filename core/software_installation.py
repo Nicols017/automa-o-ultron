@@ -10,6 +10,24 @@ VERSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+() -]{0,63}")
 STATES = {"CONFIRMED_PRESENT", "UNCONFIRMED", "UNSUPPORTED_ID"}
 
 
+# Only these diagnostic categories may reach chat or the installation API.
+TRANSPORT_HINTS = {
+    "TLS": "Confira a validade, o nome e a cadeia do certificado do equipamento.",
+    "DNS": "Confira a resolução do nome do equipamento e a conexão com a rede.",
+    "LISTENER": "Confira o serviço de gerenciamento e a porta configurada no equipamento.",
+    "AUTHORIZATION": "Confira as permissões da conta no equipamento.",
+    "AUTHENTICATION": "Confira a conta e a credencial Windows configuradas.",
+    "KERBEROS": "Confira domínio, nome do equipamento e sincronização de horário.",
+    "TIMEOUT": "O equipamento demorou a responder. Confira o estado da tarefa antes de repetir.",
+    "TRANSPORT_UNKNOWN": "Confira o estado do equipamento antes de repetir o pedido.",
+}
+
+
+def transport_diagnostic(response):
+    code = response.get("error_code")
+    return code if isinstance(code, str) and code in TRANSPORT_HINTS else None
+
+
 def package_list(packages):
     if not isinstance(packages, (list, tuple)) or not 1 <= len(packages) <= 50:
         raise ValueError("Informe de 1 a 50 pacotes.")
@@ -114,6 +132,8 @@ def assess_installation(install, verification, requested, run_id):
                 outcome="UNKNOWN" if status == "UNKNOWN" else "REPORTED",
                 verification_method="winget_export", package_results=rows,
                 evidence="SOFTWARE_PRESENCE_VERIFIED" if status == "SUCCESS" else "NONE",
+                installation_diagnostic=transport_diagnostic(install),
+                verification_diagnostic=transport_diagnostic(verification),
                 credentials_missing=install.get("error_code") == "CREDENTIALS_MISSING",
                 auth_failed=bool(install.get("auth_failed")),
                 status_code=install.get("status_code", -1), stdout="", stderr="",
@@ -145,7 +165,11 @@ def format_installation(result):
     lines = ["INSTALACAO: " + status]
     if result.get("credentials_missing"):
         lines.append("A instalação não começou. Configure a credencial Windows autorizada para o equipamento e envie o pedido novamente.")
-    if result.get("auth_failed"):
+    for field, stage in (("installation_diagnostic", "Instalação"), ("verification_diagnostic", "Consulta de versão")):
+        code = result.get(field)
+        if code in TRANSPORT_HINTS:
+            lines.append(f"{stage} ({code}). {TRANSPORT_HINTS[code]}")
+    if result.get("auth_failed") and result.get("installation_diagnostic") != "AUTHENTICATION":
         lines.append("Autenticacao do executor recusada; instalacao nao confirmada.")
     for row in result.get("package_results", []):
         if row["version"]:

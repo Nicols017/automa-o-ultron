@@ -38,6 +38,20 @@ class AssessmentTests(unittest.TestCase):
         self.assertEqual(validated_summary(result)[0], "SUCCESS")
         self.assertEqual([p["version"] for p in result["package_results"]], ["123.0", "123.0"])
 
+    def test_distinguishes_install_timeout_from_query_tls_failure(self):
+        installed, verified = reports()
+        failure = {"status_code": -1, "outcome": "UNKNOWN", "stderr": "private-value"}
+        for first, second, expected in (
+            (dict(failure, error_code="TIMEOUT"), {}, "Instalação (TIMEOUT)"),
+            (installed, dict(failure, error_code="TLS"), "Consulta de versão (TLS)"),
+        ):
+            result = assess_installation(first, second, PACKAGES, RUN)
+            self.assertIn(expected, format_installation(result))
+            self.assertNotIn("private-value", str(result))
+            self.assertFalse(result["success"])
+        unknown = assess_installation(dict(failure, error_code="private-value"), {}, PACKAGES, RUN)
+        self.assertNotIn("private-value", str(unknown))
+
     def test_exit_zero_without_presence_never_claims_success(self):
         installed, verified = reports(present=[])
         result = assess_installation(installed, verified, PACKAGES, RUN)
