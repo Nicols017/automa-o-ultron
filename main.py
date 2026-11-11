@@ -1145,7 +1145,6 @@ def run_bench_pipeline(req: RunPipelineRequest, background_tasks: BackgroundTask
             technician_name=req.technician_name,
             skip_burnin=req.skip_burnin,
             custom_packages=req.custom_packages or [],
-            session_id=req.session_id,
             domain_config=dom_dict
         )
         return result
