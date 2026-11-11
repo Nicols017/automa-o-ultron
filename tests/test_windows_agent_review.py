@@ -77,6 +77,23 @@ class WinRMReviewTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.client.run_script_file("host", "Search-Packages.ps1", {"x;whoami": "y"})
 
+    def test_large_script_transfer_uses_unique_names_and_executes_once(self):
+        session = unittest.mock.Mock()
+        session.run_ps.return_value = types.SimpleNamespace(status_code=0)
+        self.client._run_script_once(session, "x" * 9000)
+        calls = [call.args[0] for call in session.run_ps.call_args_list]
+        self.assertEqual(sum("[scriptblock]::Create" in code for code in calls), 1)
+        self.assertIn("Remove-Item -LiteralPath", calls[-1])
+        self.assertNotIn("ultron_task", "".join(calls))
+
+    def test_failed_transfer_does_not_execute_script(self):
+        session = unittest.mock.Mock()
+        session.run_ps.return_value = types.SimpleNamespace(status_code=1)
+        with self.assertRaises(RuntimeError):
+            self.client._run_script_once(session, "x" * 9000)
+        self.assertFalse(any("[scriptblock]::Create" in c.args[0]
+                             for c in session.run_ps.call_args_list))
+
     def test_classifications(self):
         for message, code in [("401", "AUTHENTICATION"), ("access is denied", "AUTHORIZATION"),
                               ("certificate verify", "TLS"), ("getaddrinfo", "DNS"),

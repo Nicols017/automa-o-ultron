@@ -284,7 +284,7 @@ namespace UltronAgent
             try
             {
                 Logger.Info(@"===============================================================
-       [ULTRON] LAB AUTOMATION AUTONOMOUS AGENT v2.2.0        
+       [ULTRON] LAB AUTOMATION AUTONOMOUS AGENT v2.3.0        
        Pense Rede Network Solutions - Laboratorio de TI        
 ===============================================================", ConsoleColor.Cyan);
             } catch { }
@@ -335,7 +335,7 @@ namespace UltronAgent
 
                 // 3. Remove usuário UltronAdmin/penserede (opicional, deixamos para cleanup manual ou chatops)
                 // Contas preexistentes pertencem ao administrador; nao excluir.
-                Log("    [OK] Conta UltronAdmin removida (se existia).", ConsoleColor.Green);
+                Log("    [INFO] Contas Windows preservadas.", ConsoleColor.Gray);
 
                 // 4. Agenda remoção da pasta Program Files e auto-exclusão
                 string targetDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "UltronAgent");

@@ -41,7 +41,9 @@ URL passada no console nao persistia para o servico.
   Isso nao habilita Basic nem AllowUnencrypted no Windows.
 - Comando executado uma unica vez; timeout/transporte retorna outcome=UNKNOWN,
   retry_safe=false. Verifique o resultado antes de repetir. Scripts nao sao
-  minificados nem carregados por arquivo temporario compartilhado.
+  minificados. Scripts grandes usam transferencia em blocos para nome temporario
+  unico, checagem de cada bloco e limpeza best-effort; falha de limpeza pode deixar
+  arquivo base64 no TEMP da conta remota, exigindo limpeza autorizada posterior.
   Strings de parametros sao literais PowerShell; nomes de parametros validados.
 
 ## Procedimento de investigacao (somente em laboratorio autorizado)

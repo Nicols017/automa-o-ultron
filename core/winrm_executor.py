@@ -107,6 +107,35 @@ class WinRMExecutor:
             return [(self.default_user, self.default_pass)]
         return []
 
+    @staticmethod
+    def _run_script_once(session, script):
+        if len(script) < 8000:
+            return session.run_ps(script)
+        # Keep large-script support without shared temp names or replaying execution.
+        import base64
+        import uuid
+        filename = "ultron_" + uuid.uuid4().hex + ".b64"
+        path = "$p=Join-Path $env:TEMP '" + filename + "';"
+        encoded = base64.b64encode(script.encode("utf-8")).decode("ascii")
+        try:
+            for offset in range(0, len(encoded), 1000):
+                chunk = encoded[offset:offset + 1000]
+                response = session.run_ps(
+                    "$ErrorActionPreference='Stop';" + path +
+                    "[IO.File]::AppendAllText($p,'" + chunk + "')")
+                if response.status_code != 0:
+                    raise RuntimeError("Falha ao carregar script WinRM; execucao nao iniciada")
+            return session.run_ps(
+                "$ErrorActionPreference='Stop';" + path +
+                "& ([scriptblock]::Create([Text.Encoding]::UTF8.GetString("
+                "[Convert]::FromBase64String([IO.File]::ReadAllText($p)))))")
+        finally:
+            # Best effort; never retry the actual script if transfer/execution fails.
+            try:
+                session.run_ps(path + "Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue")
+            except Exception:
+                pass
+
     def run_powershell_code(self, ip, script_code, username=None, password=None):
         """Execute once; transport failure can mean UNKNOWN remote outcome."""
         from core.winrm_diagnostics import classify_winrm_error
@@ -119,7 +148,7 @@ class WinRMExecutor:
             return result
         user, pwd = candidates[0]
         try:
-            response = self.get_session(ip, user, pwd).run_ps(script_code)
+            response = self._run_script_once(self.get_session(ip, user, pwd), script_code)
             result.update(success=response.status_code == 0,
                           status_code=response.status_code,
                           stdout=response.std_out.decode("utf-8", errors="replace").strip(),
