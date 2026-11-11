@@ -136,7 +136,7 @@ class IntentRouter:
             entities["host"] = ip.group(0)
 
         if not scores:
-            log.warn("intent_no_match", trace_id, text=text[:200])
+            log.warn("intent_no_match", trace_id, message_length=len(text))
             return IntentMatch(intent=None, confidence=0.0, entities=entities)
 
         ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
@@ -148,7 +148,7 @@ class IntentRouter:
         log.info(
             "intent_classified",
             trace_id,
-            text=text[:200],
+            message_length=len(text),
             top=top_name,
             confidence=round(confidence, 3),
             candidates=ranked[:3],
