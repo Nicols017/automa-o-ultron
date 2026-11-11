@@ -2173,8 +2173,9 @@ class TrueConfChatOps:
             self.operational_memory.start_job(
                 user_id, ip, job["job_id"], "file_backup", client=client, ticket=ticket
             )
-            if job.get("status") in ("SUCCESS", "ERROR"):
-                self.operational_memory.update_job(user_id, job["job_id"], job["status"])
+            current = file_backup_jobs.get(job["job_id"]) or job
+            if current.get("status") in ("SUCCESS", "ERROR"):
+                self.operational_memory.update_job(user_id, job["job_id"], current["status"])
         except Exception as exc:
             logger.warning("Não foi possível registrar a tarefa na memória: %s", type(exc).__name__)
         return (
