@@ -30,6 +30,7 @@ from core.public_tools import (
     WindowsErrorLookupService,
 )
 from core.reliability import IntentRouter, MessageBuilder, TraceLogger, new_trace_id, DEFAULT_INTENTS, log, WinRMResult
+from core.operational_memory import OperationalMemory
 
 def _clean_chat_text(s: str) -> str:
     """Higieniza tags HTML (<br>, <span>, etc.) e decodifica entidades HTML (&quot;, &#39;, &amp;) do TrueConf"""
@@ -77,6 +78,8 @@ class TrueConfChatOps:
         self.user_conversations: Dict[str, List[Dict[str, str]]] = {}
         self._last_dispatched_message: Dict[str, str] = {}
         self._last_user_ip: Dict[str, str] = {}
+        # SQLite somente para contexto operacional e status, sem historico de mensagens.
+        self.operational_memory = OperationalMemory()
         self._pending_message_target: Dict[str, str] = {}
         self.active_jobs: Dict[str, Any] = {}
 
@@ -814,7 +817,7 @@ class TrueConfChatOps:
         Suporta linguagem natural livre, menus interativos, wizards passo a passo e autenticação dinâmica.
         """
         trace_id = new_trace_id()
-        log.info("incoming_message", trace_id, user_id=user_id, message=message[:100])
+        log.info("incoming_message", trace_id, user_id=user_id, message_length=len(message or ""))
         
         text = _clean_chat_text(message or "")
         if not text:
@@ -895,6 +898,7 @@ class TrueConfChatOps:
         is_only_ip = bool(isolated_ip and clean_no_prefix in [isolated_ip, isolated_ip.replace("192.168.", ""), isolated_ip.split(".")[-1]])
         if is_only_ip:
             self._last_user_ip[user_id] = isolated_ip
+            self._remember_explicit_target(user_id, isolated_ip)
             cached = self._get_cached_devices()
             dev = next((d for d in cached if d.get("ip") == isolated_ip), None)
             host = (dev.get("hostname") or "PC").replace(".penserede.local", "") if dev else "PC"
@@ -941,6 +945,8 @@ class TrueConfChatOps:
                 lambda: self._cmd_status_backup(user_id, parts[1:]),
             frozenset(["/entender", "/interpretar", "/analisar_pedido"]):
                 lambda: self._cmd_interpretar(user_id, parts[1:]),
+            frozenset(["/contexto", "/memoria_operacional"]):
+                lambda: self._cmd_contexto(user_id),
             frozenset(["/verificar_backup", "/verificar_macrium"]):
                 lambda: self._cmd_verify_macrium(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/status_verificacao", "/status_macrium"]):
@@ -1976,6 +1982,33 @@ class TrueConfChatOps:
             return f"❌ Macrium Verify: FALHA — {job.get('result', {}).get('reason', '')}"
         return f"🔎 Macrium Verify: {state} — {job['image_path']}"
 
+    def _remember_explicit_target(self, user_id: str, ip: str) -> None:
+        """Apenas metadados de contexto; nunca autoriza comandos."""
+        try:
+            self.operational_memory.remember_target(user_id, ip)
+        except Exception as exc:
+            logger.warning("Memória operacional indisponível: %s", type(exc).__name__)
+
+    def _cmd_contexto(self, user_id: str) -> str:
+        """Informa ao técnico somente o proprio contexto; nao executa nada."""
+        try:
+            target = self.operational_memory.target(user_id)
+            last = self.operational_memory.latest_job(user_id)
+        except Exception:
+            return "⚠️ Contexto operacional indisponível. Nenhuma ação foi executada."
+        if not target and not last:
+            return "🧠 Ainda não existe contexto operacional confirmado para você."
+        answer = "🧠 CONTEXTO OPERACIONAL\n"
+        answer += f"Último equipamento identificado: {target or 'nenhum'}\n"
+        if last:
+            answer += (
+                f"Última tarefa: {last['action']} / {last['job_id']}\n"
+                f"Estado registrado: {last['status']}\n"
+                f"Equipamento da tarefa: {last['target_ip']}"
+            )
+        answer += "\nMemória não concede autorização para executar operações."
+        return answer
+
     def _cmd_interpretar(self, user_id: str, args: List[str]) -> str:
         """Modo somente leitura para testar interpretacao com IA estruturada."""
         from core.structured_intent import analyze_message, IntentPlanError
@@ -1988,6 +2021,11 @@ class TrueConfChatOps:
         try:
             self._ensure_orchestrator()
             confirmed_ip = self._last_user_ip.get(user_id)
+            if not confirmed_ip:
+                try:
+                    confirmed_ip = self.operational_memory.target(user_id)
+                except Exception:
+                    confirmed_ip = None
             plan = analyze_message(
                 message,
                 self.orchestrator.analyzer.generate,
@@ -2041,6 +2079,10 @@ class TrueConfChatOps:
         self._last_user_ip[user_id] = ip
 
         def on_done(job):
+            try:
+                self.operational_memory.update_job(user_id, job["job_id"], job["status"])
+            except Exception:
+                pass
             if not self.bot:
                 return
             if job["status"] == "SUCCESS":
@@ -2068,6 +2110,15 @@ class TrueConfChatOps:
             job = file_backup_jobs.start(ip, client, ticket, on_done=on_done)
         except FileBackupError as exc:
             return f"⚠️ Backup não iniciado: {exc}"
+        self._remember_explicit_target(user_id, ip)
+        try:
+            self.operational_memory.start_job(
+                user_id, ip, job["job_id"], "file_backup", client=client, ticket=ticket
+            )
+            if job.get("status") in ("SUCCESS", "ERROR"):
+                self.operational_memory.update_job(user_id, job["job_id"], job["status"])
+        except Exception as exc:
+            logger.warning("Não foi possível registrar a tarefa na memória: %s", type(exc).__name__)
         return (
             "💾 BACKUP DE ARQUIVOS SOLICITADO\n\n"
             f"Origem: {ip}\n"
