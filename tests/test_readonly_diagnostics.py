@@ -96,9 +96,17 @@ class ReadOnlyDiagnosticsTest(unittest.TestCase):
         self.orchestrator.run_diagnostics_only = lambda ip, log_callback=None: {
             "success": False, "error": "Telemetria incompleta", "telemetry": {}, "ai_diagnosis": ""
         }
-        result = self.orchestrator.run_pipeline(
-            "192.0.2.23", tech_user_id=None, skip_burnin=True
-        )
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+        from core.task_registry import TaskRegistry
+        with TemporaryDirectory() as directory:
+            registry = TaskRegistry(Path(directory) / "tasks.sqlite3")
+            with patch("core.preparation.task_registry", registry):
+                result = self.orchestrator.run_pipeline(
+                    "192.0.2.23", tech_user_id=None, skip_burnin=True)
+            saved = registry.get("api_operator", result["job_id"])
+            self.assertEqual(saved["steps"], {"diagnostico": "ERROR", "instalacao": "PENDING", "laudo": "PENDING"})
+            self.assertEqual(saved["status"], "ERROR")
         self.assertFalse(result["success"])
         self.assertEqual(result["error"], "Telemetria incompleta")
         self.assertEqual(self.orchestrator.winrm.calls, [])
