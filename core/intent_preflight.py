@@ -49,6 +49,18 @@ def preflight_request(message: str) -> PreflightDecision:
     restart = _has(text, r"\b(?:reinici[a-z]*|reboot|restart|deslig[a-z]*|shutdown)\b")
     negated = _has(text, r"\b(?:nao|nunca|jamais)\s+(?:(?:quero|pode|deve|faca|faz|vai|precisa)\s+)?(?:format[a-z]*|reinici[a-z]*|deslig[a-z]*|faca backup|realiz[a-z]* backup|apaga[a-z]*|restaur[a-z]*|execute|executar)\b")
 
+    # Questions asking for ACTUAL lab state are read-only lookups, not essays.
+    # Keep existing AnyDesk/bench handlers reachable for these narrow cases.
+    live_lookup = (
+        _has(text, r"^(?:qual|quais|mostra|liste|listar|me passa|passa)\b")
+        and (
+            _has(text, r"\b(?:anydesk|any desk|anidesk|anidisk)\b")
+            or _has(text, r"\b(?:computadores|maquinas|pcs|bancada|hosts)\b")
+        )
+    )
+    if live_lookup:
+        return PreflightDecision("passthrough")
+
     # Questions are informational even if they contain imperative keywords.
     # Avoid interpreting "como verificar um backup" as running a diagnosis.
     query = (
