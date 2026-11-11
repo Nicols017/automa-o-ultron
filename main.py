@@ -47,6 +47,7 @@ from core.public_tools import (
 from core.agent_builder import agent_builder
 from core.agent_runtime import agent_task_mgr
 from core.agent_auth import AgentAuthenticator, require_operator
+from core.macrium_remote import macrium_jobs, MacriumBridgeError
 
 app = FastAPI(
     title="Ultron Lab Automation Server",
@@ -173,6 +174,9 @@ class BackupRequest(BaseModel):
     client_name: str = Field("CLIENTE", description="Nome do cliente para a pasta de backup")
     ticket_number: Optional[str] = Field("", description="Número do chamado / ticket no Milvus")
     source_drive: Optional[str] = Field("C:", description="Unidade de origem para cópia de dados")
+
+class MacriumVerifyRequest(BaseModel):
+    image_path: str = Field(..., min_length=5, max_length=1024, description="Caminho completo da imagem .mrimg na estação verificadora autorizada")
 
 class PowerActionRequest(BaseModel):
     ip: str = Field(..., description="Endereço IP da máquina alvo")
@@ -915,6 +919,27 @@ def execute_backup_action(req: BackupRequest, request: Request):
         "stdout": result.get("stdout", ""),
         "stderr": result.get("stderr", "")
     }
+
+@app.post("/api/v1/bench/action/verify-macrium")
+def start_macrium_verification(req: MacriumVerifyRequest, request: Request):
+    """Verificação assíncrona e somente leitura via MRVerify num host Windows fixo."""
+    require_operator(request)
+    try:
+        job = macrium_jobs.start(req.image_path)
+    except MacriumBridgeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return job
+
+
+@app.get("/api/v1/bench/action/verify-macrium/{job_id}")
+def get_macrium_verification(job_id: str, request: Request):
+    """Consulta a execução; reinícios do serviço não retomam tarefas desconhecidas."""
+    require_operator(request)
+    job = macrium_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Verificação não encontrada neste processo.")
+    return job
+
 
 @app.post("/api/v1/bench/action/power")
 def execute_power_action(req: PowerActionRequest, request: Request):
