@@ -45,6 +45,7 @@ from core.public_tools import (
 from core.agent_builder import agent_builder
 from core.agent_runtime import agent_task_mgr
 from core.agent_auth import AgentAuthenticator, require_operator
+from core.trueconf_webhook_auth import require_trueconf_webhook
 from core.macrium_remote import macrium_jobs, MacriumBridgeError
 from core.preformat_files_backup import file_backup_jobs, FileBackupError
 
@@ -443,8 +444,9 @@ def check_tcp_port(ip: str, port: int, timeout: float = 0.5) -> bool:
         return False
 
 @app.get("/api/v1/infra/status")
-def get_infra_status():
+def get_infra_status(request: Request):
     """Retorna o status de conectividade com os servidores da infraestrutura do laboratório (Paralelizado)"""
+    require_operator(request)
     current_settings = profile_mgr.get_settings()
     net_cfg = current_settings.get("network", {})
     mdt_ip = net_cfg.get("mdt_server_ip", "192.168.57.87")
@@ -512,8 +514,9 @@ def get_infra_status():
     }
 
 @app.post("/api/v1/trueconf/test")
-def test_trueconf_notification(req: Optional[TrueConfTestRequest] = None):
+def test_trueconf_notification(req: Optional[TrueConfTestRequest] = None, request: Request):
     """Envia uma notificação privada de teste no TrueConf para o técnico"""
+    require_operator(request)
     user_id = req.user_id if req else "nicolas"
     msg = req.message if req else "🔔 Teste de Notificação Direta do Ultron Server"
     sent = bot.send_direct_message(user_id=user_id, message=msg)
@@ -526,10 +529,11 @@ def test_trueconf_notification(req: Optional[TrueConfTestRequest] = None):
 
 @app.post("/api/v1/trueconf/webhook")
 @app.post("/webhook/trueconf")
-def trueconf_webhook(payload: Optional[TrueConfWebhookPayload] = None):
+def trueconf_webhook(request: Request, payload: Optional[TrueConfWebhookPayload] = None):
     """
     Recebe mensagens enviadas ao Bot Ultron no TrueConf Server e processa via ChatOps
     """
+    require_trueconf_webhook(request)
     p = payload or TrueConfWebhookPayload()
     user_id = p.user_id or p.sender or p.author or "nicolas"
     message_text = p.body or p.text or p.message or ""
@@ -545,13 +549,14 @@ def trueconf_webhook(payload: Optional[TrueConfWebhookPayload] = None):
     return {
         "success": True,
         "user_id": user_id,
-        "received": message_text,
+        "accepted": True,
         "reply": reply
     }
 
 @app.get("/api/v1/clients")
-def list_clients(force_refresh: bool = False):
+def list_clients(force_refresh: bool = False, request: Request):
     """Retorna todos os clientes e perfis disponíveis no Ultron sincronizados com o Milvus"""
+    require_operator(request)
     clients = profile_mgr.list_clients(force_refresh_milvus=force_refresh)
     return {
         "total": len(clients),
@@ -559,8 +564,9 @@ def list_clients(force_refresh: bool = False):
     }
 
 @app.get("/api/v1/clients/{client_id}")
-def get_client_profile(client_id: str):
+def get_client_profile(client_id: str, request: Request):
     """Retorna as configurações e pacotes do perfil de um cliente específico"""
+    require_operator(request)
     profile = profile_mgr.get_client_profile(client_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Perfil de cliente não encontrado")
@@ -569,13 +575,15 @@ def get_client_profile(client_id: str):
 # --- Rotas de Integração Milvus ---
 
 @app.get("/api/v1/milvus/config")
-def get_milvus_config():
+def get_milvus_config(request: Request):
     """Retorna as configurações atuais e status da conexão com a Dashboard Milvus (192.168.57.7)"""
+    require_operator(request)
     return profile_mgr.get_milvus_config()
 
 @app.post("/api/v1/milvus/config")
-def update_milvus_config(req: MilvusConfigRequest):
+def update_milvus_config(req: MilvusConfigRequest, request: Request):
     """Atualiza e salva as credenciais e parâmetros da Dashboard Milvus em config/settings.yaml"""
+    require_operator(request)
     ok = profile_mgr.save_milvus_config(
         milvus_url=req.dashboard_url,
         milvus_token=req.api_token or "",
@@ -590,16 +598,18 @@ def update_milvus_config(req: MilvusConfigRequest):
     }
 
 @app.post("/api/v1/milvus/test")
-def test_milvus_connection(req: Optional[MilvusTestRequest] = None):
+def test_milvus_connection(req: Optional[MilvusTestRequest] = None, request: Request):
     """Testa a conectividade, latência e endpoints da Dashboard Milvus em tempo real"""
+    require_operator(request)
     custom_url = req.custom_url if req else None
     custom_token = req.custom_token if req else None
     result = profile_mgr.milvus.test_connection(custom_url=custom_url, custom_token=custom_token)
     return result
 
 @app.get("/api/v1/milvus/client-tokens")
-def get_milvus_client_tokens():
+def get_milvus_client_tokens(request: Request):
     """Retorna a lista de todos os clientes e seus tokens de instalação do agente Milvus (clients.yaml)"""
+    require_operator(request)
     tokens = profile_mgr.get_client_tokens()
     return {
         "total": len(tokens),
@@ -607,8 +617,9 @@ def get_milvus_client_tokens():
     }
 
 @app.post("/api/v1/milvus/client-tokens")
-def update_milvus_client_token(req: ClientTokenUpdateRequest):
+def update_milvus_client_token(req: ClientTokenUpdateRequest, request: Request):
     """Atualiza o token de instalação do agente Milvus para um cliente específico em clients.yaml"""
+    require_operator(request)
     ok = profile_mgr.update_client_token(req.client_id, req.milvus_token)
     if not ok:
         raise HTTPException(status_code=500, detail="Falha ao atualizar token do cliente")
@@ -619,8 +630,9 @@ def update_milvus_client_token(req: ClientTokenUpdateRequest):
     }
 
 @app.get("/api/v1/milvus/tickets")
-def get_milvus_tickets(force_refresh: bool = False):
+def get_milvus_tickets(force_refresh: bool = False, request: Request):
     """Retorna a lista de chamados em aberto e pendentes na Dashboard Milvus (192.168.57.7)"""
+    require_operator(request)
     tickets = profile_mgr.milvus.get_open_tickets(force_refresh=force_refresh)
     return {
         "total": len(tickets),
@@ -629,8 +641,9 @@ def get_milvus_tickets(force_refresh: bool = False):
     }
 
 @app.post("/api/v1/milvus/sync")
-def sync_milvus_data():
+def sync_milvus_data(request: Request):
     """Força a sincronização imediata de clientes e chamados da Dashboard Milvus"""
+    require_operator(request)
     companies = profile_mgr.milvus.get_companies(force_refresh=True)
     tickets = profile_mgr.milvus.get_open_tickets(force_refresh=True)
     return {
@@ -641,11 +654,12 @@ def sync_milvus_data():
     }
 
 @app.get("/api/v1/milvus/agent/download/{client_id}")
-def download_client_milvus_agent(client_id: str, force_download: bool = False):
+def download_client_milvus_agent(client_id: str, force_download: bool = False, request: Request):
     """
     Baixa ou entrega o instalador .MSI oficial do Agente Milvus já configurado com o token do cliente.
     Permite que qualquer máquina na rede ou técnico baixe o instalador pronto via API.
     """
+    require_operator(request)
     profile = profile_mgr.get_client_profile(client_id)
     if not profile:
         raise HTTPException(status_code=404, detail=f"Cliente '{client_id}' não encontrado")
@@ -690,10 +704,11 @@ def download_client_milvus_agent(client_id: str, force_download: bool = False):
         raise HTTPException(status_code=502, detail=res.get("error", "Falha ao baixar instalador do Milvus"))
 
 @app.post("/api/v1/milvus/agent/sync-all")
-def sync_all_milvus_agents(background_tasks: BackgroundTasks):
+def sync_all_milvus_agents(background_tasks: BackgroundTasks, request: Request):
     """
     Baixa em lote e armazena em cache local os instaladores MSI de todos os clientes que possuem token configurado.
     """
+    require_operator(request)
     clients_tokens = profile_mgr.get_client_tokens()
     valid_clients = [c for c in clients_tokens if c.get("has_token")]
     agents_dir = os.path.join(BASE_DIR, "reports", "cache", "milvus_agents")
@@ -719,8 +734,9 @@ def sync_all_milvus_agents(background_tasks: BackgroundTasks):
     }
 
 @app.get("/api/v1/milvus/agent/cached")
-def list_cached_agents():
+def list_cached_agents(request: Request):
     """Lista todos os instaladores MSI em cache local no servidor Ultron"""
+    require_operator(request)
     agents_dir = os.path.join(BASE_DIR, "reports", "cache", "milvus_agents")
     if not os.path.exists(agents_dir):
         return {"total": 0, "agents": []}
@@ -1017,8 +1033,9 @@ def list_package_bundles():
     }
 
 @app.post("/api/v1/packages/install")
-def install_packages_api(req: PackageInstallRequest):
+def install_packages_api(req: PackageInstallRequest, request: Request):
     """Instala uma lista de pacotes via instalador unificado UniGetUI/Winget"""
+    require_operator(request)
     if not req.packages:
         raise HTTPException(status_code=400, detail="Nenhum pacote selecionado para instalação.")
     res = orchestrator.winrm.run_script_file(
@@ -1038,26 +1055,30 @@ def install_packages_api(req: PackageInstallRequest):
     }
 
 @app.post("/api/v1/packages/upgrade_all")
-def upgrade_all_packages_api(req: PackageUpgradeRequest):
+def upgrade_all_packages_api(req: PackageUpgradeRequest, request: Request):
     """Atualiza em massa todos os programas instalados na máquina alvo via Winget"""
+    require_operator(request)
     res = package_mgr.upgrade_all_packages(req.ip)
     return res
 
 @app.post("/api/v1/packages/backup")
-def backup_packages_api(req: PackageBackupRequest):
+def backup_packages_api(req: PackageBackupRequest, request: Request):
     """Varre e exporta todos os programas instalados em um bundle UniGetUI (.json)"""
+    require_operator(request)
     res = package_mgr.export_machine_packages(req.ip, identifier=req.identifier)
     return res
 
 @app.post("/api/v1/packages/restore")
-def restore_packages_api(req: PackageRestoreRequest):
+def restore_packages_api(req: PackageRestoreRequest, request: Request):
     """Restaura um bundle UniGetUI (.json) previamente salvo na máquina alvo"""
+    require_operator(request)
     res = package_mgr.restore_machine_packages(req.ip, bundle_name_or_id=req.bundle_name)
     return res
 
 @app.post("/api/v1/bench/action/install-software")
-def execute_install_software_action(req: InstallSoftwareRequest):
+def execute_install_software_action(req: InstallSoftwareRequest, request: Request):
     """Instala uma lista de pacotes via instalador unificado na máquina alvo"""
+    require_operator(request)
     if not req.packages:
         raise HTTPException(status_code=400, detail="Nenhum pacote selecionado")
     res = orchestrator.winrm.run_script_file(
@@ -1074,8 +1095,9 @@ def execute_install_software_action(req: InstallSoftwareRequest):
     }
 
 @app.post("/api/v1/bench/action/domain-join")
-def execute_domain_join_action(req: DomainJoinRequest):
+def execute_domain_join_action(req: DomainJoinRequest, request: Request):
     """Executa a configuração de rede e o ingresso da máquina no domínio com credenciais dinâmicas"""
+    require_operator(request)
     params = {
         "DomainName": req.domain_name,
         "DomainUser": req.domain_user,
@@ -1178,8 +1200,9 @@ def mdt_completed(data: MDTNotification, background_tasks: BackgroundTasks, requ
     }
 
 @app.get("/api/v1/reports/list")
-def list_reports():
+def list_reports(request: Request):
     """Lista todos os laudos técnicos em PDF gerados pelo Ultron"""
+    require_operator(request)
     output_dir = os.path.join(BASE_DIR, "reports", "output")
     if not os.path.exists(output_dir):
         return {"total": 0, "reports": []}
@@ -1196,8 +1219,12 @@ def list_reports():
     return {"total": len(reports), "reports": reports}
 
 @app.get("/api/v1/reports/download/{filename}")
-def download_report(filename: str):
+def download_report(filename: str, request: Request):
     """Permite o download de um laudo técnico gerado"""
+    require_operator(request)
+    # Prevent path traversal and exposing arbitrary files.
+    if filename != os.path.basename(filename) or not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Nome de relatório inválido.")
     file_path = os.path.join(BASE_DIR, "reports", "output", filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Laudo técnico não encontrado")
