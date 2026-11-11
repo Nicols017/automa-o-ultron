@@ -9,9 +9,20 @@ services:
     volumes:
       - ./config:/app/config
       - ./reports:/app/reports
+      - ./data:/app/data
       - ./scripts:/app/scripts
-      - ./templates:/app/templates
       - ./static:/app/static
     environment:
       - PYTHONUNBUFFERED=1
       - OLLAMA_HOST=http://127.0.0.1:11434
+
+      # Provision these in the deployment environment; never bake secrets into images.
+      - ULTRON_TRUECONF_URL
+      - ULTRON_TRUECONF_BOT_USERNAME
+      - ULTRON_TRUECONF_BOT_PASSWORD
+      - ULTRON_TRUECONF_API_TOKEN
+      - ULTRON_TRUECONF_ALLOWED_USERS
+      - ULTRON_MASTER_TRUECONF_USERS
+      - ULTRON_TRUECONF_CA_BUNDLE
+      - ULTRON_ADMIN_API_TOKEN
+      - ULTRON_TRUECONF_WEBHOOK_SECRET

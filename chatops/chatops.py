@@ -31,6 +31,7 @@ from core.public_tools import (
 )
 from core.reliability import IntentRouter, MessageBuilder, TraceLogger, new_trace_id, DEFAULT_INTENTS, log, WinRMResult
 from core.operational_memory import OperationalMemory
+from core.trueconf_transport import trueconf_request
 
 def _clean_chat_text(s: str) -> str:
     """Higieniza tags HTML (<br>, <span>, etc.) e decodifica entidades HTML (&quot;, &#39;, &amp;) do TrueConf"""
@@ -430,9 +431,9 @@ class TrueConfChatOps:
         return None
 
     def _is_master_user(self, user_id: str) -> bool:
-        """Verifica se o usuário possui privilégios de Administrador Master (Nicolas Silva)"""
-        clean_user = (user_id or "").lower().strip().lstrip("@")
-        return clean_user in ["nicolas.silva", "nicolas", "nicolas_silva", "admin"]
+        """Master access is configured by exact SDK identity, without aliases."""
+        from core.trueconf_transport import is_master_user
+        return is_master_user(user_id)
 
     def _cmd_list_trueconf_users(self) -> str:
         """Consulta os usuários cadastrados no TrueConf Server via REST API"""
@@ -441,7 +442,7 @@ class TrueConfChatOps:
         try:
             url = f"{self.bot.raw_server_url}/api/v4/users"
             headers = {"Authorization": f"Bearer {self.bot.api_token}"}
-            r = requests.get(url, headers=headers, verify=False, timeout=5)
+            r = trueconf_request("GET", url, headers=headers, timeout=5)
             if r.status_code == 200:
                 data = r.json().get("users", [])
                 if not data:
@@ -483,7 +484,7 @@ class TrueConfChatOps:
         try:
             url = f"{srv_url}/api/v4/users"
             headers = {"Authorization": f"Bearer {token}"}
-            r = requests.get(url, headers=headers, verify=False, timeout=4)
+            r = trueconf_request("GET", url, headers=headers, timeout=4)
             if r.status_code == 200:
                 self._users_cache = r.json().get("users", [])
                 self._users_cache_time = now
@@ -560,15 +561,11 @@ class TrueConfChatOps:
                 ip = active_job["ip"]
                 self.active_jobs.pop(user_id, None)
                 
-                # Bônus: Aborta a instalação fisicamente via WinRM matando o winget e powershell
-                try:
-                    def _kill_worker():
-                        self.winrm.run_powershell_code(ip, "Stop-Process -Name winget, powershell -Force -ErrorAction SilentlyContinue")
-                    threading.Thread(target=_kill_worker, daemon=True).start()
-                except Exception:
-                    pass
-                
-                return self.msg_builder.success("Operação Cancelada", {"Alvo": ip, "Status": "A tarefa em andamento foi abortada fisicamente com sucesso."}, new_trace_id(), emoji="🛑")
+                return (
+                    f"Acompanhamento da tarefa em {ip} interrompido. "
+                    "A operacao remota pode continuar; cancelamento remoto nao foi confirmado. "
+                    "Nenhum processo global foi encerrado."
+                )
 
 
         # 0. Envio da MESMA MENSAGEM / Repetição contextual (Ex: "manda a mesma mensagem para arthur gabriel")
@@ -819,6 +816,9 @@ class TrueConfChatOps:
         Recebe qualquer mensagem enviada ao bot no chat privado do TrueConf.
         Suporta linguagem natural livre, menus interativos, wizards passo a passo e autenticação dinâmica.
         """
+        from core.trueconf_transport import is_allowed_user
+        if not is_allowed_user(user_id):
+            return "Usuario nao autorizado para operar o Ultron. Solicite cadastro ao administrador."
         trace_id = new_trace_id()
         log.info("incoming_message", trace_id, user_id=user_id, message_length=len(message or ""))
         
@@ -867,8 +867,8 @@ class TrueConfChatOps:
 
         # 2. Navegação rápida pelo Menu Numérico Principal
         menu_choices = {
-            "1": lambda: self._cmd_bancada(user_id, trace_id=trace_id),
-            "01": lambda: self._cmd_bancada(user_id, trace_id=trace_id),
+            "1": lambda: self._cmd_bancada(user_id),
+            "01": lambda: self._cmd_bancada(user_id),
             "2": lambda: self._start_wizard_diagnostico(user_id, trace_id=trace_id),
             "02": lambda: self._start_wizard_diagnostico(user_id, trace_id=trace_id),
             "3": lambda: self._start_wizard_msg(user_id, trace_id=trace_id),
@@ -885,10 +885,10 @@ class TrueConfChatOps:
             "08": lambda: self._start_wizard_softwares(user_id, trace_id=trace_id),
             "9": lambda: self._start_wizard_power(user_id, trace_id=trace_id),
             "09": lambda: self._start_wizard_power(user_id, trace_id=trace_id),
-            "10": lambda: self._cmd_clientes(trace_id=trace_id),
-            "11": lambda: self._cmd_chamados(trace_id=trace_id),
-            "12": lambda: self._cmd_laudos([], trace_id=trace_id),
-            "13": lambda: self._cmd_download_agent(user_id, trace_id=trace_id),
+            "10": lambda: self._cmd_clientes(),
+            "11": lambda: self._cmd_chamados(),
+            "12": lambda: self._cmd_laudos([]),
+            "13": lambda: self._cmd_download_agent(user_id),
             "14": lambda: self._start_wizard_limpar(user_id, trace_id=trace_id),
         }
 
@@ -934,11 +934,11 @@ class TrueConfChatOps:
 
         routes = {
             frozenset(["/bancada", "/status", "/maquinas", "/lab", "/hosts"]):
-                lambda: self._cmd_bancada(user_id, trace_id=trace_id),
+                lambda: self._cmd_bancada(user_id),
             frozenset(["/clientes", "/perfis", "/empresas"]):
-                lambda: self._cmd_clientes(trace_id=trace_id),
+                lambda: self._cmd_clientes(),
             frozenset(["/chamados", "/milvus", "/tickets"]):
-                lambda: self._cmd_chamados(trace_id=trace_id),
+                lambda: self._cmd_chamados(),
             frozenset(["/preparar", "/iniciar", "/deploy"]):
                 lambda: self._cmd_preparar(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_preparar(user_id),
             frozenset(["/formatar"]):
@@ -960,7 +960,7 @@ class TrueConfChatOps:
             frozenset(["/status_verificacao", "/status_macrium"]):
                 lambda: self._cmd_macrium_status(user_id, parts[1:]),
             frozenset(["/dominio", "/domain", "/ad"]):
-                lambda: self._cmd_dominio(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_dominio(user_id),
+                lambda: self._cmd_dominio(user_id, parts[1:]) if len(parts) > 1 else self._start_wizard_dominio(user_id),
             frozenset(["/softwares", "/apps", "/instalar"]):
                 lambda: self._cmd_softwares(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_softwares(user_id),
             frozenset(["/reiniciar", "/reboot"]):
@@ -968,35 +968,35 @@ class TrueConfChatOps:
             frozenset(["/desligar", "/shutdown"]):
                 lambda: self._cmd_power(user_id, parts[1:], "shutdown", trace_id=trace_id) if len(parts) > 1 else self._start_wizard_power(user_id),
             frozenset(["/msg", "/mensagem", "/notificar", "/alerta", "/aviso", "/popup"]):
-                lambda: self._cmd_message(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_msg(user_id),
+                lambda: self._cmd_message(user_id, parts[1:]) if len(parts) > 1 else self._start_wizard_msg(user_id),
             frozenset(["/laudos", "/laudo", "/relatorios"]):
-                lambda: self._cmd_laudos(parts[1:], trace_id=trace_id),
+                lambda: self._cmd_laudos(parts[1:]),
             frozenset(["/download", "/agent", "/agente", "/exe", "/baixar"]):
-                lambda: self._cmd_download_agent(user_id, trace_id=trace_id),
+                lambda: self._cmd_download_agent(user_id),
             frozenset(["/erro", "/error", "/bsod"]):
-                lambda: self._cmd_erro(parts[1:], trace_id=trace_id),
+                lambda: self._cmd_erro(parts[1:]),
             frozenset(["/cve", "/seguranca", "/vuln"]):
-                lambda: self._cmd_cve(parts[1:], trace_id=trace_id),
+                lambda: self._cmd_cve(parts[1:]),
             frozenset(["/clima", "/termica", "/temperatura"]):
-                lambda: self._cmd_clima(trace_id=trace_id),
+                lambda: self._cmd_clima(),
             frozenset(["/wan", "/ip"]):
-                lambda: self._cmd_wan(trace_id=trace_id),
+                lambda: self._cmd_wan(),
             frozenset(["/anydesk", "/acesso", "/id"]):
-                lambda: self._cmd_anydesk(user_id, parts[1:], trace_id=trace_id),
+                lambda: self._cmd_anydesk(user_id, parts[1:]),
             frozenset(["/garantia", "/warranty", "/tag", "/serial"]):
-                lambda: self._cmd_garantia(user_id, parts[1:], trace_id=trace_id),
+                lambda: self._cmd_garantia(user_id, parts[1:]),
             frozenset(["/senha", "/pwned", "/hibp", "/seguranca_senha"]):
-                lambda: self._cmd_senha(parts[1:], trace_id=trace_id),
+                lambda: self._cmd_senha(parts[1:]),
             frozenset(["/backup_softwares", "/bkp_softwares", "/exportar_softwares", "/unigetui_backup"]):
-                lambda: self._cmd_backup_softwares(user_id, parts[1:], trace_id=trace_id),
+                lambda: self._cmd_backup_softwares(user_id, parts[1:]),
             frozenset(["/restaurar_softwares", "/restore_softwares", "/importar_softwares", "/unigetui_restore"]):
-                lambda: self._cmd_restaurar_softwares(user_id, parts[1:], trace_id=trace_id),
+                lambda: self._cmd_restaurar_softwares(user_id, parts[1:]),
             frozenset(["/atualizar_softwares", "/upgrade_softwares", "/atualizar_tudo", "/upgrade_all"]):
-                lambda: self._cmd_upgrade_softwares(user_id, parts[1:], trace_id=trace_id),
+                lambda: self._cmd_upgrade_softwares(user_id, parts[1:]),
             frozenset(["/buscar_software", "/buscar_app", "/pesquisar_software", "/procurar_app"]):
-                lambda: self._cmd_buscar_software(user_id, parts[1:], trace_id=trace_id),
+                lambda: self._cmd_buscar_software(user_id, parts[1:]),
             frozenset(["/bundles", "/backups_softwares", "/list_bundles"]):
-                lambda: self._cmd_list_bundles(trace_id=trace_id),
+                lambda: self._cmd_list_bundles(),
             frozenset(["/limpar", "/clean", "/limpeza", "/desinstalar"]):
                 lambda: self._cmd_limpar(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_limpar(user_id),
         }
@@ -1045,7 +1045,7 @@ class TrueConfChatOps:
             elif intent_match.intent == "ativar_windows":
                 return self._cmd_ativar(user_id, [host], trace_id=trace_id) if host else self._start_wizard_ativar(user_id, trace_id=trace_id)
             elif intent_match.intent == "enviar_mensagem_tela":
-                return self._cmd_message(user_id, [host, "Olá, do Ultron!"], trace_id=trace_id) if host else self._start_wizard_msg(user_id, trace_id=trace_id)
+                return self._cmd_message(user_id, [host, "Olá, do Ultron!"]) if host else self._start_wizard_msg(user_id, trace_id=trace_id)
             elif intent_match.intent == "reiniciar_maquina":
                 return self._cmd_power(user_id, [host], "restart", trace_id=trace_id) if host else self._start_wizard_power(user_id, trace_id=trace_id)
         elif intent_match.confidence > 0.2:  # Só pede clarificação se houver o mínimo de match

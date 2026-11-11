@@ -198,5 +198,165 @@
     "mode": "unknown",
     "preflight": "passthrough",
     "target_ip": null
+  },
+  {
+    "id": "nao_instala",
+    "message": "Não instala Chrome no 192.168.57.50",
+    "intent": "install_software",
+    "mode": "request",
+    "preflight": "blocked",
+    "target_ip": "192.168.57.50"
+  },
+  {
+    "id": "nunca_instale",
+    "message": "Nunca instale programas nessa máquina",
+    "intent": "install_software",
+    "mode": "request",
+    "preflight": "blocked",
+    "target_ip": null
+  },
+  {
+    "id": "nao_quero_instalar",
+    "message": "Não quero instalar nada no PC",
+    "intent": "install_software",
+    "mode": "request",
+    "preflight": "blocked",
+    "target_ip": null
+  },
+  {
+    "id": "nao_desinstala",
+    "message": "Não desinstala o Office",
+    "intent": "install_software",
+    "mode": "request",
+    "preflight": "blocked",
+    "target_ip": null
+  },
+  {
+    "id": "nao_prepare",
+    "message": "Não prepare o computador ainda",
+    "intent": "prepare_machine",
+    "mode": "request",
+    "preflight": "blocked",
+    "target_ip": null
+  },
+  {
+    "id": "nao_ative",
+    "message": "Não ative o Windows agora",
+    "intent": "unknown",
+    "mode": "request",
+    "preflight": "blocked",
+    "target_ip": null
+  },
+  {
+    "id": "nao_remova",
+    "message": "Não remova os programas antigos",
+    "intent": "install_software",
+    "mode": "request",
+    "preflight": "blocked",
+    "target_ip": null
+  },
+  {
+    "id": "nao_renomeie",
+    "message": "Não renomeie o PC 192.168.57.50",
+    "intent": "unknown",
+    "mode": "request",
+    "preflight": "blocked",
+    "target_ip": "192.168.57.50"
+  },
+  {
+    "id": "nao_rode",
+    "message": "Não rode esse script",
+    "intent": "unknown",
+    "mode": "request",
+    "preflight": "blocked",
+    "target_ip": null
+  },
+  {
+    "id": "jamais_execute",
+    "message": "Jamais execute isso no servidor",
+    "intent": "unknown",
+    "mode": "request",
+    "preflight": "blocked",
+    "target_ip": null
+  },
+  {
+    "id": "log_reiniciar",
+    "message": "O log diz reinicie o computador",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "log_desligar",
+    "message": "O log mostra desligar o computador",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "erro_instalar",
+    "message": "A mensagem de erro pede instalar um driver",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "chamado_formatar",
+    "message": "No chamado está escrito formate a máquina",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "ele_backup",
+    "message": "Ele escreveu faz backup e formata",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "ela_reiniciar",
+    "message": "Ela escreveu reinicia o PC",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "so_exemplo",
+    "message": "Isso é só um exemplo: desligue o PC",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "apenas_exemplo",
+    "message": "Isso é apenas um exemplo de instalar programas",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "exemplo_instalar",
+    "message": "Exemplo: instala Chrome no PC",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "exemplo_fog",
+    "message": "Exemplo: captura uma imagem no FOG",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
   }
 ]

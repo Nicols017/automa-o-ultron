@@ -35,8 +35,8 @@ switch:
   type: mikrotik_ssh
   user: admin
 trueconf:
-  api_token: DH233ZbAAlnzc3b2suuFjwjyXhHRLob2
-  bot_password: 55JnRSa8UsS10GnF4Q65
+  api_token: ""
+  bot_password: ""
   bot_username: ultron
   channel_id: lab_bench_channel
   default_tech_user_id: nicolas.silva

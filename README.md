@@ -114,3 +114,7 @@ de agente, webhook, relatórios e automação continuam existentes.
 ## Agente Windows e WinRM
 
 WinRM e nativo do Windows; UltronAgent e separado. Consulte [revisao e migracao](docs/WINDOWS_AGENT_REVIEW.md). Distribuicao suspensa por padrao ate homologacao do pacote revisado.
+
+## Consolidacao do projeto
+
+Consulte [correcoes gerais e proximas prioridades](docs/PROJECT_CONSOLIDATION.md). TrueConf agora exige usuarios explicitamente autorizados, identidade do SDK e TLS validado; configure o ambiente antes de homologar. Corpus de entendimento: 45 frases, com novos casos sinteticos de negacoes e exemplos.

@@ -1,0 +1,15 @@
+.git
+.env
+.env.local
+venv/
+env/
+__pycache__/
+**/__pycache__/
+*.log
+data/
+reports/output/
+agent/dist/
+**/*.exe
+verifier/private/
+verifier/audit/
+*agent-credentials.json

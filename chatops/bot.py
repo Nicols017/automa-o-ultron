@@ -8,12 +8,11 @@ import os
 import asyncio
 import logging
 import threading
-import time
 from typing import Optional, Dict, Any, List
-import urllib3
-import requests
 
 from chatops.chatops import TrueConfChatOps, _normalize_token
+from core.trueconf_transport import https_origin, trueconf_request, incoming_author
+from core.message_inbox import MessageInbox
 
 try:
     from trueconf import Bot, Dispatcher, Router, Message, F, ParseMode
@@ -22,7 +21,7 @@ try:
 except ImportError:
     TRUECONF_LIB_AVAILABLE = False
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 logger = logging.getLogger("ultron_trueconf_bot")
 
 import html
@@ -72,8 +71,8 @@ class TrueConfBot:
         default_tech_user_id: str = "nicolas.silva",
     ):
         # Limpa URL para remover https:// ou trailing slash se necessário
-        self.raw_server_url = server_url.rstrip("/")
-        self.server_host = self.raw_server_url.replace("https://", "").replace("http://", "").split(":")[0]
+        self.raw_server_url = https_origin(server_url)
+        self.server_host = self.raw_server_url[len("https://"): ]
         self.bot_username = bot_username
         self.bot_password = bot_password
         self.api_token = api_token
@@ -94,7 +93,7 @@ class TrueConfBot:
         self._bot: Optional[Any] = None
         self._is_running = False
         self._p2p_chats: Dict[str, str] = {}  # user_id -> chat_id cache
-        self._processed_msg_ids: Dict[str, float] = {}
+        self.inbox = MessageInbox()
 
     @property
     def server_url(self) -> str:
@@ -111,10 +110,10 @@ class TrueConfBot:
                 headers = {"Authorization": f"Bearer {self.api_token}"}
                 with open(logo_path, "rb") as img_f:
                     files = {"image": ("ultron_logo.jpg", img_f, "image/jpeg")}
-                    requests.put(url, headers=headers, files=files, verify=False, timeout=5)
+                    trueconf_request("PUT", url, headers=headers, files=files, timeout=5)
                 logger.info("🎨 Avatar oficial do Ultron verificado e atualizado no TrueConf Server!")
         except Exception as e:
-            logger.debug(f"Não foi possível sincronizar avatar do TrueConf: {e}")
+            logger.debug("Falha no transporte TrueConf; detalhes suprimidos para proteger credenciais.")
 
     def start_polling(self, interval_sec: int = 3):
         """Inicia o Bot do TrueConf em segundo plano conectando via WebSocket"""
@@ -123,7 +122,7 @@ class TrueConfBot:
         self._is_running = True
 
         # Sincroniza avatar em background
-        threading.Thread(target=self._ensure_avatar, daemon=True).start()
+        # Avatar stays an explicit maintenance action, not a startup mutation.
 
         self._thread = threading.Thread(target=self._run_event_loop, daemon=True, name="TrueConfBotWorker")
         self._thread.start()
@@ -150,7 +149,7 @@ class TrueConfBot:
         try:
             self._loop.run_until_complete(self._bot_lifecycle())
         except Exception as e:
-            logger.error(f"Erro no ciclo de vida do TrueConf Bot: {e}")
+            logger.error("Falha no transporte TrueConf; detalhes suprimidos para proteger credenciais.")
         finally:
             self._loop.close()
 
@@ -183,32 +182,17 @@ class TrueConfBot:
                         if not text:
                             return
 
-                        raw_author = None
-                        if hasattr(msg, "author") and msg.author:
-                            raw_author = getattr(msg.author, "id", None)
-                        elif hasattr(msg, "from_user") and msg.from_user:
-                            raw_author = getattr(msg.from_user, "id", None)
-                        
-                        raw_author = raw_author or self.default_tech_user_id
-                        user_id = str(raw_author).split("@")[0] if "@" in str(raw_author) else str(raw_author)
+                        user_id = incoming_author(msg)
+                        event_id = getattr(msg, "id", None)
+                        if not user_id or not self.inbox.claim(self.raw_server_url, user_id, event_id):
+                            logger.info("Evento TrueConf ignorado: autor/id ausente ou evento ja recebido.")
+                            return
 
-                        # Armazena chat_id da mensagem para este usuário
+                        # Preserve full authenticated identity, including its realm.
                         chat_id = getattr(msg, "chat_id", None) or getattr(getattr(msg, "chat", None), "id", None)
                         if chat_id:
                             self._p2p_chats[user_id] = str(chat_id)
-                            self._p2p_chats[str(raw_author)] = str(chat_id)
-
-                        # Deduplicação de eventos repetidos do WebSocket
-                        msg_id = getattr(msg, "id", None) or f"{user_id}_{text}_{int(time.time() // 3)}"
-                        now = time.time()
-                        if msg_id in self._processed_msg_ids and (now - self._processed_msg_ids[msg_id]) < 4:
-                            logger.debug(f"Mensagem duplicada ignorada: {msg_id}")
-                            return
-                        self._processed_msg_ids[msg_id] = now
-                        if len(self._processed_msg_ids) > 200:
-                            self._processed_msg_ids = {k: v for k, v in self._processed_msg_ids.items() if now - v < 60}
-
-                        logger.info(f"📩 Mensagem recebida de {user_id} (chat_id: {chat_id}): {text}")
+                        logger.info("Mensagem TrueConf recebida; tamanho=%d", len(text))
 
                         # Executa o ChatOps e responde com a instrução/menu
                         reply = await asyncio.to_thread(self.chatops.handle_incoming_message, user_id, text)
@@ -219,10 +203,10 @@ class TrueConfBot:
                                     await msg.answer(chunk, parse_mode=ParseMode.TEXT)
                                     logger.info(f"📤 Resposta enviada para {user_id}")
                                 except Exception as send_err:
-                                    logger.warning(f"Falha ao responder via msg.answer ({send_err}). Enviando DM direta...")
-                                    self.send_direct_message(user_id, chunk)
+                                    logger.warning("Falha no transporte TrueConf; detalhes suprimidos para proteger credenciais.")
+                                    # Delivery may already have happened; do not duplicate via another transport.
                     except Exception as err:
-                        logger.error(f"Erro ao processar mensagem do TrueConf: {err}", exc_info=True)
+                        logger.error("Falha ao processar evento TrueConf; tipo=%s", type(err).__name__)
 
                 logger.info(f"🔑 Conectando Ultron Bot em {self.server_host}...")
                 
@@ -238,8 +222,8 @@ class TrueConfBot:
                     username=self.bot_username,
                     password=self.bot_password,
                     dispatcher=dp,
-                    receive_unread_messages=True,
-                    verify_ssl=False,
+                    receive_unread_messages=False,
+                    verify_ssl=True,
                     ws_max_retries=-1,
                     ws_max_delay=5,
                     timeout=30.0
@@ -251,7 +235,7 @@ class TrueConfBot:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.warning(f"Conexão do TrueConf Bot oscilou: {e}. Reconectando em 3 segundos...")
+                logger.warning("Falha no transporte TrueConf; detalhes suprimidos para proteger credenciais.")
             
             # Aguarda antes da próxima tentativa se ainda estiver rodando
             if self._is_running:
@@ -271,8 +255,10 @@ class TrueConfBot:
                     self._loop
                 )
                 return future.result(timeout=6)
-            except Exception as e:
-                logger.warning(f"Falha ao enviar via WebSocket ({e}). Tentando REST API fallback...")
+            except Exception:
+                future.cancel()
+                logger.warning("Entrega WebSocket nao confirmada; sem reenvio automatico via REST.")
+                return False
 
         # Fallback via REST API se WebSocket estiver indisponível
         return self._rest_send_dm(target_user, message)
@@ -303,7 +289,7 @@ class TrueConfBot:
                 return True
             return False
         except Exception as e:
-            logger.error(f"Erro em _async_send_dm para {user_id}: {e}")
+            logger.error("Falha no transporte TrueConf; detalhes suprimidos para proteger credenciais.")
             self._p2p_chats.pop(user_id, None)
             return False
 
@@ -312,7 +298,7 @@ class TrueConfBot:
         endpoint = f"{self.raw_server_url}/api/v4/chat/users/{user_id}/messages"
         payload = {"body": message}
         try:
-            r = requests.post(endpoint, json=payload, headers=self.headers, verify=False, timeout=5)
+            r = trueconf_request("POST", endpoint, json=payload, headers=self.headers, timeout=5)
             return r.status_code in [200, 201]
         except Exception:
             return False
@@ -335,7 +321,7 @@ class TrueConfBot:
                 )
                 return future.result(timeout=15)
             except Exception as e:
-                logger.warning(f"Falha ao enviar arquivo via WebSocket ({e}).")
+                logger.warning("Falha no transporte TrueConf; detalhes suprimidos para proteger credenciais.")
         return False
 
     async def _async_send_file(self, user_id: str, file_path: str, caption: Optional[str] = None, filename: Optional[str] = None) -> bool:
@@ -361,7 +347,7 @@ class TrueConfBot:
                 return True
             return False
         except Exception as e:
-            logger.error(f"Erro em _async_send_file para {user_id}: {e}")
+            logger.error("Falha no transporte TrueConf; detalhes suprimidos para proteger credenciais.")
             self._p2p_chats.pop(user_id, None)
             return False
 

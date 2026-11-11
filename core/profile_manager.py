@@ -85,6 +85,16 @@ class ProfileManager:
         if os.getenv("ULTRON_SERVER_IP"):
             cfg["network"]["ultron_ip"] = os.getenv("ULTRON_SERVER_IP")
 
+        # Credentials are provisioned outside Git. Empty env values explicitly disable them.
+        trueconf = cfg.setdefault("trueconf", {})
+        for env_name, field in (
+            ("ULTRON_TRUECONF_URL", "server_url"),
+            ("ULTRON_TRUECONF_BOT_USERNAME", "bot_username"),
+            ("ULTRON_TRUECONF_BOT_PASSWORD", "bot_password"),
+            ("ULTRON_TRUECONF_API_TOKEN", "api_token"),
+        ):
+            if env_name in os.environ:
+                trueconf[field] = os.environ[env_name]
         return cfg
 
     def get_milvus_config(self) -> Dict[str, Any]:

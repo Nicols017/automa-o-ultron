@@ -33,6 +33,8 @@ on:
       - ".github/workflows/ultron-safety.yml"
       - "agent/**"
       - "tests/**"
+      - "docker-compose.yml"
+      - ".dockerignore"
       - "scripts/powershell/Bootstrap-Ultron.ps1"
       - "tests/test_windows_agent_review.py"
   workflow_dispatch:
@@ -128,3 +130,6 @@ jobs:
           $env:ULTRON_AGENT_PACKAGE_DIR = "$env:RUNNER_TEMP/ultron-agent-package"
           python -c "from core.agent_builder import AgentBuilder; print(AgentBuilder().get_latest_agent_binary())"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Project reliability and TrueConf integration with fake SDK
+        run: python -m unittest discover -s tests -p 'test_project_reliability.py' -v
