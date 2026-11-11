@@ -939,6 +939,8 @@ class TrueConfChatOps:
                 lambda: self._cmd_backup(user_id, parts[1:], trace_id=trace_id) if len(parts) > 1 else self._start_wizard_backup(user_id),
             frozenset(["/status_backup", "/consultar_backup"]):
                 lambda: self._cmd_status_backup(user_id, parts[1:]),
+            frozenset(["/entender", "/interpretar", "/analisar_pedido"]):
+                lambda: self._cmd_interpretar(user_id, parts[1:]),
             frozenset(["/verificar_backup", "/verificar_macrium"]):
                 lambda: self._cmd_verify_macrium(user_id, parts[1:], trace_id=trace_id),
             frozenset(["/status_verificacao", "/status_macrium"]):
@@ -1973,6 +1975,46 @@ class TrueConfChatOps:
         if state == "ERROR":
             return f"❌ Macrium Verify: FALHA — {job.get('result', {}).get('reason', '')}"
         return f"🔎 Macrium Verify: {state} — {job['image_path']}"
+
+    def _cmd_interpretar(self, user_id: str, args: List[str]) -> str:
+        """Modo somente leitura para testar interpretacao com IA estruturada."""
+        from core.structured_intent import analyze_message, IntentPlanError
+        message = " ".join(args).strip()
+        if not message:
+            return (
+                "🧠 Escreva o pedido que quer testar. Ex.: "
+                "/entender preciso verificar o backup da máquina 57.50"
+            )
+        try:
+            self._ensure_orchestrator()
+            confirmed_ip = self._last_user_ip.get(user_id)
+            plan = analyze_message(
+                message,
+                self.orchestrator.analyzer.generate,
+                trusted_target=confirmed_ip,
+            )
+        except IntentPlanError as exc:
+            return f"⚠️ Não consegui classificar com segurança: {exc}"
+        except Exception:
+            return "⚠️ Interpretador indisponível; não executei nenhuma ação."
+
+        if plan.confidence < 0.7 or plan.intent == "unknown":
+            return (
+                "🤔 Ainda há ambiguidade nesse pedido. "
+                "Pode informar a ação e o equipamento desejados? "
+                "Nenhuma operação foi executada."
+            )
+        target = plan.target_ip or "não identificado"
+        missing = ", ".join(plan.missing_fields) or "nenhum"
+        return (
+            f"🧠 Interpretação experimental\n"
+            f"Intenção: {plan.intent}\n"
+            f"Modo: {plan.mode}\n"
+            f"Equipamento: {target}\n"
+            f"Confiança estimada: {plan.confidence:.0%}\n"
+            f"Dados faltantes: {missing}\n"
+            "⚠️ Somente análise; nenhuma ação foi executada."
+        )
 
     def _cmd_backup(self, user_id: str, args: List[str], trace_id: str = None) -> str:
         """Copia pastas de usuario sob demanda, sem autorizar MDT."""
