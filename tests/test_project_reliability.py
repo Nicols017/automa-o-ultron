@@ -1,5 +1,6 @@
 """Offline regressions: no app startup, SDK, remote machine or actual messages."""
 import ast
+import json
 import asyncio
 import concurrent.futures
 import os
@@ -40,6 +41,24 @@ class TransportTests(unittest.TestCase):
             config = namespace["get_settings"](fake)
         self.assertEqual(config["trueconf"]["api_token"], "fixture-token")
         self.assertEqual(config["trueconf"]["bot_password"], "")
+
+    def test_config_save_does_not_persist_environment_secrets(self):
+        source = ast.parse((ROOT / "core/profile_manager.py").read_text(encoding="utf-8"))
+        cls = next(n for n in source.body if isinstance(n, ast.ClassDef))
+        method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "save_milvus_config")
+        namespace = dict(vars(typing), os=os, yaml=types.SimpleNamespace(
+            safe_load=lambda file: json.load(file),
+            safe_dump=lambda data, file, **kwargs: json.dump(data, file)))
+        exec(compile(ast.Module(body=[method], type_ignores=[]), "<settings-save>", "exec"), namespace)
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "settings.yaml"
+            path.write_text('{"trueconf": {"bot_password": ""}}')
+            fake = types.SimpleNamespace(settings_file=str(path), milvus=types.SimpleNamespace(update_config=Mock()),
+                                         get_settings=Mock(side_effect=AssertionError("Do not save runtime overlays")))
+            with patch.dict(os.environ, {"ULTRON_TRUECONF_BOT_PASSWORD": "fixture-private-password"}):
+                self.assertTrue(namespace["save_milvus_config"](fake, "https://example.invalid", "fixture-milvus"))
+            self.assertNotIn("fixture-private-password", path.read_text())
+            fake.get_settings.assert_not_called()
 
     def test_https_origin_and_port(self):
         self.assertEqual(https_origin("https://example.invalid:8443/"), "https://example.invalid:8443")

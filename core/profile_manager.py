@@ -114,23 +114,34 @@ class ProfileManager:
         }
 
     def save_milvus_config(self, milvus_url: str, milvus_token: str, demo_mode: bool = False) -> bool:
-        """Atualiza e persiste as configurações da Dashboard Milvus em settings.yaml"""
-        settings = self.get_settings()
-        if "network" not in settings:
-            settings["network"] = {}
-
-        settings["network"]["milvus_dashboard_url"] = milvus_url.strip()
-        settings["network"]["milvus_api_token"] = milvus_token.strip()
-        settings["network"]["milvus_demo_mode"] = bool(demo_mode)
-
+        """Update file settings without serializing environment credentials."""
+        import tempfile
+        staged = None
         try:
-            with open(self.settings_file, "w", encoding="utf-8") as f:
-                yaml.dump(settings, f, allow_unicode=True, default_flow_style=False)
+            settings = {}
+            if os.path.exists(self.settings_file):
+                with open(self.settings_file, "r", encoding="utf-8") as file:
+                    settings = yaml.safe_load(file) or {}
+            network = settings.setdefault("network", {})
+            network.update(milvus_dashboard_url=milvus_url.strip(),
+                           milvus_api_token=milvus_token.strip(), milvus_demo_mode=bool(demo_mode))
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8",
+                    dir=os.path.dirname(self.settings_file), delete=False) as file:
+                staged = file.name
+                yaml.safe_dump(settings, file, allow_unicode=True, default_flow_style=False)
+            os.replace(staged, self.settings_file)
+            staged = None
             self.milvus.update_config(base_url=milvus_url, api_token=milvus_token, demo_mode=demo_mode)
             return True
-        except Exception as e:
-            print(f"❌ Erro ao salvar settings.yaml: {e}")
+        except Exception:
+            print("Falha ao atualizar configuracao Milvus; arquivo anterior preservado se a gravacao falhou.")
             return False
+        finally:
+            if staged is not None:
+                try:
+                    os.unlink(staged)
+                except OSError:
+                    pass
 
     def get_client_tokens(self) -> List[Dict[str, Any]]:
         """Retorna a lista de todos os clientes e seus tokens de agente Milvus mapeados"""
