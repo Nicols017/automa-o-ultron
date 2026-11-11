@@ -22,6 +22,9 @@ on:
       - "tests/test_operational_memory.py"
       - "tests/test_semantic_dispatch.py"
       - "tests/test_headless_api.py"
+      - "tests/test_intent_corpus.py"
+      - "tests/intent_examples.json"
+      - "scripts/evaluate_intents.py"
       - "scripts/powershell/Backup-UserData.ps1"
       - "tests/test_agent_protocol_contract.py"
       - "agent/UltronAgent.cs"
@@ -66,6 +69,8 @@ jobs:
           python -m unittest discover -s tests -p 'test_operational_memory.py' -v
           python -m unittest discover -s tests -p 'test_semantic_dispatch.py' -v
           python -m unittest discover -s tests -p 'test_headless_api.py' -v
+          python -m unittest discover -s tests -p 'test_intent_corpus.py' -v
+          python scripts/evaluate_intents.py --strict
           python -m unittest discover -s tests -p 'test_agent_protocol_contract.py' -v
 
       - name: Validate Windows PowerShell parse (without executing)
