@@ -2783,7 +2783,8 @@ class TrueConfChatOps:
             obsidian_context = ""
             devices = []
             clients = []
-            if os.environ.get("ULTRON_CHAT_LIVE_CONTEXT_ENABLED", "").lower() in ("1", "true"):
+            live_context = os.environ.get("ULTRON_CHAT_LIVE_CONTEXT_ENABLED", "").lower() in ("1", "true")
+            if live_context:
                 try:
                     devices = self._get_cached_devices()
                     clients = self.profile_mgr.list_clients()
@@ -2804,8 +2805,15 @@ class TrueConfChatOps:
             else:
                 winrm_str = "Nenhuma máquina com WinRM ativo"
 
-            bench_summary = f"{len(devices)} dispositivos conectados ({winrm_str})" if devices else "Nenhum computador ativo detectado na bancada no momento."
-            client_summary = ", ".join(f"{c.get('nome')} ({c.get('id')})" for c in clients[:8])
+            bench_summary = (
+                (f"{len(devices)} dispositivos conectados ({winrm_str})"
+                 if devices else "Nenhum computador encontrado na consulta recente")
+                if live_context else "não consultado para esta conversa"
+            )
+            client_summary = (
+                ", ".join(f"{c.get('nome')} ({c.get('id')})" for c in clients[:8])
+                if live_context else "não consultado"
+            )
 
             user_title = user_id
 
@@ -2843,11 +2851,18 @@ class TrueConfChatOps:
             if history_text:
                 history_text = f"\nHISTÓRICO RECENTE DA CONVERSA:\n{history_text}\n"
 
+            # Contexto persistido é somente referência, nunca permissão.
+            last_known_ip = self._last_user_ip.get(user_id)
+            if not last_known_ip:
+                try:
+                    last_known_ip = self.operational_memory.target(user_id)
+                except Exception:
+                    last_known_ip = None
             prompt = (
                 f"CONTEXTO DO LABORATÓRIO:\n"
                 f"- Bancada: {bench_summary}\n"
                 f"- Clientes cadastrados: {client_summary}\n"
-                f"- Último IP operado: {self._last_user_ip.get(user_id, 'nenhum')}\n"
+                f"- Último IP operado: {last_known_ip or 'nenhum'}\n"
                 f"- Usuário atual: {user_title}\n"
                 f"{obsidian_context}"
                 f"{history_text}\n"
@@ -2867,7 +2882,7 @@ class TrueConfChatOps:
         except Exception as e:
             logger.error(f"Erro na IA conversacional: {e}")
 
-        return "⚠️ Não entendi o comando. Se você está tentando enviar uma mensagem ou rodar uma automação, verifique a sintaxe ou digite `/ajuda`."
+        return "⚠️ A conversa com a IA está indisponível no momento. Nenhuma operação foi executada."
 
     # ------------------------------------------------------------------
     # Utilitários Internos
