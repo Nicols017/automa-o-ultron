@@ -1,0 +1,202 @@
+[
+  {
+    "id": "question_backup",
+    "message": "Como verificar se o backup terminou?",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "question_fog",
+    "message": "Qual é a diferença entre FOG e Clonezilla?",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "question_pxe",
+    "message": "Por que o computador reinicia no PXE?",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "question_format",
+    "message": "Como formatar Windows pelo MDT?",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "question_safeguard",
+    "message": "Me explica como fazer backup antes de formatar",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "negated_reboot",
+    "message": "Não reinicie a máquina",
+    "intent": "unknown",
+    "mode": "unknown",
+    "preflight": "blocked",
+    "target_ip": null
+  },
+  {
+    "id": "negated_format",
+    "message": "Não formate esse computador",
+    "intent": "unknown",
+    "mode": "unknown",
+    "preflight": "blocked",
+    "target_ip": null
+  },
+  {
+    "id": "backup_and_format",
+    "message": "Faça backup e depois formata a máquina 192.168.57.50",
+    "intent": "unknown",
+    "mode": "request",
+    "preflight": "blocked",
+    "target_ip": "192.168.57.50"
+  },
+  {
+    "id": "backup_image",
+    "message": "Captura uma imagem de disco do 192.168.57.50 com FOG",
+    "intent": "disk_image_capture",
+    "mode": "request",
+    "preflight": "blocked",
+    "target_ip": "192.168.57.50"
+  },
+  {
+    "id": "restore_image",
+    "message": "Quero restaurar a imagem no 192.168.57.50",
+    "intent": "disk_image_restore",
+    "mode": "request",
+    "preflight": "blocked",
+    "target_ip": "192.168.57.50"
+  },
+  {
+    "id": "backup_verify",
+    "message": "Verifique o backup do PC 192.168.57.50",
+    "intent": "backup_status",
+    "mode": "request",
+    "preflight": "blocked",
+    "target_ip": "192.168.57.50"
+  },
+  {
+    "id": "backup_files",
+    "message": "Faz backup dos documentos do PC 192.168.57.50",
+    "intent": "file_backup",
+    "mode": "request",
+    "preflight": "passthrough",
+    "target_ip": "192.168.57.50"
+  },
+  {
+    "id": "diagnose",
+    "message": "Faça um diagnóstico no PC 192.168.57.50",
+    "intent": "diagnose",
+    "mode": "request",
+    "preflight": "passthrough",
+    "target_ip": "192.168.57.50"
+  },
+  {
+    "id": "hardware_question",
+    "message": "Pode explicar o erro INACCESSIBLE_BOOT_DEVICE?",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "install",
+    "message": "Instala o Chrome no PC 192.168.57.50",
+    "intent": "install_software",
+    "mode": "request",
+    "preflight": "passthrough",
+    "target_ip": "192.168.57.50"
+  },
+  {
+    "id": "prepare",
+    "message": "Prepara o 192.168.57.50 para entrega",
+    "intent": "prepare_machine",
+    "mode": "request",
+    "preflight": "passthrough",
+    "target_ip": "192.168.57.50"
+  },
+  {
+    "id": "get_anydesk",
+    "message": "Qual o AnyDesk da máquina 192.168.57.50?",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": "192.168.57.50"
+  },
+  {
+    "id": "list_bench",
+    "message": "Quais computadores estão na bancada?",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "reboot",
+    "message": "Reinicia a máquina 192.168.57.50",
+    "intent": "restart",
+    "mode": "request",
+    "preflight": "passthrough",
+    "target_ip": "192.168.57.50"
+  },
+  {
+    "id": "shutdown",
+    "message": "Desliga o computador 192.168.57.50",
+    "intent": "shutdown",
+    "mode": "request",
+    "preflight": "passthrough",
+    "target_ip": "192.168.57.50"
+  },
+  {
+    "id": "format",
+    "message": "Formata a máquina 192.168.57.50",
+    "intent": "format",
+    "mode": "request",
+    "preflight": "passthrough",
+    "target_ip": "192.168.57.50"
+  },
+  {
+    "id": "typo",
+    "message": "Reincia o pc 192.168.57.50",
+    "intent": "restart",
+    "mode": "request",
+    "preflight": "passthrough",
+    "target_ip": "192.168.57.50"
+  },
+  {
+    "id": "implied_target",
+    "message": "Diagnostica ele",
+    "intent": "diagnose",
+    "mode": "request",
+    "preflight": "passthrough",
+    "target_ip": null
+  },
+  {
+    "id": "backup_question",
+    "message": "O que acontece se a imagem FOG falhar?",
+    "intent": "explain",
+    "mode": "question",
+    "preflight": "explanatory",
+    "target_ip": null
+  },
+  {
+    "id": "nonsense",
+    "message": "tavri qplo",
+    "intent": "unknown",
+    "mode": "unknown",
+    "preflight": "passthrough",
+    "target_ip": null
+  }
+]
