@@ -8,7 +8,7 @@ import sqlite3
 import time
 import uuid
 
-ACTIONS = {"diagnose", "software_install", "file_backup"}
+ACTIONS = {"diagnose", "software_install", "file_backup", "prepare"}
 TERMINAL = {"SUCCESS", "PARTIAL", "ERROR", "UNKNOWN"}
 EVIDENCE = {"NONE", "EXECUTOR_REPORTED_SUCCESS", "BACKUP_REPORT_VALIDATED", "NOT_STARTED", "SOFTWARE_PRESENCE_VERIFIED"}
 
@@ -46,6 +46,9 @@ class TaskRegistry:
                 requested TEXT NOT NULL, manager TEXT NOT NULL, installer_exit_code INTEGER,
                 installer_reported_success INTEGER, status TEXT NOT NULL, version TEXT,
                 PRIMARY KEY(job_id,requested))""")
+            db.execute("""CREATE TABLE IF NOT EXISTS preparation_steps (
+                job_id TEXT NOT NULL, step TEXT NOT NULL, status TEXT NOT NULL,
+                PRIMARY KEY(job_id,step))""")
             if os.name == "posix":
                 self.path.chmod(0o600)
             with db:
@@ -92,6 +95,7 @@ class TaskRegistry:
         if self._runtime is None:
             raise TaskRegistryError("Recuperacao exige exclusividade do processo.")
         with self.connect() as db:
+            db.execute("UPDATE preparation_steps SET status='UNKNOWN' WHERE status='RUNNING'")
             return db.execute("UPDATE tasks SET status='UNKNOWN',evidence='NONE',updated_at=? "
                               "WHERE status IN ('QUEUED','RUNNING')", (time.time(),)).rowcount
 
@@ -175,6 +179,9 @@ class TaskRegistry:
             if row is None:
                 return None
             record = dict(row)
+            if record["action"] == "prepare":
+                record["steps"] = dict(db.execute(
+                    "SELECT step,status FROM preparation_steps WHERE job_id=? ORDER BY rowid", (job_id,)))
             if record["action"] == "software_install":
                 record["package_results"] = []
                 for item in db.execute("SELECT requested,manager,installer_exit_code,installer_reported_success,status,version FROM task_packages WHERE job_id=? ORDER BY requested", (job_id,)):

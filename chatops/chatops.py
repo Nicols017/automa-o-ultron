@@ -1096,26 +1096,8 @@ class TrueConfChatOps:
     # ------------------------------------------------------------------
 
     def _cmd_interactive_menu(self) -> str:
-        return (
-            "🤖 Central de Automação Ultron\n\n"
-            "Como posso te ajudar agora? Você pode falar comigo em linguagem natural ou escolher uma opção:\n\n"
-            "[ 1 ] 💻 Ver computadores na bancada\n"
-            "[ 2 ] 🩺 Diagnóstico rápido de hardware & S.M.A.R.T\n"
-            "[ 3 ] 📢 Enviar mensagem na tela de um PC\n"
-            "[ 4 ] 🚀 Iniciar esteira de preparação de máquina\n"
-            "[ 5 ] 🔑 Ativar Windows e Office (MAS)\n"
-            "[ 6 ] 💾 Fazer backup do perfil de usuário\n"
-            "[ 7 ] 🛡️ Ingressar máquina no domínio (AD)\n"
-            "[ 8 ] 📦 Instalar softwares básicos\n"
-            "[ 9 ] 🔌 Reiniciar ou desligar computador\n"
-            "[ 10 ] 🏢 Consultar perfis de clientes\n"
-            "[ 11 ] 🎫 Consultar chamados no Milvus\n"
-            "[ 12 ] 📄 Ver laudos técnicos emitidos\n"
-            "[ 13 ] 📥 Baixar o UltronAgent.exe\n"
-            "[ 14 ] 🧹 Limpeza pós-bancada (Entrega ao Cliente)\n\n"
-            "Acompanhe com /tarefas ou /tarefa <ID>.\n\n"
-            "💬 Basta digitar o número correspondente (ex: 1, 4, 11) ou me dizer o que você precisa!"
-        )
+        from chatops.menu import interactive_menu
+        return interactive_menu()
 
     def _cmd_help(self) -> str:
         return self._cmd_interactive_menu()
@@ -2063,31 +2045,8 @@ class TrueConfChatOps:
         return job
 
     def _cmd_tarefas(self, user_id: str, args: List[str]) -> str:
-        try:
-            if args:
-                job = self.task_registry.get(user_id, args[0])
-                jobs = [job] if job else []
-            else:
-                jobs = self.task_registry.recent(user_id)
-        except Exception:
-            return "Historico de tarefas indisponivel; nenhuma operacao foi iniciada."
-        if not jobs:
-            return "Nenhuma tarefa encontrada para voce."
-        lines = ["SUAS TAREFAS"]
-        for job in jobs:
-            lines.append(f"{job['job_id']} | {job['action']} | {job['target_ip']} | {job['status']}")
-            if job["status"] == "UNKNOWN":
-                lines.append("Resultado desconhecido: confira o equipamento antes de solicitar nova execucao.")
-            elif job["evidence"] == "EXECUTOR_REPORTED_SUCCESS":
-                lines.append("Ferramenta informou sucesso; isso nao substitui verificacao independente.")
-            elif job["evidence"] == "SOFTWARE_PRESENCE_VERIFIED":
-                lines.append("Programas encontrados no inventario com versao; funcionamento/licenca nao verificados.")
-            elif job["evidence"] == "BACKUP_REPORT_VALIDATED":
-                lines.append("Relatorio de copia de arquivos validado; nao e imagem nem autoriza formatacao.")
-            if job.get("package_results"):
-                from core.software_installation import format_installation
-                lines.extend(format_installation(job).splitlines()[1:])
-        return "\n".join(lines)
+        from chatops.task_history import task_history
+        return task_history(self.task_registry, user_id, args)
 
     def _cmd_contexto(self, user_id: str) -> str:
         """Informa ao técnico somente o proprio contexto; nao executa nada."""
