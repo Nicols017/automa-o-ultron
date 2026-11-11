@@ -556,6 +556,16 @@ class TrueConfChatOps:
         if not self._is_master_user(user_id):
             return None
 
+        scheduled_cancel = re.fullmatch(
+            r"(?:cancela|cancelar|apaga|remover|excluir)\s+(?:(?:o|a)\s+)?"
+            r"(?:(?:agendamento|mensagem agendada)\s+)?(?:id\s+)?(sch_[a-z0-9_]+)",
+            norm_text.strip(),
+        )
+        if scheduled_cancel:
+            task_id = scheduled_cancel.group(1)
+            if self.scheduler.cancel_task(task_id, user_id):
+                return f"Agendamento {task_id} cancelado."
+            return "Agendamento indisponível para cancelamento."
         # Intercepta cancelamento de tarefas em andamento (ex: instalacao de softwares)
         if "cancela" in norm_text or "aborta" in norm_text or "pare " in norm_text or norm_text == "pare" or norm_text == "parar":
             active_job = self.active_jobs.get(user_id)
@@ -675,17 +685,9 @@ class TrueConfChatOps:
         if any(kw in norm_text for kw in ["usuarios do trueconf", "usuarios da empresa", "lista usuarios", "usuarios trueconf", "quem esta no trueconf", "colaboradores"]):
             return self._cmd_list_trueconf_users()
 
-        # 3. Cancelamento de agendamento
-        m_cancel = re.search(r"(?:cancela|cancelar|apaga|remover|excluir)\s+(?:o\s+)?(?:agendamento|agendada|mensagem)?\s*(?:id\s*)?([a-zA-Z0-9_]+)", text, re.IGNORECASE)
-        if m_cancel and ("agend" in norm_text or "sch_" in text or "cancela" in norm_text):
-            t_id = m_cancel.group(1).strip()
-            if self.scheduler.cancel_task(t_id):
-                return f"✅ Agendamento `{t_id}` cancelado com sucesso."
-            return f"⚠️ Agendamento `{t_id}` não encontrado ou já executado."
-
         # 4. Listagem de mensagens agendadas
         if any(kw in norm_text for kw in ["agendad", "agendamento", "agendamentos", "agendados", "agendadas", "o que ta agendado", "minhas mensagens agendadas", "/agendados"]):
-            tasks = self.scheduler.list_scheduled()
+            tasks = self.scheduler.list_scheduled(user_id)
             if not tasks:
                 return "ℹ️ Nenhuma mensagem agendada no momento."
             res = ["⏰ MENSAGENS PROGRAMADAS NO TRUECONF:\n"]
