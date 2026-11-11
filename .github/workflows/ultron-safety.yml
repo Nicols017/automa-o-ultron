@@ -15,6 +15,7 @@ on:
       - "verifier/**"
       - "scripts/powershell/Verify-MacriumImage.ps1"
       - "tests/test_macrium_remote.py"
+      - "tests/test_macrium_integration_contract.py"
       - "tests/test_agent_protocol_contract.py"
       - "agent/UltronAgent.cs"
       - ".github/workflows/ultron-safety.yml"
@@ -51,6 +52,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_backup_gate.py' -v
           python -m unittest discover -s tests -p 'test_macrium_verifier.py' -v
           python -m unittest discover -s tests -p 'test_macrium_remote.py' -v
+          python -m unittest discover -s tests -p 'test_macrium_integration_contract.py' -v
           python -m unittest discover -s tests -p 'test_agent_protocol_contract.py' -v
 
       - name: Validate Windows PowerShell parse (without executing)
